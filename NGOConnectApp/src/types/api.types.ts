@@ -1,0 +1,628 @@
+// ── Core API Response (mirrors backend ApiResponse<T>) ───────────────────────
+export interface ApiResponse<T> {
+  isSuccess: number; // 1 = success, 0 = failure
+  message: string;
+  data: T | null;
+  errorCode?: string;
+}
+
+// ── Paged Result ─────────────────────────────────────────────────────────────
+export interface PagedResult<T> {
+  items: T[];
+  totalCount: number;
+  pageNumber: number;
+  pageSize: number;
+}
+
+// ── Lookup ───────────────────────────────────────────────────────────────────
+export interface LookupValue {
+  lookupValueId: number;
+  typeCode: string;
+  valueCode: string;
+  valueName: string;
+  isDefault: number;
+  orderNo: number;
+}
+
+export interface LookupType {
+  lookupTypeId: number;
+  typeCode: string;
+  typeName: string;
+  values: LookupValue[];
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+export interface SendOtpRequest {
+  recipient: string;
+  countryCode: string;
+  purposeLkpId: number;
+}
+
+export interface VerifyOtpRequest {
+  recipient: string;
+  otpCode: string;
+  purposeLkpId: number;
+}
+
+export interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+export interface RefreshTokenRequest {
+  refreshToken: string;
+  deviceInfo: string;
+}
+
+// ── User ─────────────────────────────────────────────────────────────────────
+export interface UserProfile {
+  userId: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  bio?: string;
+  profilePhoto?: string;
+  dateOfBirth?: string;
+  genderLkpId?: number;
+  gender?: string;
+  occupation?: string;
+  organisation?: string;
+  volunteerExp?: string;
+  educationLkpId?: number;
+  fieldOfStudy?: string;
+  workExpLkpId?: number;
+  addressLine1?: string;
+  addressLine2?: string;
+  pincode?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  mobile?: string;       // phone number without country code
+  countryCode?: string;  // e.g. "+91", "+1"
+  email?: string;
+  memberSince?: string;
+  // Computed/extended fields returned by API
+  totalHours?: number;
+  projectsCount?: number;
+  impactScore?: number;
+  skills?: UserSkill[];
+}
+
+export interface UserImpact {
+  // Core scores
+  impactScore: number;
+  reliabilityPct: number;
+  // Activity totals
+  projectsCompleted: number;
+  totalHours: number;
+  badgeCount: number;
+  skillCount: number;
+  projectsApplied: number;
+  certificateCount: number;
+  memberSince: string;
+  // NGOs
+  ngosJoined?: number;
+  // Rank
+  rankName?: string;      // Newcomer | Helper | Active Volunteer | Committed Volunteer | Gold | Platinum | Diamond | Elite
+  rankNumber?: number;    // e.g. 42
+  totalRanked?: number;   // e.g. 1234
+  // Application summary (for tab badges)
+  pendingApplications?: number;
+  approvedApplications?: number;
+  // Profile (returned inline to avoid a second API call)
+  firstName?: string;
+  lastName?: string;
+  profilePhoto?: string;
+  bio?: string;
+  // Legacy rich-breakdown fields (future SP extension)
+  skillBreakdown?: { skillName: string; hours: number }[];
+  certificates?: { projectName: string; orgName: string; issuedOn: string; certificateUrl?: string }[];
+  ngoBreakdown?: { orgName: string; projectsCount: number; hours: number; tier?: string }[];
+}
+
+// ── User Application (GET /user/applications) ─────────────────────────────────
+export interface UserApplication {
+  applicationId: number;
+  projectId: number;
+  projectName: string;
+  orgName: string;
+  orgLogoUrl?: string;
+  // Application status
+  statusCode: string;        // PENDING | APPROVED | REJECTED | WITHDRAWN
+  status: string;            // Human-readable label
+  createdAt: string;
+  statusUpdatedAt?: string;
+  // Project schedule info (for card display)
+  scheduleTypeCode?: string; // ONE_TIME | RECURRING | FLEXIBLE
+  scheduleTypeName?: string;
+  recurStart?: string;
+  recurEnd?: string;
+  recurDays?: string;        // comma-separated day names e.g. "Monday,Wednesday,Friday"
+  sessionStartTime?: string;
+  sessionEndTime?: string;
+  landmark?: string;
+  city?: string;
+  // Project status (drives tab routing client-side)
+  projectStatusCode?: string; // UPCOMING | ACTIVE | COMPLETED | EXPIRED | CANCELLED
+  projectStatus?: string;
+  // Completed tab extras (enriched by future SP update)
+  hoursLogged?: number;
+  impactNote?: string;
+  skillRatings?: { skillName: string; rating: number }[];
+}
+
+export interface UserBadge {
+  userBadgeId: number;
+  badgeLkpId: number;
+  badgeName: string;
+  badgeCode: string;
+  orgName: string;
+  projectName: string;
+  awardedAt: string;
+  tier?: string;       // Gold | Silver | Bronze | Platinum
+  emoji?: string;
+  awardedOn?: string;  // formatted display date
+}
+
+export interface UserSkill {
+  userSkillId: number;
+  skillName: string;
+  rating?: number;
+  hoursLogged?: number;
+}
+
+export interface UserDocument {
+  userDocumentId: number;
+  documentTypeLkpId: number;
+  docTypeCode: string;
+  docTypeName: string;
+  fileUrl: string;
+  fileName: string;
+  fileSizeKb?: number;
+  isVerified: boolean;
+  uploadedAt: string;
+}
+
+export interface UserInterest {
+  interestLkpId: number;
+  interestName: string;
+  interestCode: string;
+}
+
+export interface SafetyPrefs {
+  emergVisibilityLkpId: number;
+  emergVisibility: string;
+  autoShareDurLkpId: number;
+  autoShareDuration: string;
+  allowLocDuringSos: boolean;
+  allowLocDuringProj: boolean;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelation?: string;
+}
+
+// ── Organisation ─────────────────────────────────────────────────────────────
+export interface Organisation {
+  orgId: number;
+  orgName: string;
+  name?: string;           // alias for orgName (some endpoints return 'name')
+  registrationNumber?: string;
+  orgType?: string;
+  orgTypeLkpId?: number;
+  category?: string;
+  categoryName?: string;
+  contactPerson?: string;
+  about?: string;
+  description?: string;    // alias for about
+  mission?: string;
+  vision?: string;
+  logoUrl?: string;
+  contactEmail?: string;
+  email?: string;          // alias for contactEmail
+  contactPhone?: string;
+  website?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  pincode?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  memberCount?: number;
+  avgRating?: number;
+  rating?: number;         // alias for avgRating
+  latitude?: number;
+  longitude?: number;
+  is80G?: boolean;
+  is12A?: boolean;
+  statusCode?: string;
+  // Extended fields
+  activeProjects?: number;
+  totalVolunteerHours?: number;
+  distanceKm?: number;
+  isMember?: boolean;
+  myRole?: string;         // e.g. 'Admin', 'Member', 'Founder'
+  myRoleCode?: string;     // e.g. 'ADMIN', 'MEMBER', 'FOUNDER'
+  memberStatusCode?: string;  // APPROVED | PENDING  (user's membership status in OrgMembers)
+  orgStatusCode?: string;     // ACTIVE | PENDING | SUSPENDED  (the org's own approval status)
+  joinedAt?: string;       // ISO date string when user joined this org
+  areasOfWork?: string[];
+}
+
+export interface OrgMember {
+  userId: number;
+  memberId?: number;              // OrgMembers PK — used for role/permission updates
+  membershipRequestId?: number;   // for pending approval/rejection
+  fullName: string;
+  email?: string;
+  phone?: string;
+  occupation?: string;
+  profilePhoto?: string;
+  city?: string;
+  state?: string;
+  roleName: string;
+  roleCode: string;
+  statusCode: string;             // APPROVED | PENDING | REJECTED
+  joinedAt: string;
+  requestedAt?: string;           // when membership request was submitted
+  isActive?: boolean;
+  lastActiveAt?: string;          // formatted time-ago string
+  motivation?: string;            // legacy alias
+  // Membership request fields (submitted when applying)
+  prevNgoExperience?: string;
+  volunteerSkills?: string;
+  areasOfInterest?: string;
+  whyJoin?: string;
+  bio?: string;
+  volunteerExp?: string;
+  documents?: { name: string; url?: string }[];
+  canPost?: boolean;
+  canComment?: boolean;
+  canCommunityPost?: boolean;
+  locationSharing?: boolean;
+  maxPostsPerDay?: number;
+  reliabilityPct?: number;
+}
+
+// ── Admin volunteer profile (GET /org/{orgId}/volunteers/{userId}) ────────────
+export interface OrgVolunteerProfile {
+  userId: number;
+  fullName?: string;
+  city?: string;
+  state?: string;
+  occupation?: string;
+  profilePhoto?: string;
+  bio?: string;
+  volunteerExp?: string;
+  // Impact stats
+  totalHours: number;
+  projectCount: number;
+  orgCount: number;
+  // Reliability (admin-only)
+  reliabilityPct: number;
+  avgRating: number;
+  peerRating: number;
+  noShowCount: number;
+  excusedCount: number;
+  complaintCount: number;
+  // Membership in this org
+  roleCode?: string;
+  roleName?: string;
+  statusCode?: string;
+  statusName?: string;
+  joinedAt?: string;
+  // Membership request fields (what the volunteer submitted when applying)
+  prevNgoExperience?: string;
+  volunteerSkills?: string;
+  areasOfInterest?: string;
+  whyJoin?: string;
+  requestedAt?: string;
+}
+
+export interface AdminPost {
+  postId: number;
+  userId: number;
+  fullName: string;
+  roleCode?: string;
+  roleName?: string;
+  content: string;
+  likesCount: number;
+  commentsCount: number;
+  statusCode: string;             // PUBLISHED | PENDING | REMOVED
+  reportCount?: number;
+  isPinned?: boolean;
+  createdAt: string;
+  timeAgo?: string;
+}
+
+export interface OrgDashboard {
+  totalMembers: number;
+  newMembersThisMonth: number;
+  activeVolunteers: number;
+  activeRatePct: number;
+  volunteerHoursMonth: number;
+  activeProjects: number;
+  pendingApplications: number;         // pending member join requests
+  pendingProjectApplications?: number; // pending volunteer project applications
+  // Extended fields
+  totalDonations?: number;
+  totalVolunteerHours?: number;
+  thisMonthVolunteers?: number;
+  recentActivity?: { type?: string; icon?: string; message: string; timeAgo: string }[];
+}
+
+// ── Project ───────────────────────────────────────────────────────────────────
+export interface Project {
+  projectId: number;
+  orgId: number;
+  orgName?: string;
+  orgLogoUrl?: string;
+  title: string;
+  description?: string;
+  projectType?: string;
+  scheduleType?: string; // ONE_TIME | RECURRING | FLEXIBLE
+  recurrenceDays?: string;
+  startDate?: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMinutes?: number;
+  locationName?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  city?: string;
+  state?: string;
+  maxVolunteers?: number;
+  approvedCount?: number;
+  isPublic?: boolean;
+  requiresApproval?: boolean;
+  coverImageUrl?: string;
+  statusCode?: string;
+  statusName?: string;
+  applicationStatusCode?: string;
+  // Extended/computed fields
+  projectName?: string;           // SP returns ProjectName (camelCase: projectName)
+  maxParticipants?: number;       // alias for maxVolunteers
+  currentParticipants?: number;   // alias for approvedCount
+  spotsLeft?: number;
+  categoryName?: string;
+  distanceKm?: number;
+  scheduleSummary?: string;       // computed: human-readable schedule string
+  skills?: { skillName: string; isRequired?: boolean }[];
+  // Raw SP schedule fields (from Project_List)
+  oneTimeDate?: string;
+  recurStart?: string;
+  recurEnd?: string;
+  recurDays?: string;
+  sessionStartTime?: string;
+  sessionEndTime?: string;
+  flexFromDate?: string;
+  flexToDate?: string;
+}
+
+export interface ProjectSession {
+  sessionId: number;
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+  maxVolunteers: number;
+  checkedInCount: number;
+  qrToken?: string;
+}
+
+export interface ProjectApplication {
+  applicationId: number;
+  userId: number;
+  fullName: string;
+  profilePhoto?: string;
+  statusCode: string;
+  appliedAt: string;
+  adminNotes?: string;
+}
+
+// ── Feed / Post ───────────────────────────────────────────────────────────────
+export interface Post {
+  postId: number;
+  userId: number;
+  fullName: string;
+  profilePhoto?: string;
+  orgId?: number;
+  orgName?: string;
+  orgLogoUrl?: string;
+  content: string;
+  postType?: string;
+  postTypeLkpCode?: string;  // e.g. PINNED, ANNOUNCEMENT, EVENT, etc.
+  title?: string;
+  authorName?: string;       // display name (may differ from fullName for org posts)
+  authorRole?: string;       // e.g. 'Admin', 'Member' — shown as badge on post
+  timeAgo?: string;          // relative time string from server
+  visibility?: string;       // e.g. 'Public', 'Members Only'
+  mediaUrls?: string[];
+  mediaTypes?: string;   // CSV of ValueCodes matching mediaUrls — e.g. "IMAGE,VIDEO,IMAGE"
+  likeCount: number;
+  commentCount: number;
+  isLiked: boolean;
+  isPinned: boolean;
+  isAnnouncement: boolean;
+  campaignGoal?: number;     // for FUNDRAISING posts
+  campaignRaised?: number;   // for FUNDRAISING posts
+  createdAt: string;
+}
+
+// ── Community ─────────────────────────────────────────────────────────────────
+export interface CommunityPost {
+  communityPostId: number;
+  orgId: number;
+  userId: number;
+  fullName?: string;           // legacy field name
+  authorName?: string;         // SP returns AuthorName → camelCase authorName
+  profilePhoto?: string;
+  roleName?: string;           // e.g. "Admin", "Moderator", "Member"
+  title?: string;
+  content?: string;
+  postType?: string;           // ValueCode: ANNOUNCEMENT | DISCUSSION | POLL | EVENT_UPDATE | VOL_REQUEST | TASK | RESOURCE | QUESTION
+  postTypeName?: string;       // ValueName: human readable
+  postTypeLkpCode?: string;
+  audienceCode?: string;       // ValueCode from AUDIENCE_TYPE
+  isPinned?: boolean;
+  acknowledgeCount: number;
+  isAcknowledged?: boolean;    // legacy field
+  isAcknowledgedByMe?: boolean; // SP returns IsAcknowledgedByMe
+  likeCount: number;
+  commentCount: number;
+  isLiked: boolean;
+  isLikedByMe?: boolean;
+  timeAgo?: string;
+  createdAt: string;
+  pollOptions?: PollOption[];
+  pollExpiresAt?: string;      // ISO date when poll closes
+  pollIsMultiChoice?: boolean; // 1 = multiple options can be selected, 0/null = single-choice radio
+
+  // ── EVENT_UPDATE extra fields (SP columns, DynamicRow auto-maps) ──────────
+  mediaUrls?: string[];        // for RESOURCE type
+  projectId?: number;
+  projectTitle?: string;
+  changeType?: string;         // e.g. "VENUE CHANGED", "TIME CHANGED", "DATE CHANGED"
+  changeDetail?: string;       // human-readable summary of what changed
+  mapsUrl?: string;            // Google Maps deep-link for updated venue
+  rsvpCount?: number;
+  isRsvped?: boolean;
+
+  // ── VOL_REQUEST extra fields ───────────────────────────────────────────────
+  filledCount?: number;        // volunteers already signed up
+  totalNeeded?: number;        // total slots
+  startTime?: string;          // e.g. "06:30 AM"
+  requiredSkills?: string[];   // skill chip labels
+  isVolunteered?: boolean;     // true if current user signed up
+
+  // ── TASK extra fields ──────────────────────────────────────────────────────
+  assignedToName?: string;
+  assignedToInitials?: string;
+  dueBy?: string;              // e.g. "Jun 14 · 6:30 AM"
+  taskStatus?: string;         // "Open" | "In Progress" | "Completed"
+
+  // ── RESOURCE extra fields ──────────────────────────────────────────────────
+  fileNames?: string[];        // parallel array with mediaUrls
+  fileSizes?: string[];        // e.g. ["2.3 MB", "1.1 MB"]
+  fileTypes?: string[];        // e.g. ["PDF", "Image"]
+
+  // ── QUESTION extra fields ─────────────────────────────────────────────────
+  bestAnswerText?: string;
+  bestAnswerAuthor?: string;
+  bestAnswerLikes?: number;
+}
+
+export interface PollOption {
+  pollOptionId: number;
+  optionText: string;
+  voteCount: number;
+  votePct: number;
+  isVoted: boolean;
+}
+
+export interface CommunityComment {
+  communityCommentId: number;
+  communityPostId: number;
+  userId: number;
+  authorName?: string;
+  profilePhoto?: string;
+  content: string;
+  likeCount: number;
+  isLiked: boolean;
+  isLikedByMe?: boolean;
+  timeAgo?: string;
+  createdAt: string;
+}
+
+// ── Donation ─────────────────────────────────────────────────────────────────
+export interface DonationCampaign {
+  campaignId: number;
+  orgId: number;
+  orgName: string;
+  orgLogoUrl?: string;
+  title: string;
+  description?: string;
+  goalAmount: number;
+  raisedAmount: number;
+  progressPct: number;
+  donorCount: number;
+  startDate: string;
+  endDate?: string;
+  bannerUrl?: string;
+  isEmergency?: boolean;
+  is80G?: boolean;
+  statusCode?: string;
+}
+
+export interface DonationTransaction {
+  transactionId: number;
+  readableId: string; // DON-2026-000001
+  campaignName: string;
+  orgName: string;
+  amount: number;
+  netAmount: number;
+  statusCode: string;
+  statusName: string;
+  paymentMethod: string;
+  isAnonymous: boolean;
+  createdAt: string;
+  receiptUrl?: string;
+}
+
+export interface RecurringDonation {
+  recurringId: number;
+  orgName: string;
+  campaignName: string;
+  amount: number;
+  frequency: string;
+  nextDate: string;
+  statusCode: string;
+}
+
+// ── SOS ───────────────────────────────────────────────────────────────────────
+export interface SosIncident {
+  sosId: number;
+  userId: number;
+  fullName: string;
+  latitude: number;
+  longitude: number;
+  description?: string;
+  alertType?: string;
+  statusCode: string; // ACTIVE | RESOLVED | CANCELLED
+  triggeredAt: string;
+  resolvedAt?: string;
+  responderCount: number;
+}
+
+export interface SosResponder {
+  responderId: number;
+  userId: number;
+  fullName: string;
+  profilePhoto?: string;
+  statusCode: string;
+  canViewLocation: boolean;
+  respondedAt: string;
+}
+
+// ── Notification ──────────────────────────────────────────────────────────────
+export interface Notification {
+  notificationId: number;
+  title: string;
+  body: string;
+  notificationType: string;
+  referenceId?: number;
+  referenceType?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+// ── Certificate ───────────────────────────────────────────────────────────────
+export interface Certificate {
+  certificateId:  number;
+  projectTitle:   string;
+  orgName:        string;
+  hoursLogged:    number;
+  issuedAt:       string;
+  fileUrl?:       string;
+}

@@ -1,0 +1,767 @@
+/**
+ * ParticipantsScreen.tsx — Admin view of project participants
+ *
+ * Sections (all statuses always visible):
+ *   PENDING APPLICATIONS   — approve / reject / view profile
+ *   APPROVED — UPCOMING    — confirmed members not yet in a session
+ *   ATTENDED — LAST SESSION — QR time, skill ratings, badge buttons
+ *   NO SHOWS — LAST SESSION — mark excused / confirm no show
+ */
+
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import AppConfig from '../../config/AppConfig';
+import { projectApi } from '../../api/project.api';
+import { UserAvatar } from '../../components/ui';
+
+const C = AppConfig.COLORS;
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const BADGE_DEFS = [
+  { key: 'STAR_VOL',      icon: '☆',  label: 'Star Vol.'     },
+  { key: 'TEAM_PLAYER',   icon: '♡',  label: 'Team Player'   },
+  { key: 'TOP_PERFORMER', icon: '🏆', label: 'Top Performer' },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtTime12(t?: string): string {
+  if (!t) return '';
+  const d = new Date(t);
+  if (!isNaN(d.getTime()))
+    return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const [h, m] = t.split(':').map(Number);
+  if (isNaN(h)) return t;
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+function fmtDate(d?: string): string {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+function relativeDate(iso?: string): string {
+  if (!iso) return '';
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (diff === 0) return 'today';
+  if (diff === 1) return '1d ago';
+  return `${diff}d ago`;
+}
+
+// ─── Shared sub-components ────────────────────────────────────────────────────
+
+function SectionHeader({ title }: { title: string }) {
+  return <Text style={s.sectionHeader}>{title}</Text>;
+}
+
+function ProgressBar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <View style={s.progressTrack}>
+      <View style={[s.progressFill, { width: `${Math.min(Math.max(pct, 0), 100)}%` as any, backgroundColor: color }]} />
+    </View>
+  );
+}
+
+// ─── PENDING CARD ─────────────────────────────────────────────────────────────
+
+function PendingCard({
+  app, reviewing, onApprove, onReject, onProfile,
+}: {
+  app: any; reviewing: boolean;
+  onApprove: () => void; onReject: () => void; onProfile: () => void;
+}) {
+  const name = app.applicantName ?? app.fullName ?? 'Volunteer';
+  const subParts = [app.city, app.profession, app.createdAt ? `Applied ${relativeDate(app.createdAt)}` : null].filter(Boolean);
+  const hasRelData = app.attendancePct != null || app.avgSkillRating != null || app.noShowCount != null;
+
+  return (
+    <View style={s.card}>
+      {/* Top row */}
+      <View style={s.cardTopRow}>
+        <UserAvatar name={name} photoUrl={app.profilePhoto} size={40} />
+        <View style={{ flex: 1 }}>
+          <Text style={s.cardName}>{name}</Text>
+          {subParts.length > 0 && <Text style={s.cardSub} numberOfLines={2}>{subParts.join(' · ')}</Text>}
+          {!!app.requestedSessions && <Text style={s.cardSub}>Requested: {app.requestedSessions}</Text>}
+        </View>
+        <View style={s.pendingChip}><Text style={s.pendingChipText}>Pending</Text></View>
+      </View>
+
+      {/* Reliability profile */}
+      {hasRelData && (
+        <View style={s.reliabilityBox}>
+          <View style={s.reliabilityHdr}>
+            <Text style={s.reliabilityHdrText}>Reliability profile — admin only</Text>
+            <View style={s.privateChip}><Text style={s.privateChipText}>Private</Text></View>
+          </View>
+          {app.attendancePct != null && (
+            <View style={s.reliabilityRow}>
+              <Text style={s.reliabilityKey}>Attendance</Text>
+              <ProgressBar pct={app.attendancePct} color="#16A34A" />
+              <Text style={[s.reliabilityVal, { color: '#16A34A' }]}>{app.attendancePct}%</Text>
+            </View>
+          )}
+          {app.avgSkillRating != null && (
+            <View style={s.reliabilityRow}>
+              <Text style={s.reliabilityKey}>Skill rating</Text>
+              <ProgressBar pct={(app.avgSkillRating / 5) * 100} color={C.PRIMARY} />
+              <Text style={[s.reliabilityVal, { color: C.PRIMARY }]}>{Number(app.avgSkillRating).toFixed(1)}★</Text>
+            </View>
+          )}
+          {app.noShowCount != null && (
+            <View style={s.reliabilityRow}>
+              <Text style={s.reliabilityKey}>No shows</Text>
+              <ProgressBar pct={Math.min(app.noShowCount * 25, 100)} color="#EF4444" />
+              <Text style={[s.reliabilityVal, { color: '#EF4444' }]}>{app.noShowCount}×</Text>
+            </View>
+          )}
+          {(app.totalHours != null || app.totalProjects != null) && (
+            <View style={s.reliabilityStats}>
+              {app.totalHours    != null && <Text style={s.reliabilityStatItem}>{app.totalHours} hrs</Text>}
+              {app.totalProjects != null && <Text style={s.reliabilityStatItem}>{app.totalProjects} projects</Text>}
+              <TouchableOpacity onPress={onProfile}>
+                <Text style={[s.reliabilityStatItem, { color: C.PRIMARY }]}>Full profile →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Motivation */}
+      {!!app.motivation && (
+        <View style={s.motivationBox}>
+          <Text style={s.motivationText}>"{app.motivation}"</Text>
+        </View>
+      )}
+
+      {/* Actions */}
+      <View style={s.threeActionRow}>
+        <TouchableOpacity style={[s.approveBtn, reviewing && s.btnDisabled]} onPress={onApprove} disabled={reviewing} activeOpacity={0.85}>
+          {reviewing ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.approveBtnText}>✓  Approve</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={[s.rejectBtn, reviewing && s.btnDisabled]} onPress={onReject} disabled={reviewing} activeOpacity={0.85}>
+          <Text style={s.rejectBtnText}>✕  Reject</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.profileBtn} onPress={onProfile} activeOpacity={0.85}>
+          <Text style={s.profileBtnText}>Profile</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ─── APPROVED CARD ────────────────────────────────────────────────────────────
+
+function ApprovedCard({
+  app, onProfile, onMarkAttended, marking,
+}: {
+  app: any; onProfile: () => void; onMarkAttended: () => void; marking: boolean;
+}) {
+  const name = app.applicantName ?? app.fullName ?? 'Volunteer';
+  const subParts = [app.city, app.profession].filter(Boolean);
+  const approvedDate = app.statusUpdatedAt ? fmtDate(app.statusUpdatedAt) : '';
+
+  return (
+    <View style={s.card}>
+      <View style={s.cardTopRow}>
+        <UserAvatar name={name} photoUrl={app.profilePhoto} size={40} />
+        <View style={{ flex: 1 }}>
+          <Text style={s.cardName}>{name}</Text>
+          {subParts.length > 0 && <Text style={s.cardSub}>{subParts.join(' · ')}</Text>}
+          {!!approvedDate && <Text style={s.cardSub}>Approved {approvedDate}</Text>}
+        </View>
+        <View style={s.approvedChip}><Text style={s.approvedChipText}>✓ Approved</Text></View>
+      </View>
+      <View style={s.approvedCardFooter}>
+        <View style={{ flex: 1 }}>
+          <TouchableOpacity
+            style={[s.markAttendedBtn, marking && s.btnDisabled]}
+            onPress={onMarkAttended}
+            disabled={marking}
+            activeOpacity={0.85}
+          >
+            {marking
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.markAttendedBtnText}>✓  Mark Attended</Text>}
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity onPress={onProfile} activeOpacity={0.75}>
+          <Text style={s.viewProfileText}>View profile →</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ─── ATTENDED CARD ────────────────────────────────────────────────────────────
+
+function AttendedCard({
+  app, projectSkills, skillRatings, onRateSkill, awardedBadges, onAwardBadge,
+}: {
+  app: any;
+  projectSkills: string[];
+  skillRatings: Record<string, number>;
+  onRateSkill: (skill: string, val: number) => void;
+  awardedBadges: string[];
+  onAwardBadge: (key: string) => void;
+}) {
+  const name = app.applicantName ?? app.fullName ?? 'Volunteer';
+  const checkinTime = fmtTime12(app.checkedInAt);
+  const hours = app.hoursLogged ?? app.hoursAttended;
+
+  const checkinLine = [
+    checkinTime ? `QR ${checkinTime}` : null,
+    hours ? `${hours} hrs logged` : null,
+  ].filter(Boolean).join(' · ');
+
+  return (
+    <View style={s.card}>
+      {/* Top row */}
+      <View style={s.cardTopRow}>
+        <UserAvatar name={name} photoUrl={app.profilePhoto} size={40} />
+        <View style={{ flex: 1 }}>
+          <Text style={s.cardName}>{name}</Text>
+          {!!checkinLine && (
+            <View style={s.checkinRow}>
+              <Text style={s.checkinIcon}>⊠</Text>
+              <Text style={s.checkinLine}>{checkinLine}</Text>
+            </View>
+          )}
+        </View>
+        <View style={s.attendedChip}><Text style={s.attendedChipText}>Attended</Text></View>
+      </View>
+
+      {/* Skill ratings — "Rate skills:" label left, skill columns right */}
+      {projectSkills.length > 0 && (
+        <View style={s.skillRatingWrap}>
+          <Text style={s.rateSkillsLabel}>Rate skills:</Text>
+          <View style={s.skillColumnsRow}>
+            {projectSkills.map(skill => (
+              <View key={skill} style={s.skillColumn}>
+                <Text style={s.skillColName}>{skill}</Text>
+                <View style={s.starsRow}>
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <TouchableOpacity
+                      key={i}
+                      onPress={() => onRateSkill(skill, i)}
+                      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
+                    >
+                      <Text style={[s.star, { color: i <= (skillRatings[skill] ?? 0) ? '#F59E0B' : '#D1D5DB' }]}>★</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Badge buttons */}
+      <View style={s.badgeRow}>
+        {BADGE_DEFS.map(b => {
+          const awarded = awardedBadges.includes(b.key);
+          return (
+            <TouchableOpacity
+              key={b.key}
+              style={[s.badgeBtn, awarded && s.badgeBtnAwarded]}
+              onPress={() => onAwardBadge(b.key)}
+              activeOpacity={0.8}
+            >
+              <Text style={[s.badgeBtnIcon, awarded && { color: C.PRIMARY }]}>{b.icon}</Text>
+              <Text style={[s.badgeBtnLabel, awarded && { color: C.PRIMARY }]}>{b.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+// ─── NO SHOW CARD ─────────────────────────────────────────────────────────────
+
+function NoShowCard({
+  app, onExcuse, onConfirm, onMarkAttended, marking,
+}: {
+  app: any; onExcuse: () => void; onConfirm: () => void; onMarkAttended: () => void; marking: boolean;
+}) {
+  const name = app.applicantName ?? app.fullName ?? 'Volunteer';
+  const dateStr = fmtDate(app.sessionDate ?? app.lastSessionDate ?? app.statusUpdatedAt);
+
+  return (
+    <View style={s.card}>
+      {/* Top row */}
+      <View style={s.cardTopRow}>
+        <UserAvatar name={name} photoUrl={app.profilePhoto} size={40} />
+        <View style={{ flex: 1 }}>
+          <Text style={s.cardName}>{name}</Text>
+          <Text style={s.noShowSubtitle}>
+            Did not check in{dateStr ? ` — ${dateStr}` : ''}
+          </Text>
+        </View>
+        <View style={s.noShowChip}><Text style={s.noShowChipText}>No show</Text></View>
+      </View>
+
+      {/* Privacy note */}
+      <View style={s.noShowNote}>
+        <Text style={s.noShowNoteText}>
+          Recorded privately on reliability profile only. Not shown publicly on volunteer's impact page.
+        </Text>
+      </View>
+
+      {/* Mark attended — override if missed QR */}
+      <TouchableOpacity
+        style={[s.markAttendedBtn, { marginBottom: 8 }, marking && s.btnDisabled]}
+        onPress={onMarkAttended}
+        disabled={marking}
+        activeOpacity={0.85}
+      >
+        {marking
+          ? <ActivityIndicator color="#fff" size="small" />
+          : <Text style={s.markAttendedBtnText}>✓  Mark as Attended</Text>}
+      </TouchableOpacity>
+
+      {/* Excuse / Confirm buttons */}
+      <View style={s.twoActionRow}>
+        <TouchableOpacity style={s.excuseBtn} onPress={onExcuse} activeOpacity={0.85}>
+          <Text style={s.excuseBtnText}>Mark excused</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.confirmNoShowBtn} onPress={onConfirm} activeOpacity={0.85}>
+          <Text style={s.confirmNoShowBtnText}>Confirm no show</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ─── SCREEN ───────────────────────────────────────────────────────────────────
+
+export default function ParticipantsScreen() {
+  const nav    = useNavigation<any>();
+  const route  = useRoute<any>();
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+
+  const { projectId, orgId } = route.params ?? {};
+
+  const [apps,          setApps]          = useState<any[]>([]);
+  const [projectSkills, setProjectSkills] = useState<string[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [refreshing,    setRefreshing]    = useState(false);
+  const [reviewing,     setReviewing]     = useState<number | null>(null);
+
+  // Per-app state
+  const [markingAttended, setMarkingAttended] = useState<number | null>(null);
+
+  // Per-app state
+  const [skillRatings,  setSkillRatings]  = useState<Record<number, Record<string, number>>>({});
+  const [awardedBadges, setAwardedBadges] = useState<Record<number, string[]>>({});
+
+  // ── Load ──
+  const load = useCallback(async (isRefresh = false) => {
+    if (!projectId) return;
+    isRefresh ? setRefreshing(true) : setLoading(true);
+    try {
+      const [appsRes, projRes] = await Promise.allSettled([
+        projectApi.getApplications(projectId, { pageNumber: 1, pageSize: 200 }),
+        projectApi.get(projectId),
+      ]);
+      if (appsRes.status === 'fulfilled' && appsRes.value.data?.isSuccess)
+        setApps(appsRes.value.data.data?.items ?? []);
+      if (projRes.status === 'fulfilled' && projRes.value.data?.isSuccess)
+        setProjectSkills(
+          (projRes.value.data.data?.skills ?? []).map((sk: any) => sk.skillName ?? sk).filter(Boolean),
+        );
+    } catch {
+      Alert.alert('Error', 'Could not load participants.');
+    } finally {
+      setLoading(false); setRefreshing(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // ── Approve / Reject ──
+  const handleReview = useCallback(async (applicationId: number, statusCode: 'APPROVED' | 'REJECTED') => {
+    setReviewing(applicationId);
+    try {
+      const res = await projectApi.reviewApplication(projectId, { applicationId, statusCode });
+      if (res.data?.isSuccess) {
+        // Update locally — member stays visible in new section
+        setApps(prev => prev.map(a =>
+          a.applicationId === applicationId
+            ? { ...a, statusCode, statusUpdatedAt: new Date().toISOString() }
+            : a,
+        ));
+      } else {
+        Alert.alert('Error', res.data?.message ?? 'Could not update.');
+      }
+    } catch {
+      Alert.alert('Error', 'An error occurred.');
+    } finally {
+      setReviewing(null);
+    }
+  }, [projectId]);
+
+  // ── Manual attendance ──
+  const handleManualAttendance = useCallback((applicationId: number, name: string) => {
+    Alert.alert(
+      'Mark as Attended',
+      `Mark ${name} as attended? This will override their current status and log hours from the session.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark Attended',
+          onPress: async () => {
+            setMarkingAttended(applicationId);
+            try {
+              const res = await projectApi.manualAttendance(projectId, applicationId);
+              if (res.data?.isSuccess) {
+                setApps(prev => prev.map(a =>
+                  a.applicationId === applicationId
+                    ? { ...a, statusCode: 'ATTENDED', checkedInAt: new Date().toISOString() }
+                    : a,
+                ));
+              } else {
+                Alert.alert('Error', res.data?.message ?? 'Could not mark attendance.');
+              }
+            } catch {
+              Alert.alert('Error', 'An error occurred.');
+            } finally {
+              setMarkingAttended(null);
+            }
+          },
+        },
+      ],
+    );
+  }, [projectId]);
+
+  // ── Excuse no-show ──
+  const handleExcuse = useCallback((applicationId: number, name: string) => {
+    Alert.alert(
+      'Mark as Excused',
+      `Mark ${name}'s absence as excused? Their reliability score won't be affected.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark Excused', onPress: () => {
+            setApps(prev => prev.map(a =>
+              a.applicationId === applicationId ? { ...a, isExcused: true } : a,
+            ));
+            Alert.alert('Excused', `${name}'s absence has been marked as excused.`);
+          },
+        },
+      ],
+    );
+  }, []);
+
+  // ── Confirm no-show ──
+  const handleConfirmNoShow = useCallback((applicationId: number, name: string) => {
+    Alert.alert(
+      'Confirm No Show',
+      `Confirm ${name} did not attend? This will be recorded on their reliability profile.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', style: 'destructive', onPress: () =>
+            Alert.alert('Confirmed', 'No show recorded on reliability profile.'),
+        },
+      ],
+    );
+  }, []);
+
+  // ── Skill rating ──
+  const handleRateSkill = useCallback((appId: number, skill: string, val: number) => {
+    setSkillRatings(prev => ({ ...prev, [appId]: { ...(prev[appId] ?? {}), [skill]: val } }));
+  }, []);
+
+  // ── Award badge ──
+  const handleAwardBadge = useCallback((appId: number, key: string, name: string) => {
+    if ((awardedBadges[appId] ?? []).includes(key)) return;
+    const label = BADGE_DEFS.find(b => b.key === key)?.label ?? key;
+    Alert.alert(`Award "${label}"?`, `This badge will appear on ${name}'s profile.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Award 🎉', onPress: () => {
+          setAwardedBadges(prev => ({ ...prev, [appId]: [...(prev[appId] ?? []), key] }));
+          Alert.alert('Badge Awarded!', `"${label}" awarded to ${name}.`);
+        },
+      },
+    ]);
+  }, [awardedBadges]);
+
+  // ── Derived sections (ALL statuses covered — no member ever disappears) ──
+  const pendingApps  = apps.filter(a => a.statusCode === 'PENDING');
+  const approvedApps = apps.filter(a => a.statusCode === 'APPROVED');
+  const attendedApps = apps.filter(a => a.statusCode === 'ATTENDED');
+  const noShowApps   = apps.filter(a => a.statusCode === 'NO_SHOW');
+
+  const counts = {
+    approved: approvedApps.length,
+    pending:  pendingApps.length,
+    noShow:   noShowApps.length,
+    attended: attendedApps.length,
+  };
+
+  // Last session date label
+  const lastSessionSrc = [...attendedApps, ...noShowApps][0];
+  const lastSessionLabel = fmtDate(
+    lastSessionSrc?.sessionDate ?? lastSessionSrc?.lastSessionDate ?? lastSessionSrc?.statusUpdatedAt,
+  ).toUpperCase();
+
+  if (loading) {
+    return (
+      <SafeAreaView style={s.container} edges={['top']}>
+        <View style={s.centered}><ActivityIndicator size="large" color={C.PRIMARY} /></View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={s.container} edges={['top']}>
+
+      {/* ── Header ── */}
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={s.backArrow}>←</Text>
+        </TouchableOpacity>
+        <Text style={s.headerTitle}>Participants</Text>
+        {counts.pending > 0
+          ? <View style={s.pendingBadge}><Text style={s.pendingBadgeText}>{counts.pending} pending</Text></View>
+          : <View style={{ width: 72 }} />}
+      </View>
+
+      {/* ── KPI strip ── */}
+      <View style={s.kpiStrip}>
+        {[
+          { val: counts.approved, lbl: 'Approved', color: C.PRIMARY  },
+          { val: counts.pending,  lbl: 'Pending',  color: '#D97706'  },
+          { val: counts.noShow,   lbl: 'No shows', color: '#EF4444'  },
+          { val: counts.attended, lbl: 'Attended', color: '#2563EB'  },
+        ].map((k, i) => (
+          <React.Fragment key={k.lbl}>
+            {i > 0 && <View style={s.kpiDiv} />}
+            <View style={s.kpiItem}>
+              <Text style={[s.kpiVal, { color: k.color }]}>{k.val}</Text>
+              <Text style={s.kpiLbl}>{k.lbl}</Text>
+            </View>
+          </React.Fragment>
+        ))}
+      </View>
+
+      {/* ── Scrollable content ── */}
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 40 }]}
+        showsVerticalScrollIndicator={false}
+        refreshing={refreshing}
+        onRefresh={() => load(true)}
+      >
+        {/* ── PENDING APPLICATIONS ── */}
+        {pendingApps.length > 0 && (
+          <>
+            <SectionHeader title={`PENDING APPLICATIONS (${pendingApps.length})`} />
+            {pendingApps.map(app => (
+              <PendingCard
+                key={app.applicationId}
+                app={app}
+                reviewing={reviewing === app.applicationId}
+                onApprove={() => handleReview(app.applicationId, 'APPROVED')}
+                onReject={() =>
+                  Alert.alert('Reject Application', `Reject ${app.applicantName ?? 'this volunteer'}?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Reject', style: 'destructive', onPress: () => handleReview(app.applicationId, 'REJECTED') },
+                  ])
+                }
+                onProfile={() => nav.navigate('VolunteerProfile', { app, projectId, orgId })}
+              />
+            ))}
+          </>
+        )}
+
+        {/* ── APPROVED — UPCOMING ── */}
+        {approvedApps.length > 0 && (
+          <>
+            <SectionHeader title={`APPROVED — UPCOMING (${approvedApps.length})`} />
+            {approvedApps.map(app => (
+              <ApprovedCard
+                key={app.applicationId}
+                app={app}
+                onProfile={() => nav.navigate('VolunteerProfile', { app, projectId, orgId })}
+                onMarkAttended={() => handleManualAttendance(app.applicationId, app.applicantName ?? 'Volunteer')}
+                marking={markingAttended === app.applicationId}
+              />
+            ))}
+          </>
+        )}
+
+        {/* ── ATTENDED — LAST SESSION ── */}
+        {attendedApps.length > 0 && (
+          <>
+            <SectionHeader title={`ATTENDED — LAST SESSION${lastSessionLabel ? ` (${lastSessionLabel})` : ''}`} />
+            {attendedApps.map(app => (
+              <AttendedCard
+                key={app.applicationId}
+                app={app}
+                projectSkills={projectSkills}
+                skillRatings={skillRatings[app.applicationId] ?? {}}
+                onRateSkill={(skill, val) => handleRateSkill(app.applicationId, skill, val)}
+                awardedBadges={awardedBadges[app.applicationId] ?? []}
+                onAwardBadge={key => handleAwardBadge(app.applicationId, key, app.applicantName ?? 'volunteer')}
+              />
+            ))}
+          </>
+        )}
+
+        {/* ── NO SHOWS — LAST SESSION ── */}
+        {noShowApps.length > 0 && (
+          <>
+            <SectionHeader title="NO SHOWS — LAST SESSION" />
+            {noShowApps.map(app => (
+              <NoShowCard
+                key={app.applicationId}
+                app={app}
+                onExcuse={() => handleExcuse(app.applicationId, app.applicantName ?? 'Volunteer')}
+                onConfirm={() => handleConfirmNoShow(app.applicationId, app.applicantName ?? 'Volunteer')}
+                onMarkAttended={() => handleManualAttendance(app.applicationId, app.applicantName ?? 'Volunteer')}
+                marking={markingAttended === app.applicationId}
+              />
+            ))}
+          </>
+        )}
+
+        {/* ── Empty state ── */}
+        {apps.length === 0 && (
+          <View style={s.emptyState}>
+            <Text style={{ fontSize: 40, marginBottom: 10 }}>👥</Text>
+            <Text style={s.emptyText}>No participants yet.</Text>
+            <Text style={s.emptySub}>Applications will appear here once volunteers apply.</Text>
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.BG },
+  centered:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scroll:    { padding: 14 },
+
+  // Header
+  header:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  backBtn:          { padding: 4, minWidth: 36 },
+  backArrow:        { fontSize: 20, color: C.PRIMARY },
+  headerTitle:      { fontSize: 16, fontWeight: '700', color: C.TEXT },
+  pendingBadge:     { backgroundColor: '#FEF3C7', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3 },
+  pendingBadgeText: { fontSize: 11, color: '#D97706', fontWeight: '700' },
+
+  // KPI strip
+  kpiStrip: { flexDirection: 'row', backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER, paddingVertical: 12 },
+  kpiItem:  { flex: 1, alignItems: 'center' },
+  kpiVal:   { fontSize: 18, fontWeight: '800' },
+  kpiLbl:   { fontSize: 10, color: C.TEXT2, marginTop: 2 },
+  kpiDiv:   { width: 1, backgroundColor: C.BORDER, marginVertical: 4 },
+
+  // Section header
+  sectionHeader: { fontSize: 11, fontWeight: '700', color: C.TEXT2, letterSpacing: 0.5, marginTop: 20, marginBottom: 10 },
+
+  // Card base
+  card:       { backgroundColor: C.CARD, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
+  cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 },
+  cardName:   { fontSize: 14, fontWeight: '700', color: C.TEXT },
+  cardSub:    { fontSize: 11, color: C.TEXT2, marginTop: 2, lineHeight: 16 },
+
+  // Status chips
+  pendingChip:      { backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
+  pendingChipText:  { fontSize: 11, fontWeight: '700', color: '#D97706' },
+  approvedChip:     { backgroundColor: '#D1FAE5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
+  approvedChipText: { fontSize: 11, fontWeight: '700', color: '#059669' },
+  attendedChip:     { backgroundColor: '#D1FAE5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
+  attendedChipText: { fontSize: 11, fontWeight: '700', color: '#059669' },
+  noShowChip:       { backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
+  noShowChipText:   { fontSize: 11, fontWeight: '700', color: '#EF4444' },
+
+  // Reliability box (pending card)
+  reliabilityBox:      { backgroundColor: C.BG, borderRadius: 10, padding: 12, marginBottom: 10 },
+  reliabilityHdr:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  reliabilityHdrText:  { fontSize: 11, color: C.TEXT2, flex: 1 },
+  privateChip:         { backgroundColor: '#E0F2FE', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  privateChipText:     { fontSize: 10, color: '#0284C7', fontWeight: '700' },
+  reliabilityRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  reliabilityKey:      { fontSize: 11, color: C.TEXT2, width: 72 },
+  progressTrack:       { flex: 1, height: 6, backgroundColor: C.BORDER, borderRadius: 3, overflow: 'hidden' },
+  progressFill:        { height: 6, borderRadius: 3 },
+  reliabilityVal:      { fontSize: 11, fontWeight: '700', width: 36, textAlign: 'right' },
+  reliabilityStats:    { flexDirection: 'row', gap: 12, marginTop: 6, flexWrap: 'wrap' },
+  reliabilityStatItem: { fontSize: 11, color: C.TEXT2, fontWeight: '500' },
+
+  // Motivation (pending card)
+  motivationBox:  { backgroundColor: C.INPUT_BG, borderRadius: 8, padding: 10, marginBottom: 10 },
+  motivationText: { fontSize: 12, color: C.TEXT2, fontStyle: 'italic', lineHeight: 18 },
+
+  // Action rows
+  threeActionRow: { flexDirection: 'row', gap: 8 },
+  approveBtn:     { flex: 1.2, backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  approveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  rejectBtn:      { flex: 1, backgroundColor: '#FEF2F2', borderRadius: 10, paddingVertical: 11, alignItems: 'center', borderWidth: 1, borderColor: '#FECACA' },
+  rejectBtnText:  { color: '#EF4444', fontSize: 13, fontWeight: '700' },
+  profileBtn:     { flex: 0.8, backgroundColor: C.INPUT_BG, borderRadius: 10, paddingVertical: 11, alignItems: 'center', borderWidth: 1, borderColor: C.BORDER },
+  profileBtnText: { color: C.TEXT, fontSize: 13, fontWeight: '600' },
+  btnDisabled:    { opacity: 0.5 },
+
+  // Approved card
+  approvedCardFooter: { borderTopWidth: 1, borderTopColor: C.BORDER, paddingTop: 10, marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  viewProfileRow:     { borderTopWidth: 1, borderTopColor: C.BORDER, paddingTop: 10, marginTop: 2, alignItems: 'flex-end' },
+  viewProfileText:    { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
+
+  // Mark attended button (shared by ApprovedCard + NoShowCard)
+  markAttendedBtn:     { backgroundColor: '#2563EB', borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  markAttendedBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+
+  // Attended card — check-in line
+  checkinRow:  { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  checkinIcon: { fontSize: 12, color: '#2563EB' },
+  checkinLine: { fontSize: 12, color: '#2563EB', fontWeight: '500' },
+
+  // Attended card — skill rating area
+  skillRatingWrap:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12, paddingTop: 4, borderTopWidth: 1, borderTopColor: C.BORDER },
+  rateSkillsLabel:  { fontSize: 12, color: C.TEXT2, paddingTop: 2, width: 68, flexShrink: 0 },
+  skillColumnsRow:  { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
+  skillColumn:      { alignItems: 'center', gap: 5 },
+  skillColName:     { fontSize: 11, color: C.TEXT, fontWeight: '600' },
+  starsRow:         { flexDirection: 'row', gap: 2 },
+  star:             { fontSize: 17 },
+
+  // Badge buttons
+  badgeRow:        { flexDirection: 'row', gap: 8 },
+  badgeBtn:        { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: C.BORDER, backgroundColor: C.CARD, gap: 4 },
+  badgeBtnAwarded: { borderColor: C.PRIMARY, backgroundColor: `${C.PRIMARY}10` },
+  badgeBtnIcon:    { fontSize: 19, color: C.TEXT2 },
+  badgeBtnLabel:   { fontSize: 10, fontWeight: '600', color: C.TEXT2, textAlign: 'center' },
+
+  // No show card
+  noShowSubtitle: { fontSize: 11, color: '#EF4444', marginTop: 2, fontWeight: '500' },
+  noShowNote:     { backgroundColor: '#FFFBEB', borderRadius: 8, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: '#FDE68A' },
+  noShowNoteText: { fontSize: 11, color: '#92400E', lineHeight: 17 },
+
+  twoActionRow:         { flexDirection: 'row', gap: 8 },
+  excuseBtn:            { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: 'center', borderWidth: 1.5, borderColor: '#86EFAC', backgroundColor: '#F0FDF4' },
+  excuseBtnText:        { color: '#16A34A', fontSize: 13, fontWeight: '700' },
+  confirmNoShowBtn:     { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: 'center', borderWidth: 1.5, borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
+  confirmNoShowBtnText: { color: '#EF4444', fontSize: 13, fontWeight: '700' },
+
+  // Empty state
+  emptyState: { alignItems: 'center', paddingTop: 60 },
+  emptyText:  { fontSize: 15, fontWeight: '600', color: C.TEXT, marginBottom: 6 },
+  emptySub:   { fontSize: 13, color: C.TEXT2, textAlign: 'center' },
+});
