@@ -61,7 +61,7 @@ interface Props {
 }
 
 export default function CreateFeedPostModal({
-  visible, onClose, onPosted, user, activeOrg, roleLabel = 'Admin',
+  visible, onClose, onPosted, user, activeOrg, roleLabel = 'Member',
 }: Props) {
   const insets   = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);

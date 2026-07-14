@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
+  Modal,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,16 +20,23 @@ import { getMyProfile } from '../../api/user.api';
 import { getMyOrgs } from '../../api/user.api';
 import { sosApi } from '../../api/sos.api';
 import { useAuthStore } from '../../store/authStore';
+import { useAdminStore } from '../../store/adminStore';
 import type { UserProfile, Organisation } from '../../types/api.types';
 
 const ACTIVITY_ITEMS = [
   { icon: '✏️', label: 'Edit Profile',       screen: 'EditProfile' },
   { icon: '🏢', label: 'Admin Dashboard',     screen: 'AdminTabs' },
   { icon: '🏛', label: 'My Organizations',   screen: 'MyOrgs' },
-  { icon: '📋', label: 'My Applications',    screen: 'AllProjects' },
   { icon: '💛', label: 'My Donations',        screen: 'MyDonations' },
   { icon: '↗', label: 'Share Profile',       screen: 'ShareProfile' },
 ];
+
+// Returns true if the org is one the user administers (ADMIN or FOUNDER role).
+function isAdminOrg(o: Organisation): boolean {
+  const vals = [o.myRoleCode, o.myRole, (o as any).roleCode]
+    .map((v: any) => (v ?? '').toString().toUpperCase().trim());
+  return vals.some((v) => v === 'FOUNDER' || v === 'ADMIN');
+}
 
 const SETTINGS_ITEMS = [
   { icon: '🔔', label: 'Notifications',       screen: 'Notifications' },
@@ -38,12 +48,15 @@ export default function ProfileScreen() {
   const nav    = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { logout } = useAuthStore();
+  const { setSelectedOrg, setAdminOrgs } = useAdminStore();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [orgs, setOrgs] = useState<Organisation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sosChecking, setSosChecking] = useState(false);
+  const [showAdminPicker, setShowAdminPicker] = useState(false);
+  const [adminPickerOrgs, setAdminPickerOrgs] = useState<Organisation[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -98,6 +111,36 @@ export default function ProfileScreen() {
       { text: 'Sign Out', style: 'destructive', onPress: logout },
     ]);
   }, [logout]);
+
+  // Admin Dashboard entry point — filters to ADMIN/FOUNDER orgs before navigating.
+  const handleAdminDashboard = useCallback(() => {
+    const adminOrgs = orgs.filter(isAdminOrg);
+
+    if (adminOrgs.length === 0) {
+      Alert.alert(
+        'No Admin Access',
+        'You are not managing any organisation yet. Create one to access the Admin Dashboard.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Create Organisation', onPress: () => nav.navigate('CreateOrg') },
+        ],
+      );
+      return;
+    }
+
+    // Pre-populate the admin store so AdminDashboardScreen loads the right org immediately.
+    setAdminOrgs(adminOrgs);
+
+    if (adminOrgs.length === 1) {
+      setSelectedOrg(adminOrgs[0]);
+      nav.navigate('AdminTabs');
+      return;
+    }
+
+    // Multiple admin orgs — let user pick first.
+    setAdminPickerOrgs(adminOrgs);
+    setShowAdminPicker(true);
+  }, [orgs, nav, setAdminOrgs, setSelectedOrg]);
 
   const initials = [profile?.firstName?.[0], profile?.lastName?.[0]]
     .filter(Boolean).join('').toUpperCase() || 'ME';
@@ -183,7 +226,7 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 key={item.screen}
                 style={[styles.menuItem, index < ACTIVITY_ITEMS.length - 1 && styles.menuItemBorder]}
-                onPress={() => nav.navigate(item.screen)}
+                onPress={item.screen === 'AdminTabs' ? handleAdminDashboard : () => nav.navigate(item.screen)}
                 accessibilityLabel={item.label}
               >
                 <Text style={styles.menuIcon}>{item.icon}</Text>
@@ -258,6 +301,54 @@ export default function ProfileScreen() {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* ── Admin org picker (shown when user admins multiple orgs) ─────── */}
+      <Modal
+        visible={showAdminPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAdminPicker(false)}
+      >
+        <Pressable style={styles.pickerOverlay} onPress={() => setShowAdminPicker(false)}>
+          <Pressable style={[styles.pickerSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <View style={styles.pickerHandle} />
+            <Text style={styles.pickerTitle}>Select Organisation</Text>
+            <Text style={styles.pickerSub}>Choose an NGO to manage</Text>
+            <FlatList
+              data={adminPickerOrgs}
+              keyExtractor={(o) => String(o.orgId)}
+              ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: C.BORDER }} />}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.pickerRow}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setShowAdminPicker(false);
+                    setSelectedOrg(item);
+                    nav.navigate('AdminTabs');
+                  }}
+                >
+                  <View style={styles.pickerOrgIcon}>
+                    {item.logoUrl ? (
+                      <Image source={{ uri: item.logoUrl }} style={styles.pickerOrgImg} resizeMode="cover" />
+                    ) : (
+                      <Text style={styles.pickerOrgInitials}>
+                        {(item.orgName ?? 'NG').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pickerOrgName} numberOfLines={1}>{item.orgName}</Text>
+                    <Text style={styles.pickerOrgRole}>{item.myRole ?? item.myRoleCode ?? 'Admin'}</Text>
+                  </View>
+                  <Text style={styles.pickerChevron}>›</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -298,4 +389,18 @@ const styles = StyleSheet.create({
   tagText:           { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
   signOutBtn:        { marginHorizontal: 14, marginTop: 4, marginBottom: 16, borderWidth: 1, borderColor: C.RED, borderRadius: 12, padding: 14, alignItems: 'center' },
   signOutText:       { color: C.RED, fontSize: 14, fontWeight: '600' },
+
+  // Admin org picker modal
+  pickerOverlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  pickerSheet:       { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12, paddingHorizontal: 0, maxHeight: '70%' },
+  pickerHandle:      { width: 40, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginBottom: 16 },
+  pickerTitle:       { fontSize: 16, fontWeight: '700', color: C.TEXT, textAlign: 'center', marginBottom: 4 },
+  pickerSub:         { fontSize: 13, color: C.TEXT2, textAlign: 'center', marginBottom: 16 },
+  pickerRow:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
+  pickerOrgIcon:     { width: 44, height: 44, borderRadius: 22, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  pickerOrgImg:      { width: 44, height: 44, borderRadius: 22 },
+  pickerOrgInitials: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  pickerOrgName:     { fontSize: 15, fontWeight: '600', color: C.TEXT },
+  pickerOrgRole:     { fontSize: 12, color: C.TEXT2, marginTop: 2 },
+  pickerChevron:     { fontSize: 20, color: C.TEXT3 },
 });

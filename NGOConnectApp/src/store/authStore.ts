@@ -2,6 +2,7 @@ import {create} from 'zustand';
 import {UserProfile, AuthTokens} from '../types/api.types';
 import {tokenStorage} from '../api/apiClient';
 import {authApi} from '../api/auth.api';
+import {userApi} from '../api/user.api';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -13,6 +14,7 @@ interface AuthState {
   login: (tokens: AuthTokens, user?: UserProfile) => void;
   logout: () => Promise<void>;
   setUser: (user: UserProfile) => void;
+  loadProfile: () => Promise<void>;
   checkAuth: () => boolean;
 }
 
@@ -52,6 +54,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   setUser: (user: UserProfile) => set({user}),
+
+  // Fetches the logged-in user's profile and caches it in the store.
+  // Called by RootNavigator on app start (covers both new logins and session restores).
+  loadProfile: async () => {
+    try {
+      const res = await userApi.getMyProfile();
+      if (res.data?.isSuccess && res.data.data) {
+        set({ user: res.data.data });
+      }
+    } catch { /* fail silently — screens fall back to 'ME' / placeholder */ }
+  },
 
   checkAuth: () => {
     const token = tokenStorage.getAccessToken();

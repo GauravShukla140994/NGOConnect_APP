@@ -67,6 +67,10 @@ export const projectApi = {
   list: (params: AdminListParams) =>
     apiClient.get<ApiResponse<PagedResult<any>>>('/project/list', { params }),
 
+  // Personalised nearby feed for home screen
+  getNearbyFeed: (params: { userLat?: number; userLon?: number; pageNumber?: number; pageSize?: number }) =>
+    apiClient.get<ApiResponse<PagedResult<any>>>('/project/nearby-feed', { params }),
+
   // Skills
   addSkill: (projectId: number, skillName: string, isRequired = false) =>
     apiClient.post<ApiResponse<null>>(`/project/${projectId}/skills`, { skillName, isRequired }),
@@ -115,6 +119,8 @@ export const projectApi = {
 // -- Named exports --
 
 export const list         = (params: AdminListParams) => projectApi.list(params);
+export const getNearbyFeed = (params: { userLat?: number; userLon?: number; pageNumber?: number; pageSize?: number }) =>
+  projectApi.getNearbyFeed(params);
 export const get          = (projectId: number) => projectApi.get(projectId);
 export const apply        = (projectId: number, payload?: { motivation?: string; requestedSessions?: string }) => projectApi.apply(projectId, payload);
 export const create       = (data: CreateProjectPayload) => projectApi.create(data);

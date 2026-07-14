@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppConfig from '../../config/AppConfig';
 import { projectApi } from '../../api/project.api';
 import type { UserApplication } from '../../types/api.types';
@@ -81,6 +82,7 @@ interface ProjectDetail {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ProjectDetailModal({ visible, application, onClose, onScanQR }: Props) {
+  const insets = useSafeAreaInsets();
   const [detail,  setDetail]  = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -167,7 +169,7 @@ export default function ProjectDetailModal({ visible, application, onClose, onSc
           </TouchableOpacity>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
           {/* Project & org */}
           <Text style={styles.projectName}>{app.projectName}</Text>
           <Text style={styles.orgName}>{app.orgName}</Text>
@@ -250,7 +252,7 @@ export default function ProjectDetailModal({ visible, application, onClose, onSc
         </ScrollView>
 
         {/* CTA Buttons */}
-        <View style={styles.ctaWrap}>
+        <View style={[styles.ctaWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           {isUpcoming ? (
             <>
               <View style={[styles.registeredChip]}>
@@ -338,7 +340,7 @@ const styles = StyleSheet.create({
   },
   skillChipText:    { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
 
-  ctaWrap:          { paddingTop: 12, paddingBottom: 24, gap: 10 },
+  ctaWrap:          { paddingTop: 12, gap: 10 },  // paddingBottom set dynamically via insets.bottom
   registeredChip:   {
     alignSelf: 'center',
     backgroundColor: '#D1FAE5', borderRadius: 20,

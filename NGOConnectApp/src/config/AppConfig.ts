@@ -5,11 +5,17 @@
  * To go live: change BASE_URL to production URL — zero other changes needed.
  */
 
+// ── Environment URLs ─────────────────────────────────────────────────────────
+// To build a Stage APK: set BASE_URL = STAGE_API_URL (release build variant)
+const DEV_API_URL   = 'http://10.55.200.135:58411/api/v1';
+const STAGE_API_URL = 'https://ngoconnectapi-staging.up.railway.app/api/v1';
+const PROD_API_URL  = 'https://api.ngoconnect.app/api/v1';
+
 const AppConfig = {
   // ── Base URL ─────────────────────────────────────────────────────────────
-  BASE_URL: __DEV__
-    ? 'http://10.55.200.135:58411/api/v1'
-    : 'https://api.ngoconnect.app/api/v1',
+  // Dev: local machine  |  Release: production
+  // For Stage APK: swap PROD_API_URL → STAGE_API_URL before building
+  BASE_URL: STAGE_API_URL,
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   JWT_EXPIRY_MINUTES: 15,

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -25,7 +26,7 @@ const KPI_GREEN  = { bg: '#EDFAF3', number: '#16A34A' };
 const KPI_PURPLE = { bg: '#F0EDFF', number: '#6B4EFF' };
 const KPI_ORANGE = { bg: '#FFF5EE', number: '#FF8C42' };
 
-const PALETTE = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A'];
+const PALETTE = ['#6B4EFF', '#059669', '#FF8C42', '#2563EB', '#B45309', '#16A34A'];
 function avatarColor(name: string) {
   let h = 0;
   for (let i = 0; i < name.length; i++) { h = (h * 31 + name.charCodeAt(i)) % PALETTE.length; }
@@ -33,6 +34,31 @@ function avatarColor(name: string) {
 }
 function initials(name: string) {
   return (name || 'NG').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+// Renders org logo if URL is valid + loads successfully, else colour-coded initials.
+// Uses local state so a broken image falls back gracefully without re-rendering the list.
+function OrgAvatar({ org }: { org: Organisation }) {
+  const name    = org.orgName ?? (org as any).name ?? 'NGO';
+  const col     = avatarColor(name);
+  const hasLogo = typeof org.logoUrl === 'string' && org.logoUrl.trim().startsWith('http');
+  const [imgErr, setImgErr] = React.useState(false);
+
+  if (hasLogo && !imgErr) {
+    return (
+      <Image
+        source={{ uri: org.logoUrl! }}
+        style={styles.sheetAvatar}
+        resizeMode="cover"
+        onError={() => setImgErr(true)}
+      />
+    );
+  }
+  return (
+    <View style={[styles.sheetAvatar, { backgroundColor: col }]}>
+      <Text style={styles.sheetAvatarText}>{initials(name)}</Text>
+    </View>
+  );
 }
 
 function KpiCard({ value, label, sub, colors }: {
@@ -162,6 +188,7 @@ export default function AdminDashboardScreen() {
   const pendingApps        = dashboard?.pendingApplications        ?? 0;
   const pendingProjApps    = dashboard?.pendingProjectApplications ?? 0;
   const totalPending       = pendingApps + pendingProjApps;
+  const followerCount      = dashboard?.followerCount ?? 0;
   const recentActivity = dashboard?.recentActivity ?? [];
 
   const goAdmin = (screen: string) => nav.navigate(screen, { orgId: selectedOrg?.orgId });
@@ -266,6 +293,14 @@ export default function AdminDashboardScreen() {
                 colors={KPI_ORANGE}
               />
             </View>
+            <View style={styles.kpiRow}>
+              <KpiCard
+                value={followerCount.toLocaleString('en-IN')}
+                label="Followers"
+                sub={followerCount > 0 ? followerCount + ' people following' : 'No followers yet'}
+                colors={KPI_BLUE}
+              />
+            </View>
           </View>
 
           {/* Quick Actions: 2 explicit rows of 2 - NO flexWrap+gap */}
@@ -352,29 +387,51 @@ export default function AdminDashboardScreen() {
         <Pressable style={styles.sheetBackdrop} onPress={() => setShowOrgPicker(false)}>
           <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
             <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Switch Organisation</Text>
-            {adminOrgs.map((org) => {
-              const name     = org.orgName ?? (org as any).name ?? 'NGO';
-              const col      = avatarColor(name);
-              const isActive = selectedOrg?.orgId === org.orgId;
-              return (
-                <TouchableOpacity
-                  key={org.orgId}
-                  style={[styles.sheetRow, isActive && styles.sheetRowActive]}
-                  onPress={() => { setSelectedOrg(org); setShowOrgPicker(false); }}
-                  accessibilityLabel={'Switch to ' + name}
-                >
-                  <View style={[styles.sheetAvatar, { backgroundColor: col }]}>
-                    <Text style={styles.sheetAvatarText}>{initials(name)}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.sheetOrgName, isActive && { color: C.PRIMARY }]}>{name}</Text>
-                    <Text style={styles.sheetOrgRole}>{(org as any).myRole ?? 'Admin'}</Text>
-                  </View>
-                  {isActive && <Text style={{ color: C.PRIMARY, fontSize: 16 }}>{'✓'}</Text>}
-                </TouchableOpacity>
-              );
-            })}
+            {/* Header row: title + subtitle + close button */}
+            <View style={styles.sheetHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetTitle}>Switch Organisation</Text>
+                <Text style={styles.sheetSubtitle}>Select an organization or create a new one</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowOrgPicker(false)} hitSlop={10}>
+                <Text style={styles.sheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {/* Scrollable org list */}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              style={styles.sheetList}
+              keyboardShouldPersistTaps="handled"
+            >
+              {adminOrgs.map((org) => {
+                const name     = org.orgName ?? (org as any).name ?? 'NGO';
+                const isActive = selectedOrg?.orgId === org.orgId;
+                return (
+                  <TouchableOpacity
+                    key={org.orgId}
+                    style={[styles.sheetRow, isActive && styles.sheetRowActive]}
+                    onPress={() => { setSelectedOrg(org); setShowOrgPicker(false); }}
+                    accessibilityLabel={'Switch to ' + name}
+                  >
+                    <OrgAvatar org={org} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.sheetOrgName, isActive && { color: C.PRIMARY }]}>{name}</Text>
+                      <Text style={styles.sheetOrgRole}>
+                        {(org as any).myRole ?? 'Admin'}
+                        {(org as any).memberCount ? ` · ${(org as any).memberCount} members` : ''}
+                      </Text>
+                    </View>
+                    {isActive ? (
+                      <View style={styles.sheetActiveBadge}>
+                        <Text style={styles.sheetActiveTick}>✓</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.sheetChevron}>›</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -468,14 +525,21 @@ const styles = StyleSheet.create({
   createBtn:     { backgroundColor: C.PRIMARY, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 12 },
   createBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
-  sheetBackdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  sheet:           { backgroundColor: C.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10, paddingHorizontal: 17 },
-  sheetHandle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginBottom: 18 },
-  sheetTitle:      { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
-  sheetRow:        { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.BORDER },
-  sheetRowActive:  { backgroundColor: C.PRIMARY + '08' },
-  sheetAvatar:     { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  sheetAvatarText: { color: '#fff', fontSize: 13, fontWeight: '800' },
-  sheetOrgName:    { fontSize: 14, fontWeight: '600', color: C.TEXT },
-  sheetOrgRole:    { fontSize: 11, color: C.TEXT2, marginTop: 1 },
+  sheetBackdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  sheet:            { backgroundColor: C.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10, paddingHorizontal: 17 },
+  sheetHandle:      { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginBottom: 14 },
+  sheetHeaderRow:   { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
+  sheetTitle:       { fontSize: 16, fontWeight: '800', color: C.TEXT },
+  sheetSubtitle:    { fontSize: 12, color: C.TEXT2, marginTop: 2 },
+  sheetClose:       { fontSize: 18, color: C.TEXT2, paddingLeft: 12, marginTop: 2 },
+  sheetList:        { maxHeight: 420 },
+  sheetRow:         { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderTopWidth: 1, borderTopColor: C.BORDER },
+  sheetRowActive:   { backgroundColor: C.PRIMARY + '08' },
+  sheetAvatar:      { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  sheetAvatarText:  { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
+  sheetOrgName:     { fontSize: 14, fontWeight: '600', color: C.TEXT },
+  sheetOrgRole:     { fontSize: 11, color: C.TEXT2, marginTop: 1 },
+  sheetActiveBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  sheetActiveTick:  { color: '#fff', fontSize: 14, fontWeight: '700' },
+  sheetChevron:     { fontSize: 20, color: C.TEXT3, marginRight: 2 },
 });

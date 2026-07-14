@@ -5,6 +5,7 @@ import {
   Animated,
   Image,
   LayoutChangeEvent,
+  PanResponder,
   RefreshControl,
   ScrollView,
   Share,
@@ -376,6 +377,23 @@ export default function ImpactScreen() {
   const [detailVisible,  setDetailVisible]  = useState(false);
   const [detailApp,      setDetailApp]      = useState<UserApplication | null>(null);
 
+  // ── Swipe to change tab ──────────────────────────────────────────────────────
+  const swipeState = useRef({ tab: 'Applied' as TabKey, setTab: (_t: TabKey) => {} });
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.5,
+      onPanResponderRelease: (_, { dx, vx }) => {
+        const { tab: curTab, setTab } = swipeState.current;
+        const idx = TABS.indexOf(curTab);
+        if ((dx < -40 || vx < -0.4) && idx < TABS.length - 1) setTab(TABS[idx + 1]);
+        else if ((dx > 40 || vx > 0.4) && idx > 0) setTab(TABS[idx - 1]);
+      },
+    })
+  ).current;
+  swipeState.current = { tab: activeTab, setTab: setActiveTab };
+
   // ── Load ──
   const load = useCallback(async () => {
     try {
@@ -510,7 +528,7 @@ export default function ImpactScreen() {
           </View>
 
           {/* ── EVENTS & PROJECTS ── */}
-          <View style={s.section}>
+          <View style={s.section} {...panResponder.panHandlers}>
             <View style={s.sectionHdr}>
               <Text style={s.sectionTitle}>Events &amp; Projects</Text>
               <TouchableOpacity activeOpacity={0.7}>

@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  PanResponder,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -147,6 +148,23 @@ export default function MyProjectsScreen() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // ── Swipe to change tab ──────────────────────────────────────────────────────
+  const swipeState = useRef({ tab: 'applied' as Tab, setTab: (_t: Tab) => {} });
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.5,
+      onPanResponderRelease: (_, { dx, vx }) => {
+        const { tab: curTab, setTab: change } = swipeState.current;
+        const idx = TABS.findIndex(t => t.key === curTab);
+        if ((dx < -40 || vx < -0.4) && idx < TABS.length - 1) change(TABS[idx + 1].key);
+        else if ((dx > 40 || vx > 0.4) && idx > 0) change(TABS[idx - 1].key);
+      },
+    })
+  ).current;
+  swipeState.current = { tab, setTab };
+
   const load = useCallback(async (refresh = false) => {
     refresh ? setRefreshing(true) : setLoading(true);
     try {
@@ -175,6 +193,8 @@ export default function MyProjectsScreen() {
         <View style={{ width: 44 }} />
       </View>
 
+      {/* Swipe area — wraps tabs + content */}
+      <View style={{ flex: 1 }} {...panResponder.panHandlers}>
       {/* Tabs */}
       <View style={styles.tabBar}>
         {TABS.map((t) => (
@@ -218,6 +238,7 @@ export default function MyProjectsScreen() {
           }
         />
       )}
+      </View>{/* end swipe area */}
     </SafeAreaView>
   );
 }

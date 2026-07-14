@@ -222,13 +222,13 @@ function PollCard({ item, onLike, onVote, onComment }: {
   const anyVoted = opts.some((o) => o.isVoted);
   // For single-choice: lock all options once one is voted
   // For multi-choice: always allow toggling (unless poll is closed)
-  const pollClosed = item.pollExpiresAt ? new Date(item.pollExpiresAt) < new Date() : false;
+  const pollClosed = item.pollEndsAt ? new Date(item.pollEndsAt) < new Date() : false;
   const canVote  = isMulti ? !pollClosed : !anyVoted;
 
   // Expiry label
   let expiryLabel = '';
-  if (item.pollExpiresAt) {
-    const diff = new Date(item.pollExpiresAt).getTime() - Date.now();
+  if (item.pollEndsAt) {
+    const diff = new Date(item.pollEndsAt).getTime() - Date.now();
     if (diff > 0) {
       const days = Math.floor(diff / 86400000);
       expiryLabel = days > 0 ? `${days}d left` : 'Closing soon';

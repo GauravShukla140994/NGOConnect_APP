@@ -11,6 +11,10 @@ export const orgApi = {
   update: (orgId: number, data: Partial<Organisation>) =>
     apiClient.put<ApiResponse<null>>(`/org/${orgId}`, data),
 
+  // Called when founder fixes and resubmits a REJECTED org — status returns to PENDING
+  resubmit: (orgId: number, data: { orgName: string; about?: string; mission?: string; website?: string; contactEmail?: string; contactPhone?: string }) =>
+    apiClient.put<ApiResponse<null>>(`/org/${orgId}/resubmit`, data),
+
   list: (params: { keyword?: string; category?: string; pageNumber?: number; pageSize?: number }) =>
     apiClient.get<ApiResponse<PagedResult<Organisation>>>('/org/list', { params }),
 
@@ -74,6 +78,15 @@ export const orgApi = {
 
   moderatePost: (orgId: number, postId: number, action: 'KEEP' | 'REMOVE') =>
     apiClient.post<ApiResponse<null>>(`/org/${orgId}/community-posts/${postId}/moderate`, { action }),
+
+  // Follow / Unfollow an NGO
+  // POST   /org/{orgId}/follow — follow or re-follow
+  // DELETE /org/{orgId}/follow — soft-unfollow (row kept in OrgFollowers with IsFollowing=0)
+  followOrg: (orgId: number) =>
+    apiClient.post<ApiResponse<null>>(`/org/${orgId}/follow`),
+
+  unfollowOrg: (orgId: number) =>
+    apiClient.delete<ApiResponse<null>>(`/org/${orgId}/follow`),
 
   getDonationDashboard: (orgId: number) =>
     apiClient.get(`/org/${orgId}/donation-dashboard`),

@@ -55,6 +55,14 @@ export interface RefreshTokenRequest {
   deviceInfo: string;
 }
 
+// ── Post Permissions ─────────────────────────────────────────────────────────
+export interface PostPermissions {
+  isMember:       boolean;  // true if user is an APPROVED member of the org
+  canPost:        boolean;  // org admin's per-member posting toggle
+  maxPostsPerDay: number;   // org-configured daily limit (default 10)
+  todayPostCount: number;   // posts already created today for this org
+}
+
 // ── User ─────────────────────────────────────────────────────────────────────
 export interface UserProfile {
   userId: number;
@@ -243,10 +251,13 @@ export interface Organisation {
   isMember?: boolean;
   myRole?: string;         // e.g. 'Admin', 'Member', 'Founder'
   myRoleCode?: string;     // e.g. 'ADMIN', 'MEMBER', 'FOUNDER'
-  memberStatusCode?: string;  // APPROVED | PENDING  (user's membership status in OrgMembers)
-  orgStatusCode?: string;     // ACTIVE | PENDING | SUSPENDED  (the org's own approval status)
-  joinedAt?: string;       // ISO date string when user joined this org
+  memberStatusCode?: string;    // APPROVED | PENDING  (user's membership status in OrgMembers)
+  orgStatusCode?: string;       // PENDING | UNDER_REVIEW | APPROVED | REJECTED | SUSPENDED
+  lastRejectionReason?: string; // populated when orgStatusCode = REJECTED or SUSPENDED
+  joinedAt?: string;            // ISO date string when user joined this org
   areasOfWork?: string[];
+  followerCount?: number;         // denormalized — from Organisations.FollowerCount
+  isFollowing?: number | boolean; // 0|1 from SP (use !! to convert to boolean)
 }
 
 export interface OrgMember {
@@ -344,6 +355,7 @@ export interface OrgDashboard {
   activeProjects: number;
   pendingApplications: number;         // pending member join requests
   pendingProjectApplications?: number; // pending volunteer project applications
+  followerCount?: number;              // denormalized from Organisations.FollowerCount
   // Extended fields
   totalDonations?: number;
   totalVolunteerHours?: number;
@@ -447,7 +459,24 @@ export interface Post {
   isAnnouncement: boolean;
   campaignGoal?: number;     // for FUNDRAISING posts
   campaignRaised?: number;   // for FUNDRAISING posts
+  isFollowing?: number | boolean; // 0|1 from SP — whether current user follows this post's org
+  // Phase 1 personalised feed additions
+  isSaved?:      number | boolean; // 0|1 — whether current user has saved this post
+  saveCount?:    number;
+  shareCount?:   number;
+  isEmergency?:  number | boolean;
+  isEvergreen?:  number | boolean;
+  feedSource?:   string;           // MY_ORG | FOLLOWED_ORG | TRENDING | EMERGENCY | INTEREST | RECENT
+  feedScore?:    number;
   createdAt: string;
+}
+
+// ── Personalised Feed Page (cursor-based) ──────────────────────────────────────
+export interface FeedPageResult {
+  items:            Post[];
+  nextCursorPostId: number | null;
+  nextCursorScore:  number | null;
+  hasMore:          boolean;
 }
 
 // ── Community ─────────────────────────────────────────────────────────────────
@@ -476,7 +505,7 @@ export interface CommunityPost {
   timeAgo?: string;
   createdAt: string;
   pollOptions?: PollOption[];
-  pollExpiresAt?: string;      // ISO date when poll closes
+  pollEndsAt?: string;         // ISO date when poll closes (SP column: PollEndsAt → DynamicRow → pollEndsAt)
   pollIsMultiChoice?: boolean; // 1 = multiple options can be selected, 0/null = single-choice radio
 
   // ── EVENT_UPDATE extra fields (SP columns, DynamicRow auto-maps) ──────────

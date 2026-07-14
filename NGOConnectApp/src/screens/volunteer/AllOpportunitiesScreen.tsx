@@ -2,8 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
+  Modal,
+  Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -88,7 +92,103 @@ function buildTimeLine(item: Project): string | null {
 }
 
 
-function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => void; onPress: () => void }) {
+// ── Share URL helper ─────────────────────────────────────────────────────────
+function buildShareUrl(projectId: number): string {
+  return `https://ngoconnect.app/opportunity/${projectId}`;
+}
+
+// ── Share sheet ──────────────────────────────────────────────────────────────
+function ShareSheet({ project, onClose }: { project: Project | null; onClose: () => void }) {
+  const slideAnim = useRef(new Animated.Value(500)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const [copied, setCopied] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (project) {
+      setCopied(false);
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 320, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [project, fadeAnim, slideAnim]);
+
+  const close = () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 500, duration: 240, useNativeDriver: true }),
+    ]).start(onClose);
+  };
+
+  if (!project) return null;
+
+  const url   = buildShareUrl(project.projectId);
+  const title = project.title ?? project.projectName ?? 'Volunteer Opportunity';
+  const org   = project.orgName ?? '';
+  const schedType = deriveScheduleType(project);
+  const dateLine  = buildDateLine(project);
+  const meta  = [org, schedType, dateLine].filter(Boolean).join(' · ');
+
+  const handleCopy = async () => {
+    try {
+      // Opens native share sheet which includes "Copy" — no native clipboard package needed
+      await Share.share({ message: url, title });
+    } catch { /* cancelled */ }
+  };
+
+
+  return (
+    <Modal transparent visible={!!project} animationType="none" onRequestClose={close}>
+      {/* Backdrop */}
+      <Animated.View style={[ss.backdrop, { opacity: fadeAnim }]}>
+        <Pressable style={{ flex: 1 }} onPress={close} />
+      </Animated.View>
+
+      {/* Sheet */}
+      <Animated.View style={[ss.sheet, { transform: [{ translateY: slideAnim }], paddingBottom: insets.bottom + 20 }]}>
+        {/* Handle bar */}
+        <View style={ss.handle} />
+
+        {/* Colored header banner */}
+        <View style={ss.sheetBanner}>
+          <View style={ss.sheetBannerIcon}>
+            <Text style={{ fontSize: 22 }}>↗</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={ss.sheetTitle}>Share Opportunity</Text>
+            <Text style={ss.sheetSub}>Share with friends and networks</Text>
+          </View>
+          <TouchableOpacity onPress={close} accessibilityLabel="Close" style={ss.closeBtn}>
+            <Text style={ss.closeX}>✕</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Project preview card */}
+        <View style={ss.previewCard}>
+          <Text style={ss.previewTitle} numberOfLines={1}>{title}</Text>
+          <Text style={ss.previewMeta} numberOfLines={1}>{meta}</Text>
+        </View>
+
+        {/* URL row */}
+        <View style={ss.urlRow}>
+          <Text style={ss.urlText} numberOfLines={1} ellipsizeMode="tail">{url}</Text>
+          <TouchableOpacity style={ss.copyBtn} onPress={handleCopy}>
+            <Text style={ss.copyBtnText}>{copied ? '✓ Copied' : 'Copy'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Done button */}
+        <TouchableOpacity style={ss.doneBtn} onPress={close}>
+          <Text style={ss.doneBtnText}>Done</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+// ── OppCard ───────────────────────────────────────────────────────────────────
+function OppCard({ item, onApply, onShare, onPress }: { item: Project; onApply: () => void; onShare: () => void; onPress: () => void }) {
   const max    = item.maxParticipants ?? item.maxVolunteers ?? 0;
   const curr   = item.currentParticipants ?? item.approvedCount ?? 0;
   const spots  = item.spotsLeft ?? (max > 0 ? max - curr : null);
@@ -127,9 +227,11 @@ function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => voi
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          {item.distanceKm != null ? (
-            <Text style={styles.distChip}>{Number(item.distanceKm).toFixed(1)} km</Text>
-          ) : null}
+          {item.distanceKm != null ? (() => {
+            const km = Number(item.distanceKm);
+            const label = km < 1 ? `${Math.round(km * 1000)} M` : `${km.toFixed(1)} KM`;
+            return <Text style={styles.distChip}>📍 {label}</Text>;
+          })() : null}
           {schedType ? (
             <View style={[styles.typePill, { backgroundColor: sBg, marginTop: item.distanceKm != null ? 4 : 0 }]}>
               <Text style={[styles.typePillText, { color: sTxt }]}>{schedType}</Text>
@@ -145,7 +247,11 @@ function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => voi
       <View style={styles.infoRows}>
         {dateLine ? <Text style={styles.infoRow}>📅 {dateLine}</Text> : null}
         {timeLine  ? <Text style={styles.infoRow}>🕐 {timeLine}</Text>  : null}
-        {item.locationName ? <Text style={styles.infoRow}>📍 {item.locationName}</Text> : null}
+        {(item.locationName || item.address || item.city) ? (
+          <Text style={styles.infoRow} numberOfLines={1}>
+            📍 {item.locationName || [item.address, item.city].filter(Boolean).join(', ')}
+          </Text>
+        ) : null}
       </View>
 
       {/* Skill tags */}
@@ -180,7 +286,7 @@ function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => voi
             <Text style={styles.applyBtnText}>Apply</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={styles.shareBtn} accessibilityLabel="Share">
+        <TouchableOpacity style={styles.shareBtn} onPress={onShare} accessibilityLabel="Share">
           <Text style={styles.shareBtnText}>↗ Share</Text>
         </TouchableOpacity>
       </View>
@@ -202,6 +308,7 @@ export default function AllOpportunitiesScreen() {
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [activeType, setActiveType] = useState<string>('Any Schedule');
   const [applyProject, setApplyProject] = useState<Project | null>(null);
+  const [shareProject, setShareProject] = useState<Project | null>(null);
   const [userCoords, setUserCoords]     = useState<{ lat: number; lon: number } | null>(null);
   const searchRef = useRef('');
 
@@ -261,6 +368,10 @@ export default function AllOpportunitiesScreen() {
 
   const handleApply = useCallback((project: Project) => {
     setApplyProject(project);
+  }, []);
+
+  const handleShare = useCallback((project: Project) => {
+    setShareProject(project);
   }, []);
 
   const handleLoadMore = () => {
@@ -366,6 +477,7 @@ export default function AllOpportunitiesScreen() {
           <OppCard
             item={item}
             onApply={() => handleApply(item)}
+            onShare={() => handleShare(item)}
             onPress={() => nav.navigate('ProjectDetail', { projectId: item.projectId })}
           />
         )}
@@ -386,6 +498,11 @@ export default function AllOpportunitiesScreen() {
         visible={applyProject !== null}
         project={applyProject}
         onClose={() => setApplyProject(null)}
+      />
+
+      <ShareSheet
+        project={shareProject}
+        onClose={() => setShareProject(null)}
       />
     </SafeAreaView>
   );
@@ -416,7 +533,7 @@ const styles = StyleSheet.create({
   catPillText:       { fontSize: 11, fontWeight: '600' },
   oppTitle:          { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
   oppSub:            { fontSize: 12, color: C.TEXT2 },
-  distChip:          { fontSize: 11, fontWeight: '700', color: '#6366F1', backgroundColor: '#EEF2FF', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10, overflow: 'hidden', marginBottom: 2 },
+  distChip:          { fontSize: 10, fontWeight: '700', color: C.TEAL, backgroundColor: `${C.TEAL}20`, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10, overflow: 'hidden', marginBottom: 2 },
   typePill:          { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginBottom: 4 },
   typePillText:      { fontSize: 10, color: C.TEXT2, fontWeight: '600' },
   spotsText:         { fontSize: 12, fontWeight: '700', marginTop: 2 },
@@ -435,4 +552,32 @@ const styles = StyleSheet.create({
   shareBtnText:      { fontSize: 14, color: C.TEXT2 },
   emptyText:         { fontSize: 16, color: C.TEXT2, fontWeight: '600', marginBottom: 4 },
   emptySubText:      { fontSize: 13, color: C.TEXT3, textAlign: 'center' },
+});
+
+// ── Share sheet styles (separate object keeps main styles clean) ─────────────
+const ss = StyleSheet.create({
+  backdrop:       { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet:          { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: C.CARD, borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 20, paddingBottom: 32, paddingTop: 10 },
+  handle:         { width: 40, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginBottom: 14 },
+  sheetBanner:    { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: `${C.PRIMARY}12`, borderRadius: 14, padding: 14, marginBottom: 16 },
+  sheetBannerIcon:{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  sheetTitle:     { fontSize: 16, fontWeight: '800', color: C.PRIMARY },
+  sheetSub:       { fontSize: 12, color: C.TEXT2, marginTop: 2 },
+  closeBtn:       { padding: 4 },
+  closeX:         { fontSize: 16, color: C.TEXT2, fontWeight: '600' },
+  previewCard:    { backgroundColor: C.BG, borderRadius: 12, padding: 14, marginBottom: 14 },
+  previewTitle:   { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
+  previewMeta:    { fontSize: 12, color: C.TEXT2 },
+  urlRow:         { flexDirection: 'row', alignItems: 'center', backgroundColor: C.BG, borderRadius: 10, paddingLeft: 12, paddingRight: 4, paddingVertical: 4, marginBottom: 20, gap: 8 },
+  urlText:        { flex: 1, fontSize: 12, color: C.PRIMARY, fontWeight: '500' },
+  copyBtn:        { backgroundColor: C.PRIMARY, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  copyBtnText:    { color: '#fff', fontSize: 12, fontWeight: '700' },
+  shareViaLabel:  { fontSize: 12, color: C.TEXT3, fontWeight: '600', marginBottom: 14, letterSpacing: 0.5 },
+  shareIconRow:   { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 24 },
+  shareIconWrap:  { alignItems: 'center', gap: 6 },
+  shareIconBg:    { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  shareIconEmoji: { fontSize: 26 },
+  shareIconLabel: { fontSize: 11, color: C.TEXT2, fontWeight: '500' },
+  doneBtn:        { backgroundColor: C.PRIMARY, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
+  doneBtnText:    { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

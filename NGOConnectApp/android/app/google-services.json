@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "869899592",
+    "project_id": "ngoconnect-d46de",
+    "storage_bucket": "ngoconnect-d46de.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:869899592:android:01c1f8c77dd063fe90e77d",
+        "android_client_info": {
+          "package_name": "com.ngoconnectapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCqBl1OO_LCkn_jF4q_st07LEZSHPkT2O4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

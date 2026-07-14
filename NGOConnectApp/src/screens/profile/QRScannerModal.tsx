@@ -18,6 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
   useCameraDevice,
@@ -41,6 +42,7 @@ type ScanState = 'idle' | 'checking' | 'success' | 'error';
 export default function QRScannerModal({
   visible, projectId, projectName, onClose, onSuccess,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const device                                         = useCameraDevice('back');
   const [permission, setPermission]                   = useState<'granted' | 'denied' | 'not-determined'>('not-determined');
   const [scanState,  setScanState]                    = useState<ScanState>('idle');
@@ -102,8 +104,8 @@ export default function QRScannerModal({
       onRequestClose={onClose}
     >
       <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header — paddingTop accounts for status bar / notch */}
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title}>Scan QR to Check In</Text>
             <Text style={styles.subtitle} numberOfLines={1}>{projectName}</Text>
@@ -188,7 +190,7 @@ export default function QRScannerModal({
               )}
             </View>
 
-            <View style={styles.hintWrap}>
+            <View style={[styles.hintWrap, { paddingBottom: Math.max(insets.bottom + 12, 20) }]}>
               <Text style={styles.hint}>
                 Point your camera at the QR code shown by the project admin
               </Text>
@@ -207,10 +209,10 @@ const THICK  = 4;
 const styles = StyleSheet.create({
   container:      { flex: 1, backgroundColor: '#000' },
 
-  // Header
+  // Header — paddingTop set dynamically in JSX via Math.max(insets.top, 16)
   header:         {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#111', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20,
+    backgroundColor: '#111', paddingBottom: 16, paddingHorizontal: 20,
   },
   title:          { color: '#fff', fontSize: 17, fontWeight: '700' },
   subtitle:       { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 },
@@ -254,7 +256,7 @@ const styles = StyleSheet.create({
   },
   checkingText:   { color: '#fff', fontSize: 15, fontWeight: '600' },
 
-  // Hint
-  hintWrap:       { backgroundColor: '#111', paddingVertical: 20, paddingHorizontal: 24, alignItems: 'center' },
+  // Hint — paddingBottom set dynamically in JSX via Math.max(insets.bottom + 12, 20)
+  hintWrap:       { backgroundColor: '#111', paddingTop: 20, paddingHorizontal: 24, alignItems: 'center' },
   hint:           { color: 'rgba(255,255,255,0.65)', fontSize: 13, textAlign: 'center', lineHeight: 20 },
 });

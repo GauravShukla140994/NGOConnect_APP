@@ -25,6 +25,7 @@ import {
   getSafetyPrefs, updateSafetyPrefs,
   getMyDocuments,
 } from '../../api/user.api';
+import ContactUpdateModal from '../../components/profile/ContactUpdateModal';
 import DocumentUploadSection from '../../components/common/DocumentUploadSection';
 import { lookupApi } from '../../api/lookup.api';
 import { uploadFile } from '../../api/upload.api';
@@ -177,6 +178,10 @@ export default function EditProfileScreen() {
   const [interests,    setInterests]    = useState<UserInterest[]>([]);
   const [interestOpts, setInterestOpts] = useState<LookupValue[]>([]);
   const [selectedInterestIds, setSelectedInterestIds] = useState<number[]>([]);
+
+  // --- Contact Update Modal ---
+  const [contactModalType,    setContactModalType]    = useState<'EMAIL' | 'PHONE'>('PHONE');
+  const [contactModalVisible, setContactModalVisible] = useState(false);
 
   // --- Safety Preferences (shown in Step 0) ---
   const [emergVisibilityLkpId, setEmergVisibilityLkpId] = useState<number | undefined>(undefined);
@@ -650,25 +655,50 @@ export default function EditProfileScreen() {
             </Field>
 
             <Field label="Email">
-              <Input
-                value={email}
-                editable={false}
-                placeholder="email@example.com"
-                accessibilityLabel="Email (read only)"
-              />
-              <Text style={styles.readOnlyNote}>Email cannot be changed here</Text>
+              {email ? (
+                <>
+                  <View style={styles.lockedRow}>
+                    <Text style={styles.lockedIcon}>🔒</Text>
+                    <Text style={styles.lockedValue}>{email}</Text>
+                  </View>
+                  <Text style={styles.readOnlyNote}>Email is verified and locked to your account</Text>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={styles.addContactBtn}
+                  onPress={() => { setContactModalType('EMAIL'); setContactModalVisible(true); }}
+                  accessibilityLabel="Add email address"
+                >
+                  <Text style={styles.addContactBtnText}>+ Add Email Address</Text>
+                </TouchableOpacity>
+              )}
             </Field>
 
             <Field label="Mobile Number">
-              <View style={styles.phoneRow}>
-                <View style={[styles.inputDisabledBox, styles.countryCodeBox]}>
-                  <Text style={styles.countryCodeText}>{countryCode || '+?'}</Text>
-                </View>
-                <View style={[styles.inputDisabledBox, { flex: 1 }]}>
-                  <Text style={styles.disabledText}>{mobile || '—'}</Text>
-                </View>
-              </View>
-              <Text style={styles.readOnlyNote}>Mobile number cannot be changed here</Text>
+              {mobile ? (
+                <>
+                  <View style={styles.lockedRow}>
+                    <Text style={styles.lockedIcon}>🔒</Text>
+                    <View style={styles.phoneRow}>
+                      <View style={[styles.inputDisabledBox, styles.countryCodeBox]}>
+                        <Text style={styles.countryCodeText}>{countryCode || '+91'}</Text>
+                      </View>
+                      <View style={[styles.inputDisabledBox, { flex: 1 }]}>
+                        <Text style={styles.disabledText}>{mobile}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Text style={styles.readOnlyNote}>Mobile is verified and locked to your account</Text>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={styles.addContactBtn}
+                  onPress={() => { setContactModalType('PHONE'); setContactModalVisible(true); }}
+                  accessibilityLabel="Add phone number"
+                >
+                  <Text style={styles.addContactBtnText}>+ Add Phone Number</Text>
+                </TouchableOpacity>
+              )}
             </Field>
 
             <Field label="Gender">
@@ -1153,6 +1183,18 @@ export default function EditProfileScreen() {
       </View>
 
       {renderDobPicker()}
+
+      {/* Contact Update Modal (add phone / add email) */}
+      <ContactUpdateModal
+        visible={contactModalVisible}
+        type={contactModalType}
+        onClose={() => setContactModalVisible(false)}
+        onVerified={(verified) => {
+          if (contactModalType === 'EMAIL') setEmail(verified);
+          else setMobile(verified);
+          setContactModalVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -1333,6 +1375,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.30, shadowRadius: 8, elevation: 5,
   },
   nextText:       { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Locked contact fields
+  lockedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: C.BG, borderWidth: 1.5, borderColor: C.BORDER,
+    borderRadius: 10, paddingHorizontal: 13, paddingVertical: 12,
+  },
+  lockedIcon:  { fontSize: 16 },
+  lockedValue: { flex: 1, fontSize: 14, color: C.TEXT2 },
+
+  // Add contact button (shown when field is empty)
+  addContactBtn: {
+    borderWidth: 1.5, borderColor: C.PRIMARY, borderStyle: 'dashed',
+    borderRadius: 10, paddingVertical: 13,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.PRIMARY + '0A',
+  },
+  addContactBtnText: { fontSize: 14, color: C.PRIMARY, fontWeight: '700' },
 
   // DOB date picker button
   dobPickerBtn: {

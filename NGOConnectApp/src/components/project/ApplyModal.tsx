@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Project } from '../../types/api.types';
 import * as projectApi from '../../api/project.api';
 
@@ -121,6 +122,7 @@ interface Props {
 
 /* ─── component ─────────────────────────────────────────────────────────────── */
 export default function ApplyModal({ visible, project, onClose, onSuccess }: Props) {
+  const insets = useSafeAreaInsets();
   const [selectedDays, setSelectedDays] = useState<string>('');
   const [motivation, setMotivation]     = useState('');
   const [loading, setLoading]           = useState(false);
@@ -179,8 +181,10 @@ export default function ApplyModal({ visible, project, onClose, onSuccess }: Pro
     return '';
   })();
 
-  const locationLine = [project.locationName, project.city]
-    .filter(Boolean).join(', ');
+  // locationName is the reverse-geocoded pin address (full, city already included).
+  // Fall back to address + city only when no pin was set.
+  const locationLine = project.locationName
+    || [project.address, project.city].filter(Boolean).join(', ');
 
   /* Submit */
   async function handleSubmit() {
@@ -215,7 +219,7 @@ export default function ApplyModal({ visible, project, onClose, onSuccess }: Pro
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={S.kav}
       >
-        <View style={S.sheet}>
+        <View style={[S.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           {/* drag handle */}
           <View style={S.handle} />
 
@@ -244,8 +248,8 @@ export default function ApplyModal({ visible, project, onClose, onSuccess }: Pro
                 {[project.orgName, scheduleLine].filter(Boolean).join(' · ')}
               </Text>
 
-              {/* location (one-time / flexible only) */}
-              {!isRecurring && locationLine ? (
+              {/* location */}
+              {locationLine ? (
                 <Text style={S.locationRow}>📍 {locationLine}</Text>
               ) : null}
 
@@ -380,7 +384,7 @@ const S = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+    // paddingBottom set dynamically in JSX: Math.max(insets.bottom, 16)
     maxHeight: '92%',
   },
   handle: {

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  ActivityIndicator, TextInput, Alert, Modal, RefreshControl,
+  ActivityIndicator, TextInput, Alert, Modal, RefreshControl, PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -462,6 +462,22 @@ export default function AdminProjectsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const loadedTabs = useRef<Set<Tab>>(new Set());
 
+  // ── Swipe to change tab ──────────────────────────────────────────────────────
+  const swipeState = useRef({ tab: 'ACTIVE' as Tab, handleTabChange: (_t: Tab) => {} });
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.5,
+      onPanResponderRelease: (_, { dx, vx }) => {
+        const { tab: curTab, handleTabChange } = swipeState.current;
+        const idx = TABS.indexOf(curTab);
+        if ((dx < -40 || vx < -0.4) && idx < TABS.length - 1) handleTabChange(TABS[idx + 1]);
+        else if ((dx > 40 || vx > 0.4) && idx > 0) handleTabChange(TABS[idx - 1]);
+      },
+    })
+  ).current;
+
   // Cancel modal state
   const [cancelTarget, setCancelTarget] = useState<AdminProject | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -511,6 +527,7 @@ export default function AdminProjectsScreen() {
     setActiveTab(tab);
     loadTab(tab);
   };
+  swipeState.current = { tab: activeTab, handleTabChange: onTabPress };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -722,6 +739,8 @@ export default function AdminProjectsScreen() {
         onClose={() => setToPickerOpen(false)}
       />
 
+      {/* Swipe area — wraps tab bar + list */}
+      <View style={{ flex: 1 }} {...panResponder.panHandlers}>
       {/* Tab bar */}
       <View style={s.tabBar}>
         {TABS.map(tab => {
@@ -786,6 +805,7 @@ export default function AdminProjectsScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+      </View>{/* end swipe area */}
 
       {/* Cancel modal */}
       <Modal visible={!!cancelTarget} transparent animationType="fade">

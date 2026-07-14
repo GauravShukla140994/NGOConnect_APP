@@ -6,15 +6,15 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { list as listProjects, apply } from '../../api/project.api';
+import { getNearbyFeed, apply } from '../../api/project.api';
 import type { Project } from '../../types/api.types';
+import { haversineKm, formatDistance } from '../../utils/geo';
 
 const C = AppConfig.COLORS;
 
@@ -22,31 +22,31 @@ const CATEGORY_CHIPS = ['All', 'Community', 'Environment', 'Education', 'Healthc
 const TYPE_CHIPS     = ['Any Schedule', 'Recurring', 'One-time', 'Flexible'] as const;
 
 const CATEGORY_COLOR: Record<string, string> = {
-  Community:       C.TEAL,
-  Environment:     C.TEAL,
-  Education:       C.PRIMARY,
-  Healthcare:      '#F59E0B',
-  'Animal Welfare':'#8B5CF6',
+  Community:        C.TEAL,
+  Environment:      C.TEAL,
+  Education:        C.PRIMARY,
+  Healthcare:       '#F59E0B',
+  'Animal Welfare': '#8B5CF6',
 };
 
 function spotsColor(spots: number) {
-  if (spots <= 3) { return '#EF4444'; }
-  if (spots <= 10) { return C.YELLOW; }
+  if (spots <= 3)  return '#EF4444';
+  if (spots <= 10) return C.YELLOW;
   return C.TEAL;
 }
 
 function capacityBarColor(pct: number) {
-  if (pct >= 1) { return '#EF4444'; }
-  if (pct >= 0.85) { return C.YELLOW; }
+  if (pct >= 1)    return '#EF4444';
+  if (pct >= 0.85) return C.YELLOW;
   return C.TEAL;
 }
 
 function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => void; onPress: () => void }) {
-  const max     = item.maxParticipants ?? item.maxVolunteers ?? 0;
-  const curr    = item.currentParticipants ?? item.approvedCount ?? 0;
-  const spots   = item.spotsLeft ?? (max - curr);
-  const pct     = max > 0 ? curr / max : 0;
-  const isFull  = spots <= 0;
+  const max    = item.maxParticipants ?? item.maxVolunteers ?? 0;
+  const curr   = item.currentParticipants ?? item.approvedCount ?? 0;
+  const spots  = item.spotsLeft ?? (max - curr);
+  const pct    = max > 0 ? curr / max : 0;
+  const isFull = spots <= 0;
 
   return (
     <TouchableOpacity style={[styles.oppCard, isFull && { opacity: 0.6 }]} onPress={onPress} activeOpacity={0.8}>
@@ -57,14 +57,15 @@ function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => voi
               {item.categoryName ?? 'Volunteer'}
             </Text>
           </View>
-          <Text style={styles.oppTitle}>{item.title}</Text>
+          <Text style={styles.oppTitle}>{item.title ?? item.projectName}</Text>
           <Text style={styles.oppSub}>
-            {item.orgName}{item.distanceKm != null ? ` · ${item.distanceKm.toFixed(1)} km` : ''}
+            {item.orgName}
+            {item.distanceKm != null ? ` · 📍 ${formatDistance(Number(item.distanceKm))}` : ''}
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <View style={[styles.typePill, { backgroundColor: '#F3F4F6' }]}>
-            <Text style={styles.typePillText}>{item.scheduleType ?? 'One-time'}</Text>
+            <Text style={styles.typePillText}>{item.scheduleType ?? item.projectTypeCode ?? 'One-time'}</Text>
           </View>
           {!isFull && (
             <Text style={[styles.spotsText, { color: spotsColor(spots) }]}>
@@ -77,14 +78,17 @@ function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => voi
 
       {/* Info rows */}
       <View style={styles.infoRows}>
-        {item.startDate && (
-          <Text style={styles.infoRow}>📅 {item.startDate}</Text>
+        {item.oneTimeDate && (
+          <Text style={styles.infoRow}>📅 {item.oneTimeDate}</Text>
         )}
-        {item.startTime && (
-          <Text style={styles.infoRow}>🕐 {item.startTime}{item.endTime ? ` – ${item.endTime}` : ''}</Text>
+        {item.recurStart && (
+          <Text style={styles.infoRow}>📅 {item.recurStart}{item.recurEnd ? ` – ${item.recurEnd}` : ''}</Text>
         )}
-        {item.locationName && (
-          <Text style={styles.infoRow}>📍 {item.locationName}</Text>
+        {item.sessionStartTime && (
+          <Text style={styles.infoRow}>🕐 {item.sessionStartTime}{item.sessionEndTime ? ` – ${item.sessionEndTime}` : ''}</Text>
+        )}
+        {(item.locationName ?? item.landmark) && (
+          <Text style={styles.infoRow}>📍 {item.locationName ?? item.landmark}</Text>
         )}
       </View>
 
@@ -131,34 +135,66 @@ function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => voi
 export default function AllOpportunitiesScreen() {
   const nav    = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const [projects, setProjects]     = useState<Project[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage]             = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const [search, setSearch]         = useState('');
+
+  // All fetched projects (full list for client-side filtering)
+  const [allProjects, setAllProjects]     = useState<Project[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [refreshing, setRefreshing]       = useState(false);
+  const [loadingMore, setLoadingMore]     = useState(false);
+  const [page, setPage]                   = useState(1);
+  const [totalCount, setTotalCount]       = useState(0);
+  const [applying, setApplying]           = useState<number | null>(null);
+
+  // GPS
+  const [userCoords, setUserCoords]       = useState<{ lat: number; lon: number } | null>(null);
+  const [locationReady, setLocationReady] = useState(false);
+  const userCoordsRef = useRef<{ lat: number; lon: number } | null>(null);
+
+  // Client-side filters
   const [activeCategory, setActiveCategory] = useState<string>('All');
-  const [activeType, setActiveType] = useState<string>('Any Schedule');
-  const [applying, setApplying]     = useState<number | null>(null);
-  const searchRef = useRef('');
+  const [activeType, setActiveType]         = useState<string>('Any Schedule');
+
+  // Fetch GPS on mount — non-blocking, feed loads with or without coords
+  useEffect(() => {
+    try {
+      const Geolocation = require('@react-native-community/geolocation').default;
+      Geolocation.getCurrentPosition(
+        (pos: { coords: { latitude: number; longitude: number } }) => {
+          const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          userCoordsRef.current = coords;
+          setUserCoords(coords);
+          setLocationReady(true);
+        },
+        () => { setLocationReady(true); },   // no GPS → still load without coords
+        { enableHighAccuracy: false, timeout: 8000 },
+      );
+    } catch {
+      setLocationReady(true);
+    }
+  }, []);
 
   const fetchData = useCallback(async (pg: number, refresh = false) => {
     if (pg === 1) { refresh ? setRefreshing(true) : setLoading(true); }
     else { setLoadingMore(true); }
     try {
-      const scheduleType = activeType === 'Any Schedule' ? undefined : activeType.toUpperCase().replace('-', '_');
-      const keyword = searchRef.current.trim() || undefined;
-      const res = await listProjects({
-        keyword,
-        projectTypeLkpId: undefined,
+      const coords = userCoordsRef.current;
+      const res = await getNearbyFeed({
         pageNumber: pg,
-        pageSize: 15,
+        pageSize:   20,
+        ...(coords ? { userLat: coords.lat, userLon: coords.lon } : {}),
       });
       if (res.data?.isSuccess && res.data.data) {
-        const { items, totalCount: tc } = res.data.data;
-        setProjects(pg === 1 ? items : (prev) => [...prev, ...items]);
-        setTotalCount(tc);
+        const coords = userCoordsRef.current;
+        // Stamp client-side distance for any project that has lat/lon but no server-side distanceKm
+        const stamped = res.data.data.items.map((p: any) => {
+          if (p.distanceKm != null) return p;
+          if (coords && p.latitude != null && p.longitude != null) {
+            return { ...p, distanceKm: Math.round(haversineKm(coords.lat, coords.lon, Number(p.latitude), Number(p.longitude)) * 10) / 10 };
+          }
+          return p;
+        });
+        setAllProjects(pg === 1 ? stamped : prev => [...prev, ...stamped]);
+        setTotalCount(res.data.data.totalCount);
         setPage(pg);
       }
     } catch {
@@ -168,14 +204,12 @@ export default function AllOpportunitiesScreen() {
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, [activeType]);
+  }, []);
 
-  useEffect(() => { fetchData(1); }, [fetchData]);
-
-  const handleSearch = () => {
-    searchRef.current = search;
-    fetchData(1);
-  };
+  // Wait for location attempt before first fetch so page 1 always has coords
+  useEffect(() => {
+    if (locationReady) fetchData(1);
+  }, [locationReady, fetchData]);
 
   const handleApply = useCallback(async (projectId: number) => {
     setApplying(projectId);
@@ -194,15 +228,33 @@ export default function AllOpportunitiesScreen() {
   }, []);
 
   const handleLoadMore = () => {
-    if (!loadingMore && projects.length < totalCount) {
+    if (!loadingMore && allProjects.length < totalCount) {
       fetchData(page + 1);
     }
   };
 
+  // Client-side filter on fetched results
+  const displayed = allProjects.filter(p => {
+    const cat      = (p.categoryName ?? p.category ?? '').toLowerCase();
+    const typeCode = (p.scheduleType ?? p.projectTypeCode ?? '').toLowerCase();
+
+    const catMatch  = activeCategory === 'All' || cat.includes(activeCategory.toLowerCase());
+    const typeMatch = activeType === 'Any Schedule' ||
+      typeCode.includes(activeType.toUpperCase().replace('-', '_').split(' ')[0].toLowerCase()) ||
+      (activeType === 'One-time'  && typeCode.includes('one')) ||
+      (activeType === 'Recurring' && typeCode.includes('recur')) ||
+      (activeType === 'Flexible'  && typeCode.includes('flex'));
+
+    return catMatch && typeMatch;
+  });
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.centered}><ActivityIndicator size="large" color={C.PRIMARY} /></View>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={C.PRIMARY} />
+          <Text style={styles.loadingText}>Finding opportunities near you…</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -214,27 +266,17 @@ export default function AllOpportunitiesScreen() {
         <TouchableOpacity onPress={() => nav.goBack()} accessibilityLabel="Go back">
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>All Opportunities</Text>
-        <Text style={styles.filterText}>Filter</Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={styles.topBarTitle}>Nearby Opportunities</Text>
+          {userCoords && (
+            <Text style={styles.topBarSub}>Sorted by distance · relevance</Text>
+          )}
+        </View>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* Filters */}
+      {/* Filter chips */}
       <View style={styles.filterContainer}>
-        {/* Search */}
-        <View style={styles.searchBar}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search opportunities..."
-            placeholderTextColor={C.TEXT3}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-            accessibilityLabel="Search opportunities"
-          />
-        </View>
-        {/* Category chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 6 }}>
           <View style={styles.chipRow}>
             {CATEGORY_CHIPS.map((c) => (
@@ -249,14 +291,13 @@ export default function AllOpportunitiesScreen() {
             ))}
           </View>
         </ScrollView>
-        {/* Schedule type chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.chipRow}>
             {TYPE_CHIPS.map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[styles.filterChip, activeType === t && styles.filterChipActive]}
-                onPress={() => { setActiveType(t); }}
+                onPress={() => setActiveType(t)}
                 accessibilityLabel={t}
               >
                 <Text style={[styles.filterChipText, activeType === t && styles.filterChipTextActive]}>{t}</Text>
@@ -266,13 +307,20 @@ export default function AllOpportunitiesScreen() {
         </ScrollView>
       </View>
 
-      {/* Results */}
+      {/* List */}
       <FlatList
-        data={projects}
+        data={displayed}
         keyExtractor={(p) => String(p.projectId)}
         contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 24 }]}
         ListHeaderComponent={
-          <Text style={styles.resultCount}>{totalCount} opportunities found</Text>
+          <View style={styles.resultHeader}>
+            <Text style={styles.resultCount}>
+              {displayed.length} of {totalCount} opportunities
+            </Text>
+            {!userCoords && (
+              <Text style={styles.noGpsNote}>📍 Enable location for distance sorting</Text>
+            )}
+          </View>
         }
         renderItem={({ item }) => (
           <OppCard
@@ -285,11 +333,15 @@ export default function AllOpportunitiesScreen() {
         refreshing={refreshing}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
-        ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color={C.PRIMARY} style={{ marginVertical: 12 }} /> : null}
+        ListFooterComponent={
+          loadingMore
+            ? <ActivityIndicator size="small" color={C.PRIMARY} style={{ marginVertical: 12 }} />
+            : null
+        }
         ListEmptyComponent={
           <View style={styles.centered}>
             <Text style={styles.emptyText}>No opportunities found.</Text>
-            <Text style={styles.emptySubText}>Try changing filters or search terms.</Text>
+            <Text style={styles.emptySubText}>Try changing filters or check back later.</Text>
           </View>
         }
       />
@@ -298,45 +350,45 @@ export default function AllOpportunitiesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:         { flex: 1, backgroundColor: C.BG },
-  centered:          { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  topBar:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backText:          { color: C.PRIMARY, fontSize: 15 },
-  topBarTitle:       { fontSize: 16, fontWeight: '700', color: C.TEXT },
-  filterText:        { color: C.PRIMARY, fontSize: 13 },
-  filterContainer:   { backgroundColor: C.CARD, padding: 10, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  searchBar:         { flexDirection: 'row', alignItems: 'center', backgroundColor: C.BG, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8, gap: 6 },
-  searchIcon:        { fontSize: 14 },
-  searchInput:       { flex: 1, fontSize: 13, color: C.TEXT },
-  chipRow:           { flexDirection: 'row', gap: 6, paddingRight: 12 },
-  filterChip:        { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: C.BG, borderWidth: 1, borderColor: C.BORDER },
-  filterChipActive:  { backgroundColor: C.PRIMARY, borderColor: C.PRIMARY },
-  filterChipText:    { fontSize: 12, color: C.TEXT2, fontWeight: '500' },
+  container:            { flex: 1, backgroundColor: C.BG },
+  centered:             { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  loadingText:          { fontSize: 13, color: C.TEXT2, marginTop: 10 },
+  topBar:               { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  backText:             { color: C.PRIMARY, fontSize: 15, width: 40 },
+  topBarTitle:          { fontSize: 16, fontWeight: '700', color: C.TEXT },
+  topBarSub:            { fontSize: 11, color: C.TEXT3, marginTop: 1 },
+  filterContainer:      { backgroundColor: C.CARD, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  chipRow:              { flexDirection: 'row', gap: 6, paddingRight: 12 },
+  filterChip:           { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: C.BG, borderWidth: 1, borderColor: C.BORDER },
+  filterChipActive:     { backgroundColor: C.PRIMARY, borderColor: C.PRIMARY },
+  filterChipText:       { fontSize: 12, color: C.TEXT2, fontWeight: '500' },
   filterChipTextActive: { color: '#fff', fontWeight: '700' },
-  listContent:       { padding: 12 },
-  resultCount:       { fontSize: 13, color: C.TEXT2, marginBottom: 10 },
-  oppCard:           { backgroundColor: C.CARD, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  oppRow:            { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 7 },
-  catPill:           { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginBottom: 4 },
-  catPillText:       { fontSize: 11, fontWeight: '600' },
-  oppTitle:          { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
-  oppSub:            { fontSize: 12, color: C.TEXT2 },
-  typePill:          { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginBottom: 4 },
-  typePillText:      { fontSize: 10, color: C.TEXT2, fontWeight: '600' },
-  spotsText:         { fontSize: 12, fontWeight: '700', marginTop: 2 },
-  infoRows:          { gap: 3, marginBottom: 7 },
-  infoRow:           { fontSize: 12, color: C.TEXT2 },
-  tagRow:            { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 7 },
-  skillTag:          { backgroundColor: `${C.PRIMARY}15`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  skillTagText:      { fontSize: 11, color: C.PRIMARY, fontWeight: '500' },
-  capText:           { fontSize: 11, color: C.TEXT2, marginBottom: 3 },
-  capBar:            { height: 5, backgroundColor: C.BORDER, borderRadius: 3, overflow: 'hidden', marginBottom: 9 },
-  capFill:           { height: '100%', borderRadius: 3 },
-  cardActions:       { flexDirection: 'row', gap: 7 },
-  applyBtn:          { backgroundColor: C.PRIMARY, borderRadius: 9, padding: 12, alignItems: 'center', justifyContent: 'center' },
-  applyBtnText:      { color: '#fff', fontSize: 14, fontWeight: '700' },
-  shareBtn:          { flex: 1, borderWidth: 1, borderColor: C.BORDER, borderRadius: 9, padding: 8, alignItems: 'center', justifyContent: 'center' },
-  shareBtnText:      { fontSize: 14, color: C.TEXT2 },
-  emptyText:         { fontSize: 16, color: C.TEXT2, fontWeight: '600', marginBottom: 4 },
-  emptySubText:      { fontSize: 13, color: C.TEXT3, textAlign: 'center' },
+  listContent:          { padding: 12 },
+  resultHeader:         { marginBottom: 10, gap: 3 },
+  resultCount:          { fontSize: 13, color: C.TEXT2 },
+  noGpsNote:            { fontSize: 11, color: C.TEXT3 },
+  oppCard:              { backgroundColor: C.CARD, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  oppRow:               { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 7 },
+  catPill:              { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginBottom: 4 },
+  catPillText:          { fontSize: 11, fontWeight: '600' },
+  oppTitle:             { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  oppSub:               { fontSize: 12, color: C.TEXT2 },
+  typePill:             { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginBottom: 4 },
+  typePillText:         { fontSize: 10, color: C.TEXT2, fontWeight: '600' },
+  spotsText:            { fontSize: 12, fontWeight: '700', marginTop: 2 },
+  infoRows:             { gap: 3, marginBottom: 7 },
+  infoRow:              { fontSize: 12, color: C.TEXT2 },
+  tagRow:               { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 7 },
+  skillTag:             { backgroundColor: `${C.PRIMARY}15`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  skillTagText:         { fontSize: 11, color: C.PRIMARY, fontWeight: '500' },
+  capText:              { fontSize: 11, color: C.TEXT2, marginBottom: 3 },
+  capBar:               { height: 5, backgroundColor: C.BORDER, borderRadius: 3, overflow: 'hidden', marginBottom: 9 },
+  capFill:              { height: '100%', borderRadius: 3 },
+  cardActions:          { flexDirection: 'row', gap: 7 },
+  applyBtn:             { backgroundColor: C.PRIMARY, borderRadius: 9, padding: 12, alignItems: 'center', justifyContent: 'center' },
+  applyBtnText:         { color: '#fff', fontSize: 14, fontWeight: '700' },
+  shareBtn:             { flex: 1, borderWidth: 1, borderColor: C.BORDER, borderRadius: 9, padding: 8, alignItems: 'center', justifyContent: 'center' },
+  shareBtnText:         { fontSize: 14, color: C.TEXT2 },
+  emptyText:            { fontSize: 16, color: C.TEXT2, fontWeight: '600', marginBottom: 4 },
+  emptySubText:         { fontSize: 13, color: C.TEXT3, textAlign: 'center' },
 });

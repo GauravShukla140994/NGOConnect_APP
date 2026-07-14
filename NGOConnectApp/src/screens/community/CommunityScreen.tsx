@@ -498,7 +498,7 @@ export default function CommunityScreen() {
         (p.content        ?? '').toLowerCase().includes(q) ||
         (p.authorName     ?? '').toLowerCase().includes(q) ||
         (p.postTypeName   ?? '').toLowerCase().includes(q) ||
-        (p.postTypeCode   ?? '').toLowerCase().includes(q),
+        (p.postType ?? p.postTypeLkpCode ?? '').toLowerCase().includes(q),
       )
     : posts;
 

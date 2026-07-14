@@ -1,21 +1,22 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   Linking,
   Modal,
+  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import apiClient from '../../api/apiClient';
-import { getProfile } from '../../api/org.api';
+import { getProfile, orgApi } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
 import { list as listProjects, projectApi, apply } from '../../api/project.api';
 import type { ApiResponse, Organisation, Post, Project, PagedResult } from '../../types/api.types';
@@ -190,6 +191,10 @@ function ProjectDetailModal({
       animationType="slide"
       onRequestClose={onClose}
     >
+      {/* SafeAreaProvider is required inside Modal — without it, react-native-safe-area-context
+          cannot read the correct window insets in the Modal's own native window on Android,
+          causing useSafeAreaInsets() and SafeAreaView to both return insets.bottom = 0. */}
+      <SafeAreaProvider>
       <SafeAreaView style={mdStyles.container} edges={['top']}>
         {/* Header */}
         <View style={mdStyles.topBar}>
@@ -310,7 +315,7 @@ function ProjectDetailModal({
 
         {/* Apply footer */}
         {p && !loading ? (
-          <View style={[mdStyles.applyFooter, { paddingBottom: insets.bottom + 12 }]}>
+          <View style={mdStyles.applyFooter}>
             {alreadyApproved ? (
               <View style={[mdStyles.applyBtn, { backgroundColor: '#10B981' }]}>
                 <Text style={mdStyles.applyBtnText}>✓ Already Approved</Text>
@@ -340,9 +345,13 @@ function ProjectDetailModal({
                 }
               </TouchableOpacity>
             )}
+            {/* Safe-area spacer — useSafeAreaInsets() returns 0 inside Modal on Android;
+                native SafeAreaView reads the real inset at the native layer. */}
+            <SafeAreaView edges={['bottom']} style={{ minHeight: 12 }} />
           </View>
         ) : null}
       </SafeAreaView>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -417,6 +426,33 @@ export default function NgoProfileScreen() {
   const [tab,               setTab]               = useState<Tab>('About');
   const [loading,           setLoading]           = useState(true);
   const [modalProjectId,    setModalProjectId]    = useState<number | null>(null);
+  const [isFollowing,       setIsFollowing]       = useState(false);
+  const [followLoading,     setFollowLoading]     = useState(false);
+
+  // ── Swipe gesture refs ──────────────────────────────────────────────────────
+  const tabBarRef   = useRef<ScrollView>(null);
+  // Always holds the latest tab + handler so the PanResponder closure never goes stale
+  const swipeState  = useRef({ tab: 'About' as Tab, handleTabChange: (_t: Tab) => {} });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder:        () => false,
+      // Claim the gesture only when clearly horizontal (dx > dy * 1.5)
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.5,
+      onPanResponderRelease: (_, { dx, vx }) => {
+        const { tab: curTab, handleTabChange: change } = swipeState.current;
+        const idx = TABS.indexOf(curTab);
+        // Swipe left (negative dx) → advance to next tab
+        if ((dx < -40 || vx < -0.4) && idx < TABS.length - 1) {
+          change(TABS[idx + 1]);
+        // Swipe right (positive dx) → back to previous tab
+        } else if ((dx > 40 || vx > 0.4) && idx > 0) {
+          change(TABS[idx - 1]);
+        }
+      },
+    })
+  ).current;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -426,7 +462,11 @@ export default function NgoProfileScreen() {
         listProjects({ orgId, statusCode: 'ACTIVE',    pageNumber: 1, pageSize: 20 }),
         listProjects({ orgId, statusCode: 'COMPLETED', pageNumber: 1, pageSize: 3  }),
       ]);
-      if (orgRes.data?.isSuccess)       setOrg(orgRes.data.data ?? null);
+      if (orgRes.data?.isSuccess) {
+        const orgData = orgRes.data.data ?? null;
+        setOrg(orgData);
+        setIsFollowing(!!orgData?.isFollowing);
+      }
       if (activeRes.data?.isSuccess) {
         const items = activeRes.data.data?.items ?? [];
         setActiveProjects(items);
@@ -465,10 +505,31 @@ export default function NgoProfileScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Re-sync follow state when returning from any sub-screen (e.g. JoinForm).
+  // Org_RequestMembership auto-follows on submit, so isFollowing will be 1
+  // after the user completes a join request — this picks it up without a full reload.
+  useFocusEffect(useCallback(() => {
+    getProfile(orgId).then(res => {
+      if (res.data?.isSuccess) {
+        const d = res.data.data;
+        setIsFollowing(!!d?.isFollowing);
+        if (d?.followerCount !== undefined) {
+          setOrg(prev => prev ? { ...prev, followerCount: d.followerCount } : prev);
+        }
+      }
+    }).catch(() => {});
+  }, [orgId]));
+
   const handleTabChange = useCallback((t: Tab) => {
     setTab(t);
     if (t === 'Gallery') loadGallery();
+    // Scroll the tab bar so the newly-active tab is always visible
+    const idx = TABS.indexOf(t);
+    tabBarRef.current?.scrollTo({ x: Math.max(0, idx * 90 - 20), animated: true });
   }, [loadGallery]);
+
+  // Keep swipeState ref current on every render so the PanResponder closure is never stale
+  swipeState.current = { tab, handleTabChange };
 
   const handleRequestJoin = useCallback(() => {
     nav.navigate('JoinForm', { orgId, orgName: org?.orgName ?? org?.name ?? 'NGO' });
@@ -483,6 +544,27 @@ export default function NgoProfileScreen() {
     const url = org.website.startsWith('http') ? org.website : `https://${org.website}`;
     Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open website.'));
   }, [org?.website]);
+
+  const handleFollowToggle = useCallback(async () => {
+    if (followLoading) return;
+    setFollowLoading(true);
+    try {
+      if (isFollowing) {
+        const res = await orgApi.unfollowOrg(orgId);
+        if (res.data?.isSuccess) {
+          setIsFollowing(false);
+          setOrg(prev => prev ? { ...prev, followerCount: Math.max((prev.followerCount ?? 1) - 1, 0) } : prev);
+        }
+      } else {
+        const res = await orgApi.followOrg(orgId);
+        if (res.data?.isSuccess) {
+          setIsFollowing(true);
+          setOrg(prev => prev ? { ...prev, followerCount: (prev.followerCount ?? 0) + 1 } : prev);
+        }
+      }
+    } catch { /* silent — no network toast needed */ }
+    finally { setFollowLoading(false); }
+  }, [orgId, isFollowing, followLoading]);
 
   // ── Loading / error ────────────────────────────────────────────────────────
   if (loading) {
@@ -569,6 +651,7 @@ export default function NgoProfileScreen() {
             <Text style={styles.heroMeta}>
               {[org.city, org.state].filter(Boolean).join(', ')}
               {org.memberCount ? ` · ${org.memberCount.toLocaleString('en-IN')} members` : ''}
+              {org.followerCount ? ` · ${org.followerCount.toLocaleString('en-IN')} followers` : ''}
             </Text>
           </View>
         </View>
@@ -588,6 +671,23 @@ export default function NgoProfileScreen() {
               <Text style={styles.actionBtnText}>🤝 Request to Join</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={[
+              styles.actionBtnFollow,
+              isFollowing && styles.actionBtnFollowing,
+            ]}
+            onPress={handleFollowToggle}
+            activeOpacity={0.85}
+            disabled={followLoading}
+            accessibilityLabel={isFollowing ? 'Unfollow NGO' : 'Follow NGO'}
+          >
+            <Text style={[
+              styles.actionBtnFollowText,
+              isFollowing && styles.actionBtnFollowingText,
+            ]}>
+              {isFollowing ? '✓ Following' : '+ Follow'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtnOutline} onPress={handleDonate} activeOpacity={0.85}>
             <Text style={styles.actionBtnOutlineText}>💛 Donate</Text>
           </TouchableOpacity>
@@ -617,7 +717,7 @@ export default function NgoProfileScreen() {
         </View>
 
         {/* Tab bar */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        <ScrollView ref={tabBarRef} horizontal showsHorizontalScrollIndicator={false}
           style={styles.tabScroll} contentContainerStyle={styles.tabRow}>
           {TABS.map(t => (
             <TouchableOpacity key={t}
@@ -628,8 +728,8 @@ export default function NgoProfileScreen() {
           ))}
         </ScrollView>
 
-        {/* ── Tab content ──────────────────────────────────────────────────── */}
-        <View style={styles.tabContent}>
+        {/* ── Tab content — panHandlers enable swipe-left/right to change tabs ── */}
+        <View style={styles.tabContent} {...panResponder.panHandlers}>
 
           {/* ── About ────────────────────────────────────────────────────── */}
           {tab === 'About' && (
@@ -826,14 +926,18 @@ const styles = StyleSheet.create({
   heroMeta:          { fontSize: 12, color: C.TEXT2 },
 
   // Action buttons
-  actionRow:            { flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.CARD, borderTopWidth: 1, borderTopColor: C.BORDER, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  actionBtn:            { flex: 1, backgroundColor: C.PRIMARY, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  actionRow:            { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingVertical: 12, backgroundColor: C.CARD, borderTopWidth: 1, borderTopColor: C.BORDER, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  actionBtn:            { flex: 1.4, backgroundColor: C.PRIMARY, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   actionBtnMember:      { backgroundColor: C.TEAL ?? '#2ECC71' },
   actionBtnPending:     { backgroundColor: '#F59E0B' },
   actionBtnText:        { color: '#fff', fontWeight: '700', fontSize: 14 },
   actionBtnMemberText:  { color: '#fff', fontWeight: '700', fontSize: 14 },
   actionBtnPendingText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  actionBtnOutline:     { flex: 1, borderWidth: 2, borderColor: '#F59E0B', borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
+  actionBtnFollow:          { flex: 0.8, borderWidth: 1.5, borderColor: C.PRIMARY, borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
+  actionBtnFollowing:       { backgroundColor: '#ECFDF5', borderColor: '#10B981' },
+  actionBtnFollowText:      { color: C.PRIMARY, fontWeight: '700', fontSize: 13 },
+  actionBtnFollowingText:   { color: '#10B981' },
+  actionBtnOutline:     { flex: 0.8, borderWidth: 2, borderColor: '#F59E0B', borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
   actionBtnOutlineText: { color: '#92400E', fontWeight: '700', fontSize: 14 },
 
   // Stats

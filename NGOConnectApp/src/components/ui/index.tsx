@@ -2,30 +2,34 @@
  * Native UI Component Library — NGO Connect
  *
  * Every component here mirrors the prototype's CSS classes exactly:
- *   NCard      → .card    (borderRadius:16, elevation:3, no border)
- *   NCardSm    → .csm     (borderRadius:12, elevation:2)
- *   NBtn       → .btn-p   (primary, full-width, Pressable with ripple)
- *   NBtnOutline→ .btn-o   (outline primary)
- *   NBtnRed    → .btn-r
- *   NBtnGreen  → .btn-tl
- *   NBtnSm     → .btn-sm  (smaller, auto-width)
- *   NInput     → .fi      (form input with label)
- *   NTextArea  → .fta
- *   NTopbar    → .topbar  (screen header with optional back button)
- *   NAvatar    → .av      (circular avatar with initials)
- *   NPill      → .pill    (status badge)
- *   NSlab      → .slab    (section uppercase label)
- *   NDivider   → .divider
- *   NEmpty     → empty state with icon + message
+ *   NCard        → .card    (borderRadius:16, elevation:3, no border)
+ *   NCardSm      → .csm     (borderRadius:12, elevation:2)
+ *   NBtn         → .btn-p   (primary, full-width, Pressable with ripple)
+ *   NBtnOutline  → .btn-o   (outline primary)
+ *   NBtnRed      → .btn-r
+ *   NBtnGreen    → .btn-tl
+ *   NBtnSm       → .btn-sm  (smaller, auto-width)
+ *   NInput       → .fi      (form input with label)
+ *   NTextArea    → .fta
+ *   NTopbar      → .topbar  (screen header with optional back button)
+ *   NAvatar      → .av      (circular avatar with initials)
+ *   NPill        → .pill    (status badge)
+ *   NSlab        → .slab    (section uppercase label)
+ *   NDivider     → .divider
+ *   NEmpty       → empty state with icon + message
+ *   NBottomSheet → global safe-area-aware bottom sheet (Modal + backdrop + KAV)
  *
  * Usage in screens:
- *   import { NCard, NBtn, NTopbar, NAvatar, NPill } from '../../components/ui';
+ *   import { NCard, NBtn, NTopbar, NAvatar, NPill, NBottomSheet } from '../../components/ui';
  */
 
 import React from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -36,6 +40,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppConfig from '../../config/AppConfig';
 
 const C = AppConfig.COLORS;
@@ -381,6 +386,93 @@ export function NEmpty({ icon, title, message, action }: NEmptyProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// NBottomSheet — global safe-area-aware bottom sheet
+//
+// Wraps: Modal → Pressable backdrop → KeyboardAvoidingView → sheet View
+//
+// Bottom padding is always Math.max(insets.bottom, minBottomPad) so buttons
+// are never hidden behind the home indicator, gesture bar, or 3-button nav.
+//
+// Usage:
+//   <NBottomSheet visible={open} onClose={() => setOpen(false)} title="Apply">
+//     <NBtn label="Submit" onPress={submit} />
+//   </NBottomSheet>
+// ─────────────────────────────────────────────────────────────────────────────
+interface NBottomSheetProps {
+  /** Whether the sheet is open */
+  visible: boolean;
+  /** Called when backdrop is tapped or back button pressed */
+  onClose: () => void;
+  /** Optional header title (renders header row + close ✕ button) */
+  title?: string;
+  /** Show the drag handle bar (default: true) */
+  showHandle?: boolean;
+  /** Max sheet height as a fraction of screen (default: '90%') */
+  maxHeight?: string;
+  /** Extra style on the inner sheet container */
+  style?: StyleProp<ViewStyle>;
+  /** Minimum bottom padding in addition to safe area (default: 16) */
+  minBottomPad?: number;
+  /** Right side slot next to the title (optional) */
+  headerRight?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+export function NBottomSheet({
+  visible,
+  onClose,
+  title,
+  showHandle = true,
+  maxHeight = '90%',
+  style,
+  minBottomPad = 16,
+  headerRight,
+  children,
+}: NBottomSheetProps) {
+  const insets = useSafeAreaInsets();
+  const safeBottom = Math.max(insets.bottom, minBottomPad);
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      {/* Dimmed backdrop — tapping closes the sheet */}
+      <Pressable style={bs.backdrop} onPress={onClose} />
+
+      {/* KeyboardAvoidingView keeps content above the software keyboard */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={bs.kav}
+      >
+        <View style={[bs.sheet, { maxHeight, paddingBottom: safeBottom }, style]}>
+          {/* ── Drag handle ── */}
+          {showHandle && <View style={bs.handle} />}
+
+          {/* ── Optional header ── */}
+          {title ? (
+            <View style={bs.header}>
+              <Text style={bs.headerTitle} numberOfLines={1}>{title}</Text>
+              <View style={bs.headerRight}>
+                {headerRight ?? null}
+                <Pressable onPress={onClose} hitSlop={12} style={bs.closeBtn}>
+                  <Text style={bs.closeX}>✕</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
+          {children}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // NProgress — .prog .pf  (progress bar)
 // ─────────────────────────────────────────────────────────────────────────────
 interface NProgressProps {
@@ -490,12 +582,79 @@ const ui = StyleSheet.create({
   progFill:   { borderRadius: 3 },
 
   // ── Step Bar ──
-  stepBar:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  stepDot:    { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  stepDone:   { backgroundColor: C.PRIMARY },
-  stepActive: { backgroundColor: C.PRIMARY, shadowColor: C.PRIMARY, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 6, elevation: 4 },
-  stepTodo:   { backgroundColor: C.BORDER },
-  stepNum:    { fontSize: 11, fontWeight: '700' },
-  stepLine:   { flex: 1, height: 2, backgroundColor: C.BORDER, marginHorizontal: 3 },
-  stepLineDone:{ backgroundColor: C.PRIMARY },
+  stepBar:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  stepDot:      { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  stepDone:     { backgroundColor: C.PRIMARY },
+  stepActive:   { backgroundColor: C.PRIMARY, shadowColor: C.PRIMARY, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 6, elevation: 4 },
+  stepTodo:     { backgroundColor: C.BORDER },
+  stepNum:      { fontSize: 11, fontWeight: '700' },
+  stepLine:     { flex: 1, height: 2, backgroundColor: C.BORDER, marginHorizontal: 3 },
+  stepLineDone: { backgroundColor: C.PRIMARY },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NBottomSheet styles (kept separate so they don't pollute the shared `ui` sheet)
+// ─────────────────────────────────────────────────────────────────────────────
+const bs = StyleSheet.create({
+  // Full-screen dimmed scrim — tap to dismiss
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  // Anchors KAV + sheet to the bottom of the screen
+  kav: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  // The visible sheet panel
+  sheet: {
+    backgroundColor: C.CARD,
+    borderTopLeftRadius:  20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    // paddingBottom is set dynamically in the component (safe area inset)
+  },
+  // Drag handle
+  handle: {
+    width: 40,
+    height: 4,
+    backgroundColor: C.BORDER,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  // Header row (only rendered when title prop is set)
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.BORDER,
+    marginBottom: 4,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: C.TEXT,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  closeBtn: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeX: {
+    fontSize: 15,
+    color: C.TEXT2,
+    fontWeight: '600',
+  },
 });

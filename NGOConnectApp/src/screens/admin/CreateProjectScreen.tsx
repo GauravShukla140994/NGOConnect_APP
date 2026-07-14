@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Switch, Alert, ActivityIndicator, Platform, PermissionsAndroid, Modal,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import Geolocation from '@react-native-community/geolocation';
+import WebView from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -137,6 +138,56 @@ function formatHM(d: Date): string {
 }
 
 // ---------------------------------------------------------------------------
+// Map HTML — Leaflet draggable pin for project location picker
+// ---------------------------------------------------------------------------
+
+const LOCATION_MAP_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #map { width: 100%; height: 100%; background: #e8e0d8; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', { zoomControl: true, attributionControl: false });
+    var tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    tileLayer.once('load', function() {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'TILES_LOADED' }));
+    });
+
+    var pin = null;
+
+    window.setCenter = function(lat, lng, zoom) {
+      map.setView([lat, lng], zoom || 16);
+    };
+
+    window.placePin = function(lat, lng) {
+      if (pin) { pin.setLatLng([lat, lng]); return; }
+      pin = L.marker([lat, lng], { draggable: true }).addTo(map);
+      pin.on('dragend', function(e) {
+        var p = e.target.getLatLng();
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'PIN_DROPPED', lat: p.lat, lng: p.lng
+        }));
+      });
+    };
+
+    map.setView([20.5937, 78.9629], 5);
+  </script>
+</body>
+</html>`;
+
+// ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
@@ -246,7 +297,14 @@ export default function CreateProjectScreen() {
   const [saving, setSaving]      = useState(false);
   const [loading, setLoading]    = useState(!!projectId);
   const [skillInput, setSkillInput] = useState('');
-  const [geoLoading, setGeoLoading] = useState(false);
+  const [tilesLoaded, setTilesLoaded]     = useState(false);
+  const [pinnedAddress, setPinnedAddress] = useState('');
+  const [mapFocused, setMapFocused]       = useState(false);
+  const mapWebViewRef       = useRef<any>(null);
+  // Holds GPS result fetched at mount — readable synchronously in onMapMessage
+  const currentLocationRef  = useRef<{ latitude: number; longitude: number } | null>(null);
+  // True once map tiles have finished loading
+  const tilesLoadedRef      = useRef(false);
 
   // ---- date / time picker state ----
   type PickerTarget = 'date' | 'startDate' | 'endDate' | 'startTime' | 'endTime';
@@ -256,6 +314,39 @@ export default function CreateProjectScreen() {
   const [pickerDate, setPickerDate]       = useState(new Date());
 
   const isEdit = !!projectId;
+
+  // ── Fetch GPS at mount (new project only) ──────────────────────────────────
+  // Stores result in ref (readable synchronously) AND in form state.
+  // If map tiles haven't loaded yet the GPS callback injects JS when they do;
+  // if tiles loaded first the TILES_LOADED handler reads the ref directly.
+  useEffect(() => {
+    if (isEdit) return; // edit mode uses saved coordinates
+
+    const onGPS = (pos: { coords: { latitude: number; longitude: number } }) => {
+      const { latitude, longitude } = pos.coords;
+      currentLocationRef.current = { latitude, longitude };
+      setForm(f => ({ ...f, latitude, longitude, locationPinned: true }));
+      reverseGeocode(latitude, longitude);
+      // If the map is already showing, center + pin it now
+      if (tilesLoadedRef.current) {
+        mapWebViewRef.current?.injectJavaScript(
+          `window.setCenter(${latitude}, ${longitude}, 16); window.placePin(${latitude}, ${longitude}); true;`
+        );
+      }
+    };
+
+    const doGPS = () =>
+      Geolocation.getCurrentPosition(onGPS, () => { /* no GPS — leave map at India default */ },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+
+    if (Platform.OS === 'android') {
+      PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION)
+        .then(granted => { if (granted === PermissionsAndroid.RESULTS.GRANTED) doGPS(); });
+    } else {
+      doGPS();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -363,38 +454,67 @@ export default function CreateProjectScreen() {
     }
   };
 
-  // Geolocation pin
-  const pinLocation = async () => {
-    setGeoLoading(true);
+  // Reverse geocode lat/lng → readable address via Nominatim
+  const reverseGeocode = async (lat: number, lng: number) => {
     try {
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          Alert.alert('Permission Denied', 'Location permission is required to pin the project location.');
-          return;
-        }
-      }
-      Geolocation.getCurrentPosition(
-        pos => {
-          setForm(f => ({
-            ...f,
-            latitude:      pos.coords.latitude,
-            longitude:     pos.coords.longitude,
-            locationPinned: true,
-          }));
-          setGeoLoading(false);
-        },
-        err => {
-          Alert.alert('Location Error', err.message);
-          setGeoLoading(false);
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+        { headers: { 'User-Agent': 'NGOConnect/1.0' } }
       );
+      const data = await res.json();
+      let geocodedName = '';
+      if (data.address) {
+        const a = data.address;
+        geocodedName = [
+          a.road, a.neighbourhood, a.suburb,
+          a.city || a.town || a.village || a.county,
+        ].filter(Boolean).join(', ') || data.display_name;
+      } else if (data.display_name) {
+        geocodedName = data.display_name;
+      }
+      if (geocodedName) {
+        setPinnedAddress(geocodedName);
+        // Save geocoded name as landmark — this is what shows in listings and the Apply modal
+        setForm(f => ({ ...f, landmark: geocodedName }));
+      }
     } catch {
-      setGeoLoading(false);
+      const coords = `${lat.toFixed(5)}° N, ${lng.toFixed(5)}° E`;
+      setPinnedAddress(coords);
+      setForm(f => ({ ...f, landmark: coords }));
     }
+  };
+
+  // Handle messages from the map WebView
+  const onMapMessage = (e: { nativeEvent: { data: string } }) => {
+    try {
+      const msg = JSON.parse(e.nativeEvent.data);
+
+      if (msg.type === 'TILES_LOADED') {
+        setTilesLoaded(true);
+        tilesLoadedRef.current = true;
+
+        // Determine which coordinates to centre on (priority: edit saved > GPS already arrived)
+        const savedLat = form.locationPinned ? form.latitude  : undefined;
+        const savedLon = form.locationPinned ? form.longitude : undefined;
+        const gpsLat   = currentLocationRef.current?.latitude;
+        const gpsLon   = currentLocationRef.current?.longitude;
+
+        const lat = savedLat ?? gpsLat;
+        const lon = savedLon ?? gpsLon;
+
+        if (lat != null && lon != null) {
+          mapWebViewRef.current?.injectJavaScript(
+            `window.setCenter(${lat}, ${lon}, 16); window.placePin(${lat}, ${lon}); true;`
+          );
+          if (!pinnedAddress) reverseGeocode(lat, lon);
+        }
+        // else: GPS still in flight — the mount-effect callback will inject once it arrives
+      } else if (msg.type === 'PIN_DROPPED') {
+        const { lat, lng } = msg;
+        setForm(f => ({ ...f, latitude: lat, longitude: lng, locationPinned: true }));
+        reverseGeocode(lat, lng);
+      }
+    } catch { /* ignore malformed messages */ }
   };
 
   // Validation per step
@@ -679,7 +799,7 @@ export default function CreateProjectScreen() {
   };
 
   const renderStep3 = () => (
-    <ScrollView style={s.body} keyboardShouldPersistTaps="handled">
+    <ScrollView style={s.body} contentContainerStyle={{ paddingBottom: 100 }} keyboardShouldPersistTaps="handled" scrollEnabled={!mapFocused}>
       <SectionLabel text="Location" />
       <Text style={s.label}>Location Type</Text>
       <View style={[s.chipRow, { marginBottom: 20 }]}>
@@ -704,54 +824,83 @@ export default function CreateProjectScreen() {
           <FormInput label="City" value={form.city}
             onChangeText={v => set('city', v)} placeholder="e.g., Mumbai" />
 
-          {/* GPS Pin */}
-          <Text style={s.label}>Pin Project Location</Text>
+          {/* Map Location Picker */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <Text style={s.label}>Pin Project Location</Text>
+            {form.locationPinned && (
+              <View style={s.geoInfoBadge}>
+                <Text style={s.geoInfoBadgeText}>📍 Using current location</Text>
+              </View>
+            )}
+          </View>
+          {form.locationPinned && (
+            <View style={s.geoInfoBox}>
+              <Text style={s.geoInfoIcon}>ℹ️</Text>
+              <Text style={s.geoInfoText}>
+                Your current location is pinned by default. Drag the pin to set the exact meeting point if different.
+              </Text>
+            </View>
+          )}
+          <View
+            style={s.mapContainer}
+            onTouchStart={() => setMapFocused(true)}
+            onTouchEnd={() => setMapFocused(false)}
+            onTouchCancel={() => setMapFocused(false)}
+          >
+            <WebView
+              ref={mapWebViewRef}
+              source={{ html: LOCATION_MAP_HTML }}
+              style={{ flex: 1 }}
+              originWhitelist={['*']}
+              onMessage={onMapMessage}
+              javaScriptEnabled
+              domStorageEnabled
+              mixedContentMode="always"
+            />
+            {!tilesLoaded && (
+              <View style={s.mapLoadingOverlay}>
+                <ActivityIndicator color={C.PRIMARY} size="small" />
+                <Text style={s.mapLoadingText}>Loading map…</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Pin status card */}
           <View style={s.mapCard}>
             <View style={s.mapCardIcon}>
-              <Text style={{ fontSize: 28 }}>{form.locationPinned ? '📌' : '🗺️'}</Text>
+              <Text style={{ fontSize: 24 }}>{form.locationPinned ? '📌' : '🗺️'}</Text>
             </View>
             <View style={{ flex: 1 }}>
               {form.locationPinned && form.latitude != null ? (
                 <>
                   <Text style={s.mapPinnedTitle}>Location Pinned</Text>
-                  <Text style={s.mapPinnedCoords}>
-                    {form.latitude.toFixed(5)}° N, {form.longitude?.toFixed(5)}° E
+                  <Text style={s.mapPinnedCoords} numberOfLines={2}>
+                    {pinnedAddress || `${form.latitude.toFixed(5)}° N, ${form.longitude?.toFixed(5)}° E`}
                   </Text>
-                  {form.address ? <Text style={s.mapPinnedAddr} numberOfLines={1}>{form.address}</Text> : null}
                 </>
               ) : (
                 <>
                   <Text style={s.mapUnpinnedTitle}>No location pinned yet</Text>
-                  <Text style={s.mapUnpinnedSub}>Tap below to use your current GPS location</Text>
+                  <Text style={s.mapUnpinnedSub}>Drag the pin on the map to select a location</Text>
                 </>
               )}
             </View>
+            {form.locationPinned && (
+              <TouchableOpacity
+                onPress={() => {
+                  setForm(f => ({ ...f, latitude: undefined, longitude: undefined, locationPinned: false }));
+                  setPinnedAddress('');
+                }}
+              >
+                <Text style={{ fontSize: 18, color: '#ef4444', lineHeight: 22 }}>✕</Text>
+              </TouchableOpacity>
+            )}
           </View>
-
-          <TouchableOpacity
-            style={[s.mapBtn, form.locationPinned && s.mapBtnSuccess]}
-            onPress={pinLocation}
-            disabled={geoLoading}
-          >
-            {geoLoading
-              ? <ActivityIndicator color={form.locationPinned ? '#fff' : C.PRIMARY} size="small" />
-              : <Text style={[s.mapBtnText, form.locationPinned && { color: '#fff' }]}>
-                  {form.locationPinned ? '✓ Location Pinned — Re-pin' : '📍 Pin My Current Location'}
-                </Text>
-            }
-          </TouchableOpacity>
-
-          {form.locationPinned && (
-            <TouchableOpacity
-              style={s.clearPinBtn}
-              onPress={() => setForm(f => ({ ...f, latitude: undefined, longitude: undefined, locationPinned: false }))}
-            >
-              <Text style={s.clearPinText}>Remove pin</Text>
-            </TouchableOpacity>
+          {!form.locationPinned && (
+            <Text style={s.geoNote}>
+              Drag the pin to mark the exact meeting point. Volunteers will see this on the project detail screen.
+            </Text>
           )}
-          <Text style={s.geoNote}>
-            The GPS pin marks the exact meeting point on the map. Volunteers will see this on the project detail screen.
-          </Text>
         </>
       )}
 
@@ -1081,6 +1230,28 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginBottom: 8,
   },
 
+  mapContainer: {
+    height: 220,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  mapLoadingOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(248, 250, 252, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  mapLoadingText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
+  },
   mapCard: {
     flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12,
     borderWidth: 1, borderColor: '#e2e8f0', padding: 14,
@@ -1104,6 +1275,18 @@ const s = StyleSheet.create({
   clearPinBtn:  { alignItems: 'center', marginBottom: 8 },
   clearPinText: { fontSize: 13, color: '#ef4444', fontWeight: '500', textDecorationLine: 'underline' },
   geoNote:      { fontSize: 11, color: '#94a3b8', lineHeight: 16, marginTop: 4, marginBottom: 8 },
+  geoInfoBadge: {
+    backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3,
+  },
+  geoInfoBadgeText: { fontSize: 11, color: '#1D4ED8', fontWeight: '600' },
+  geoInfoBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE',
+    borderRadius: 10, padding: 10, marginBottom: 10,
+  },
+  geoInfoIcon: { fontSize: 14, lineHeight: 18 },
+  geoInfoText: { flex: 1, fontSize: 12, color: '#1D4ED8', lineHeight: 17, fontWeight: '500' },
 
   skillInputRow:  { flexDirection: 'row', gap: 10, marginBottom: 4 },
   addSkillBtn:    { backgroundColor: C_CONST.PRIMARY, borderRadius: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },

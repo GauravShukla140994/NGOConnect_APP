@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
+  Easing,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -15,25 +17,40 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import VideoFeedPlayer from '../../components/home/VideoFeedPlayer';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import ComposeFab from '../../components/common/ComposeFab';
 import CreateFeedPostModal from '../../components/home/CreateFeedPostModal';
 import FeedCommentsModal from '../../components/home/FeedCommentsModal';
 import ApplyModal from '../../components/project/ApplyModal';
-import { feedApi, getFeed, likePost, unlikePost } from '../../api/feed.api';
-import { list as listProjects } from '../../api/project.api';
+import { feedApi, getPersonalizedFeed, likePost, unlikePost } from '../../api/feed.api';
+import { getNearbyFeed } from '../../api/project.api';
 import { getMyOrgs } from '../../api/user.api';
+import { haversineKm, formatDistance } from '../../utils/geo';
+import { orgApi } from '../../api/org.api';
+import { storage } from '../../api/apiClient';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminStore } from '../../store/adminStore';
 import type { Post, Project, Organisation } from '../../types/api.types';
 
 const SCREEN_W = Dimensions.get('window').width;
 const C = AppConfig.COLORS;
+
+// ── Persist the selected org across sessions ──────────────────────────────────
+const ACTIVE_ORG_KEY = 'home_active_org_id';
+
+// Deterministic avatar color per org name (same palette as MyOrgsScreen)
+const ORG_PALETTE = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A', '#7C3AED'];
+function orgColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % ORG_PALETTE.length;
+  return ORG_PALETTE[Math.abs(h)];
+}
 
 /* Category pill colors — matches prototype category chips */
 const CAT_PILL: Record<string, { bg: string; text: string }> = {
@@ -104,9 +121,9 @@ function OppCard({ project, onApply }: { project: Project; onApply?: (p: Project
             {project.categoryName ?? 'General'}
           </Text>
         </View>
-        {project.distanceKm != null ? (
-          <Text style={styles.distText}>{Number(project.distanceKm).toFixed(1)} km</Text>
-        ) : null}
+        {project.distanceKm != null
+          ? <Text style={styles.distText}>📍 {formatDistance(Number(project.distanceKm))}</Text>
+          : null}
       </View>
 
       {/* Title + org */}
@@ -145,29 +162,25 @@ function OppCard({ project, onApply }: { project: Project; onApply?: (p: Project
         </Text>
       ) : null}
 
-      {/* Progress bar */}
-      {max > 0 ? (
-        <View style={styles.capBarOuter}>
-          <View style={[styles.capBarFill, { width: `${pct}%` as any, backgroundColor: spotColor }]} />
-        </View>
-      ) : null}
-
-      {/* Apply button */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.applyBtn,
-          isFull && styles.applyBtnDisabled,
-          pressed && !isFull && { opacity: 0.85 },
-        ]}
-        disabled={isFull}
-        onPress={() => onApply ? onApply(project) : nav.navigate('ProjectDetail', { projectId: project.projectId })}
-        android_ripple={isFull ? undefined : { color: 'rgba(255,255,255,0.2)', borderless: false }}
-        accessibilityLabel={isFull ? 'No spots available' : `Apply to ${project.title ?? 'opportunity'}`}
-      >
-        <Text style={isFull ? styles.applyBtnDisabledText : styles.applyBtnText}>
-          {isFull ? 'No spots available' : 'Apply Now'}
-        </Text>
-      </Pressable>
+      {/* Divider + Apply button — pinned together to card bottom */}
+      <View style={styles.oppCardFooter}>
+        <View style={styles.oppCardDivider} />
+        <Pressable
+          style={({ pressed }) => [
+            styles.applyBtn,
+            isFull && styles.applyBtnDisabled,
+            pressed && !isFull && { opacity: 0.85 },
+          ]}
+          disabled={isFull}
+          onPress={() => onApply ? onApply(project) : nav.navigate('ProjectDetail', { projectId: project.projectId })}
+          android_ripple={isFull ? undefined : { color: 'rgba(255,255,255,0.2)', borderless: false }}
+          accessibilityLabel={isFull ? 'No spots available' : `Apply to ${project.title ?? 'opportunity'}`}
+        >
+          <Text style={isFull ? styles.applyBtnDisabledText : styles.applyBtnText}>
+            {isFull ? 'No spots available' : 'Apply Now'}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -191,9 +204,56 @@ const PostCard = React.memo(function PostCard({
   const nav  = useNavigation<any>();
   const { user } = useAuthStore();
   const meta = TYPE_META[post.postTypeLkpCode ?? 'GENERAL'] ?? TYPE_META.GENERAL;
-  const [bookmarked,    setBookmarked]    = useState(false);
-  const [expanded,      setExpanded]      = useState(false);
-  const [activeSlide,   setActiveSlide]   = useState(0);
+  const [bookmarked,       setBookmarked]       = useState(!!post.isSaved);
+  const [expanded,         setExpanded]         = useState(false);
+  const [activeSlide,      setActiveSlide]      = useState(0);
+
+  // ── Double-tap like animation ───────────────────────────────────────────────
+  const heartOpacity  = useRef(new Animated.Value(0)).current;
+  const heartScale    = useRef(new Animated.Value(0.3)).current;
+  const heartY        = useRef(new Animated.Value(0)).current;
+  const lastImageTap  = useRef(0);
+
+  const triggerHeartAnim = useCallback(() => {
+    heartOpacity.setValue(0);
+    heartScale.setValue(0.3);
+    heartY.setValue(0);
+    Animated.parallel([
+      Animated.timing(heartOpacity, {
+        toValue: 1, duration: 150, useNativeDriver: true,
+      }),
+      Animated.timing(heartScale, {
+        toValue: 1.2, duration: 220,
+        easing: Easing.out(Easing.elastic(1.5)),
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.delay(500),
+        Animated.parallel([
+          Animated.timing(heartOpacity, { toValue: 0,   duration: 350, useNativeDriver: true }),
+          Animated.timing(heartY,       { toValue: -65, duration: 350, useNativeDriver: true }),
+        ]),
+      ]),
+    ]).start();
+  }, [heartOpacity, heartScale, heartY]);
+
+  const handleDoubleTap = useCallback(() => {
+    triggerHeartAnim();
+    if (!post.isLiked) onLike(post.postId!, false); // false = wasLiked → like it now
+  }, [triggerHeartAnim, post.isLiked, post.postId, onLike]);
+
+  // For image posts — detect double-tap timing manually
+  const handleImageTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastImageTap.current < 300) {
+      lastImageTap.current = 0;
+      handleDoubleTap();
+    } else {
+      lastImageTap.current = now;
+    }
+  }, [handleDoubleTap]);
+  const [isFollowingOrg,   setIsFollowingOrg]   = useState(!!post.isFollowing);
+  const [followingOrgLoad, setFollowingOrgLoad] = useState(false);
 
   // ── Post options menu ──────────────────────────────────────────────────────
   const [showMenu,         setShowMenu]         = useState(false);
@@ -202,6 +262,22 @@ const PostCard = React.memo(function PostCard({
   const [reportDetails,    setReportDetails]    = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reportDone,       setReportDone]       = useState(false);
+
+  const handleFollowNGO = async () => {
+    setShowMenu(false);
+    if (!post.orgId || followingOrgLoad) return;
+    setFollowingOrgLoad(true);
+    try {
+      if (isFollowingOrg) {
+        const res = await orgApi.unfollowOrg(post.orgId);
+        if (res.data?.isSuccess) setIsFollowingOrg(false);
+      } else {
+        const res = await orgApi.followOrg(post.orgId);
+        if (res.data?.isSuccess) setIsFollowingOrg(true);
+      }
+    } catch { /* silent */ }
+    finally { setFollowingOrgLoad(false); }
+  };
 
   const openReport = () => {
     setShowMenu(false);
@@ -290,7 +366,11 @@ const PostCard = React.memo(function PostCard({
           <View style={styles.menuSheet}>
             <View style={styles.menuHandle} />
             {[
-              { icon: '➕', label: 'Follow NGO',  onPress: () => setShowMenu(false) },
+              ...(post.orgId ? [{
+                icon: isFollowingOrg ? '✓' : '➕',
+                label: isFollowingOrg ? 'Unfollow NGO' : 'Follow NGO',
+                onPress: handleFollowNGO,
+              }] : []),
               { icon: '↗️', label: 'Share',        onPress: () => setShowMenu(false) },
               { icon: '🔖', label: 'Save',         onPress: () => { setBookmarked(b => !b); setShowMenu(false); } },
             ].map(item => (
@@ -309,6 +389,7 @@ const PostCard = React.memo(function PostCard({
 
       {/* ── Report Post modal ──────────────────────────────────────── */}
       <Modal visible={showReport} transparent animationType="slide" onRequestClose={() => setShowReport(false)}>
+        <SafeAreaProvider>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <Pressable style={styles.menuOverlay} onPress={() => !reportSubmitting && setShowReport(false)}>
             <Pressable style={styles.reportSheet} onPress={e => e.stopPropagation()}>
@@ -384,9 +465,14 @@ const PostCard = React.memo(function PostCard({
                   </TouchableOpacity>
                 </>
               )}
+              {/* Safe-area spacer — replaces hardcoded paddingBottom: 32.
+                  useSafeAreaInsets() returns 0 inside Modal on Android;
+                  native SafeAreaView reads the real inset at the native layer. */}
+              <SafeAreaView edges={['bottom']} style={{ minHeight: 16 }} />
             </Pressable>
           </Pressable>
         </KeyboardAvoidingView>
+        </SafeAreaProvider>
       </Modal>
 
       {/* ── Media carousel ─────────────────────────────────────────── */}
@@ -400,11 +486,14 @@ const PostCard = React.memo(function PostCard({
                 isActive={isActive}
                 muted={globalMuted}
                 onToggleMute={onToggleMute}
+                onDoubleTap={handleDoubleTap}
                 width={SCREEN_W}
                 height={SCREEN_W}
               />
             ) : (
-              <Image source={{ uri: mediaUrls[0] }} style={styles.igMedia} resizeMode="cover" />
+              <TouchableWithoutFeedback onPress={handleImageTap}>
+                <Image source={{ uri: mediaUrls[0] }} style={styles.igMedia} resizeMode="cover" />
+              </TouchableWithoutFeedback>
             )
           ) : (
             /* Multi-item horizontal carousel */
@@ -427,11 +516,14 @@ const PostCard = React.memo(function PostCard({
                     isActive={isActive && activeSlide === i}
                     muted={globalMuted}
                     onToggleMute={onToggleMute}
+                    onDoubleTap={handleDoubleTap}
                     width={SCREEN_W}
                     height={SCREEN_W}
                   />
                 ) : (
-                  <Image key={i} source={{ uri: url }} style={styles.igMedia} resizeMode="cover" />
+                  <TouchableWithoutFeedback key={i} onPress={handleImageTap}>
+                    <Image source={{ uri: url }} style={styles.igMedia} resizeMode="cover" />
+                  </TouchableWithoutFeedback>
                 )
               )}
             </ScrollView>
@@ -452,6 +544,23 @@ const PostCard = React.memo(function PostCard({
               ))}
             </View>
           )}
+
+          {/* ── Double-tap heart overlay ─────────────────────────────── */}
+          <Animated.Text
+            style={[
+              styles.heartAnim,
+              {
+                opacity:   heartOpacity,
+                transform: [
+                  { scale: heartScale },
+                  { translateY: heartY },
+                ],
+              },
+            ]}
+            pointerEvents="none"
+          >
+            ❤️
+          </Animated.Text>
         </View>
       ) : null}
 
@@ -472,9 +581,6 @@ const PostCard = React.memo(function PostCard({
           accessibilityLabel="Comment"
         >
           <Text style={styles.igActionIcon}>💬</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.igActionBtn} accessibilityLabel="Share">
-          <Text style={styles.igActionIcon}>↗</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.igActionBtn, { marginLeft: 'auto' }]}
@@ -589,19 +695,27 @@ export default function HomeScreen() {
   const [feed,           setFeed]           = useState<Post[]>([]);
   const [projects,       setProjects]       = useState<Project[]>([]);
   const [userOrgs,       setUserOrgs]       = useState<Organisation[]>([]);
-  const [page,           setPage]           = useState(1);
+  // Cursor-based pagination — replaces page number for personalised feed
+  const [cursorPostId,   setCursorPostId]   = useState<number | null>(null);
+  const [cursorScore,    setCursorScore]    = useState<number | null>(null);
   const [hasMore,        setHasMore]        = useState(true);
   const [loading,        setLoading]        = useState(true);
   const [refreshing,     setRefreshing]     = useState(false);
   const [error,          setError]          = useState<string | null>(null);
   const [showCreatePost,   setShowCreatePost]   = useState(false);
+  const [permChecking,     setPermChecking]     = useState(false);
   const [commentPost,      setCommentPost]      = useState<Post | null>(null);
   const [applyProject,     setApplyProject]     = useState<Project | null>(null);
   const [showOrgSwitcher,  setShowOrgSwitcher]  = useState(false);
-  const [activeOrgId,      setActiveOrgId]      = useState<number | null>(null);
+  // Initialise from MMKV so the last-selected org is remembered across sessions
+  const [activeOrgId, setActiveOrgId] = useState<number | null>(() => {
+    const saved = storage.getNumber(ACTIVE_ORG_KEY);
+    return saved ?? null;
+  });
   const [locationLabel,    setLocationLabel]    = useState<string>(user?.city ?? '');
   const [locationLoading,  setLocationLoading]  = useState(false);
   const [userCoords,       setUserCoords]       = useState<{ lat: number; lon: number } | null>(null);
+  const userCoordsRef = useRef<{ lat: number; lon: number } | null>(null);
 
   // Fetch GPS location → reverse-geocode to city via OpenStreetMap Nominatim (free, no key)
   const refreshLocation = useCallback(async () => {
@@ -616,6 +730,7 @@ export default function HomeScreen() {
           async (pos: { coords: { latitude: number; longitude: number } }) => {
             try {
               const { latitude, longitude } = pos.coords;
+              userCoordsRef.current = { lat: latitude, lon: longitude };
               setUserCoords({ lat: latitude, lon: longitude });
               const resp = await fetch(
                 `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
@@ -647,10 +762,21 @@ export default function HomeScreen() {
     }
   }, [user]);
 
-  // Re-fetch nearby projects whenever GPS coords arrive/update
+  // When GPS coords arrive: immediately stamp distanceKm on existing cards (no flicker),
+  // then refetch so server can re-order by distance+relevance.
   useEffect(() => {
     if (!userCoords) return;
-    listProjects({ pageNumber: 1, pageSize: 5, userLat: userCoords.lat, userLon: userCoords.lon })
+    // Step 1 — instant client-side distance (badge appears right away)
+    setProjects(prev => prev.map(p => {
+      const lat = (p as any).latitude ?? p.latitude;
+      const lon = (p as any).longitude ?? p.longitude;
+      if (lat != null && lon != null) {
+        return { ...p, distanceKm: Math.round(haversineKm(userCoords.lat, userCoords.lon, Number(lat), Number(lon)) * 10) / 10 };
+      }
+      return p;
+    }));
+    // Step 2 — refetch with GPS for correct relevance-ordered list from server
+    getNearbyFeed({ pageNumber: 1, pageSize: 5, userLat: userCoords.lat, userLon: userCoords.lon })
       .then(r => { if (r.data?.isSuccess) setProjects(r.data.data?.items ?? []); })
       .catch(() => {});
   }, [userCoords]);
@@ -664,11 +790,20 @@ export default function HomeScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadFeed = useCallback(async (pageNum: number, reset = false) => {
+  const loadFeed = useCallback(async (
+    nextCursorPostId: number | null,
+    nextCursorScore:  number | null,
+    reset = false,
+  ) => {
     try {
-      const res = await getFeed(pageNum, AppConfig.DEFAULT_PAGE_SIZE);
+      const res = await getPersonalizedFeed({
+        cursorPostId: nextCursorPostId,
+        cursorScore:  nextCursorScore,
+        pageSize:     AppConfig.DEFAULT_PAGE_SIZE,
+      });
       if (res.data?.isSuccess) {
-        const items = res.data.data?.items ?? [];
+        const data  = res.data.data;
+        const items = data?.items ?? [];
         setFeed(prev => {
           const next = reset ? items : [...prev, ...items];
           // Auto-activate first post so video plays immediately on load
@@ -677,7 +812,9 @@ export default function HomeScreen() {
           }
           return next;
         });
-        setHasMore(items.length === AppConfig.DEFAULT_PAGE_SIZE);
+        setHasMore(data?.hasMore ?? false);
+        setCursorPostId(data?.nextCursorPostId ?? null);
+        setCursorScore(data?.nextCursorScore ?? null);
       }
     } catch {
       setError('Could not load feed. Pull to refresh.');
@@ -687,25 +824,36 @@ export default function HomeScreen() {
   const init = useCallback(async () => {
     setLoading(true);
     setError(null);
+    // Reset cursor state so first page loads fresh
+    setCursorPostId(null);
+    setCursorScore(null);
     await Promise.all([
-      loadFeed(1, true),
-      listProjects({ pageNumber: 1, pageSize: 5 }).then(r => {
+      loadFeed(null, null, true),
+      getNearbyFeed({
+        pageNumber: 1, pageSize: 5,
+        ...(userCoordsRef.current
+          ? { userLat: userCoordsRef.current.lat, userLon: userCoordsRef.current.lon }
+          : {}),
+      }).then(r => {
         if (r.data?.isSuccess) setProjects(r.data.data?.items ?? []);
       }).catch(() => {}),
       getMyOrgs().then(r => {
         if (r.data?.isSuccess) {
           const orgs = r.data.data ?? [];
           setUserOrgs(orgs);
-          // Set first APPROVED org as active if not already set
-          setActiveOrgId(prev => {
-            if (prev) return prev;
-            const first = orgs.find((o: Organisation) => o.memberStatusCode === 'APPROVED');
-            return first?.orgId ?? orgs[0]?.orgId ?? null;
-          });
+          const approvedOrgs = orgs.filter((o: Organisation) => o.memberStatusCode === 'APPROVED');
+          // Try to restore the previously selected org (validate it's still approved)
+          const savedId  = storage.getNumber(ACTIVE_ORG_KEY);
+          const restored = savedId ? approvedOrgs.find((o: Organisation) => o.orgId === savedId) : null;
+          const chosen   = restored ?? approvedOrgs[0] ?? orgs[0];
+          if (chosen) {
+            setActiveOrgId(chosen.orgId);
+            // Always write back so the key stays fresh
+            storage.set(ACTIVE_ORG_KEY, chosen.orgId);
+          }
         }
       }).catch(() => {}),
     ]);
-    setPage(1);
     setLoading(false);
   }, [loadFeed]);
 
@@ -719,10 +867,8 @@ export default function HomeScreen() {
 
   const onEndReached = useCallback(async () => {
     if (!hasMore || loading) return;
-    const next = page + 1;
-    setPage(next);
-    await loadFeed(next);
-  }, [hasMore, loading, page, loadFeed]);
+    await loadFeed(cursorPostId, cursorScore);
+  }, [hasMore, loading, cursorPostId, cursorScore, loadFeed]);
 
   const handleCommentAdded = useCallback((postId: number) => {
     setFeed(prev =>
@@ -761,14 +907,57 @@ export default function HomeScreen() {
     }
   }, []);
 
+  // Derive active-org values BEFORE the FAB callback — required so activeOrg
+  // is in scope when useCallback evaluates its dependency array.
+  const activeOrg    = userOrgs.find(o => o.orgId === activeOrgId)
+                    ?? userOrgs.find(o => o.memberStatusCode === 'APPROVED');
+  const orgName      = activeOrg?.orgName ?? activeOrg?.name ?? 'NGO Connect';
+  const orgInitials  = orgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+  const approvedOrgs = userOrgs.filter(o => o.memberStatusCode === 'APPROVED');
+
+  // ── Create Post: permission gate ──────────────────────────────────────────
+  // Called when FAB is tapped. Checks org-level posting rules before opening modal.
+  const handleComposeFabPress = useCallback(async () => {
+    if (!activeOrg) {
+      Alert.alert('No Organisation', 'Please select an organisation from the header first.');
+      return;
+    }
+    if (permChecking) return;
+    setPermChecking(true);
+    try {
+      const res = await feedApi.getPostPermissions(activeOrg.orgId);
+      const p   = res.data?.data;
+
+      if (!res.data?.isSuccess || !p) {
+        Alert.alert('Error', 'Could not verify posting permissions. Please try again.');
+        return;
+      }
+      if (!p.isMember) {
+        Alert.alert('Not a Member', `You are not an approved member of ${activeOrg.orgName}. Join the organisation first.`);
+        return;
+      }
+      if (!p.canPost) {
+        Alert.alert('Posting Disabled', `${activeOrg.orgName} has disabled posting for members. Contact your organisation admin.`);
+        return;
+      }
+      if (p.maxPostsPerDay > 0 && p.todayPostCount >= p.maxPostsPerDay) {
+        Alert.alert(
+          'Daily Limit Reached',
+          `You have reached your daily posting limit for ${activeOrg.orgName} (${p.todayPostCount}/${p.maxPostsPerDay} posts today).`
+        );
+        return;
+      }
+      // All checks passed — open the modal
+      setShowCreatePost(true);
+    } catch {
+      Alert.alert('Error', 'Could not verify posting permissions. Please try again.');
+    } finally {
+      setPermChecking(false);
+    }
+  }, [activeOrg, permChecking]);
+
   const userInitials = [user?.firstName?.[0], user?.lastName?.[0]]
     .filter(Boolean).join('').toUpperCase() || 'ME';
-
-  const activeOrg   = userOrgs.find(o => o.orgId === activeOrgId)
-                   ?? userOrgs.find(o => o.memberStatusCode === 'APPROVED');
-  const orgName     = activeOrg?.orgName ?? activeOrg?.name ?? 'NGO Connect';
-  const orgInitials = orgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-  const approvedOrgs = userOrgs.filter(o => o.memberStatusCode === 'APPROVED');
 
   // Sync the currently active org into the shared store so other screens
   // (Community, etc.) can read it without their own API call.
@@ -786,9 +975,17 @@ export default function HomeScreen() {
             onPress={() => setShowOrgSwitcher(true)}
             accessibilityLabel="Switch organization"
           >
-            <View style={styles.orgAvatar}>
-              <Text style={styles.orgAvatarText}>{orgInitials}</Text>
-            </View>
+            {activeOrg?.logoUrl ? (
+              <Image
+                source={{ uri: activeOrg.logoUrl }}
+                style={styles.orgAvatarImg}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.orgAvatar, { backgroundColor: orgColor(orgName) }]}>
+                <Text style={styles.orgAvatarText}>{orgInitials}</Text>
+              </View>
+            )}
             <Text style={styles.orgName} numberOfLines={1}>{orgName}</Text>
             <Text style={styles.orgChevron}>▾</Text>
           </TouchableOpacity>
@@ -922,8 +1119,13 @@ export default function HomeScreen() {
       )}
 
 
-      {/* ── FAB ────────────────────────────────────────────────────────── */}
-      <ComposeFab onPress={() => setShowCreatePost(true)} />
+      {/* ── FAB — only visible when user has at least one approved org ─── */}
+      {approvedOrgs.length > 0 && (
+        <ComposeFab
+          onPress={handleComposeFabPress}
+          accessibilityLabel={permChecking ? 'Checking permissions…' : 'Create new post'}
+        />
+      )}
 
       {/* ── Create Post Modal ───────────────────────────────────────────── */}
       <CreateFeedPostModal
@@ -932,7 +1134,7 @@ export default function HomeScreen() {
         onPosted={init}
         user={user}
         activeOrg={activeOrg ?? null}
-        roleLabel={activeOrg ? 'Admin' : undefined}
+        roleLabel={activeOrg ? (activeOrg.myRole ?? (activeOrg as any).role ?? 'Member') : undefined}
       />
 
       {/* ── Comments Modal ──────────────────────────────────────────────── */}
@@ -973,9 +1175,15 @@ export default function HomeScreen() {
             </View>
 
             {/* Org rows */}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+            >
             {approvedOrgs.map((org) => {
               const oName    = org.orgName ?? (org as any).name ?? 'NGO';
               const isActive = org.orgId === activeOrgId;
+              const avatarBg = orgColor(oName);
               const initials = oName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
               const role     = org.myRole ?? (org as any).role ?? 'Member';
               const members  = org.memberCount ? `${org.memberCount.toLocaleString()} members` : '';
@@ -984,20 +1192,42 @@ export default function HomeScreen() {
                 <Pressable
                   key={org.orgId}
                   style={[styles.orgSwitcherItem, isActive && styles.orgSwitcherItemActive]}
-                  onPress={() => { setActiveOrgId(org.orgId); setActiveOrg(org); setShowOrgSwitcher(false); }}
+                  onPress={() => {
+                    setActiveOrgId(org.orgId);
+                    setActiveOrg(org);
+                    storage.set(ACTIVE_ORG_KEY, org.orgId);  // ← persist across sessions
+                    setShowOrgSwitcher(false);
+                  }}
                   accessibilityLabel={`Switch to ${oName}`}
                 >
-                  <View style={[styles.orgSwitcherAvatar, isActive && { backgroundColor: C.PRIMARY }]}>
-                    <Text style={styles.orgSwitcherAvatarText}>{initials}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.orgSwitcherName, isActive && { color: C.PRIMARY }]}>{oName}</Text>
-                    {subtitle ? <Text style={styles.orgSwitcherMeta}>{subtitle}</Text> : null}
-                  </View>
-                  {isActive && (
-                    <View style={styles.orgSwitcherActiveBadge}>
-                      <Text style={styles.orgSwitcherActiveBadgeText}>Active</Text>
+                  {/* Logo or initials */}
+                  {org.logoUrl ? (
+                    <Image
+                      source={{ uri: org.logoUrl }}
+                      style={styles.orgSwitcherAvatar}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.orgSwitcherAvatar, { backgroundColor: avatarBg }]}>
+                      <Text style={styles.orgSwitcherAvatarText}>{initials}</Text>
                     </View>
+                  )}
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.orgSwitcherName, isActive && { color: C.PRIMARY }]}
+                          numberOfLines={1}>
+                      {oName}
+                    </Text>
+                    {subtitle ? <Text style={styles.orgSwitcherMeta} numberOfLines={1}>{subtitle}</Text> : null}
+                  </View>
+
+                  {/* Active checkmark */}
+                  {isActive ? (
+                    <View style={styles.orgSwitcherCheck}>
+                      <Text style={styles.orgSwitcherCheckText}>✓</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.orgSwitcherChevron}>›</Text>
                   )}
                 </Pressable>
               );
@@ -1009,15 +1239,16 @@ export default function HomeScreen() {
               onPress={() => { setShowOrgSwitcher(false); nav.navigate('CreateOrg' as never); }}
               accessibilityLabel="Create new organisation"
             >
-              <View style={[styles.orgSwitcherAvatar, { backgroundColor: C.BORDER }]}>
-                <Text style={[styles.orgSwitcherAvatarText, { color: C.TEXT2, fontSize: 20 }]}>+</Text>
+              <View style={[styles.orgSwitcherAvatar, styles.orgSwitcherAvatarCreate]}>
+                <Text style={styles.orgSwitcherCreatePlus}>+</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.orgSwitcherName}>Create New Organisation</Text>
                 <Text style={styles.orgSwitcherMeta}>Register a new NGO</Text>
               </View>
-              <Text style={{ fontSize: 20, color: C.TEXT3 }}>›</Text>
+              <Text style={styles.orgSwitcherChevron}>›</Text>
             </Pressable>
+            </ScrollView>
 
             <View style={{ height: insets.bottom + 8 }} />
           </Pressable>
@@ -1047,10 +1278,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   orgSelector: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  // Header org avatar — shared shape for both Image and View variants
   orgAvatar: {
     width: 36, height: 36, borderRadius: 10,
-    backgroundColor: C.PRIMARY,
     alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  orgAvatarImg: {
+    width: 36, height: 36, borderRadius: 10,
+    overflow: 'hidden',
   },
   orgAvatarText:  { fontSize: 12, fontWeight: '800', color: '#fff' },
   orgName:        { fontSize: 15, fontWeight: '700', color: C.TEXT, maxWidth: 160 },
@@ -1090,6 +1326,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.CARD,
     borderRadius: 14,
     padding: 13,
+    flexDirection: 'column', // explicit — required for marginTop:'auto' on button
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.07,
@@ -1099,7 +1336,11 @@ const styles = StyleSheet.create({
   oppCardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   pill:        { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
   pillText:    { fontSize: 10, fontWeight: '700' },
-  distText:    { fontSize: 11, color: C.TEXT3 },
+  distText: {
+    fontSize: 10, fontWeight: '700', color: C.TEAL,
+    backgroundColor: C.TEAL + '20',
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10,
+  },
   oppTitle:    { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 3, lineHeight: 19 },
   oppOrg:      { fontSize: 12, color: C.TEXT2, marginBottom: 7 },
   oppMeta:     { gap: 3, marginBottom: 7 },
@@ -1107,12 +1348,19 @@ const styles = StyleSheet.create({
   capBarOuter: { height: 4, backgroundColor: C.BG, borderRadius: 2, overflow: 'hidden', marginBottom: 5 },
   capBarFill:  { height: '100%' as any, borderRadius: 2 },
   spotsText:   { fontSize: 11, fontWeight: '600', marginBottom: 4 },
+  oppCardFooter: {
+    marginTop: 'auto' as any, // pins divider + button together to card bottom
+  },
+  oppCardDivider: {
+    height: 1,
+    backgroundColor: C.BORDER,
+    marginBottom: 10,
+  },
   applyBtn: {
     backgroundColor: C.PRIMARY,
     paddingVertical: 8,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 8,
   },
   applyBtnDisabled:     { backgroundColor: C.BORDER },
   applyBtnText:         { color: '#fff', fontSize: 11, fontWeight: '700' },
@@ -1145,6 +1393,13 @@ const styles = StyleSheet.create({
   igTypePillText: { fontSize: 10, fontWeight: '700' },
   igMore:         { fontSize: 17, color: C.TEXT3, letterSpacing: 1.5 },
   igMedia:        { width: SCREEN_W, height: SCREEN_W },
+  heartAnim:      {
+    position:  'absolute',
+    alignSelf: 'center',
+    top:       '35%',
+    fontSize:  80,
+    zIndex:    10,
+  },
   igDots: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -1213,36 +1468,56 @@ const styles = StyleSheet.create({
   // ── Org Switcher ─────────────────────────────────────────────────────────────
   orgSwitcherSheet: {
     backgroundColor: C.CARD,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    // max height so it doesn't cover full screen on many-org accounts
+    maxHeight: '70%',
   },
   orgSwitcherHeader: {
     flexDirection: 'row', alignItems: 'flex-start',
-    paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12,
+    paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14,
     borderBottomWidth: 1, borderBottomColor: C.BORDER,
   },
-  orgSwitcherTitle:    { fontSize: 16, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  orgSwitcherTitle:    { fontSize: 17, fontWeight: '800', color: C.TEXT, marginBottom: 2 },
   orgSwitcherSubtitle: { fontSize: 12, color: C.TEXT2 },
   orgSwitcherClose:    { fontSize: 18, color: C.TEXT2, paddingLeft: 12, paddingTop: 2 },
   orgSwitcherItem: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 13,
+    paddingHorizontal: 16, paddingVertical: 14,
     borderBottomWidth: 1, borderBottomColor: C.BORDER,
   },
-  orgSwitcherItemActive: { backgroundColor: `${C.PRIMARY}08` },
+  // Active row gets a very subtle tint — more visible than before
+  orgSwitcherItemActive: {
+    backgroundColor: `${C.PRIMARY}0D`,  // ~5% opacity
+    borderLeftWidth: 3,
+    borderLeftColor: C.PRIMARY,
+  },
+  // Avatar — same shape for Image and View (overflow hidden clips the image)
   orgSwitcherAvatar: {
-    width: 40, height: 40, borderRadius: 10,
-    backgroundColor: C.PRIMARY_LIGHT,
+    width: 46, height: 46, borderRadius: 14,
+    overflow: 'hidden',
     alignItems: 'center', justifyContent: 'center',
   },
-  orgSwitcherAvatarText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  orgSwitcherName:       { fontSize: 14, fontWeight: '600', color: C.TEXT },
-  orgSwitcherMeta:       { fontSize: 12, color: C.TEXT2, marginTop: 1 },
-  orgSwitcherActiveBadge: {
-    backgroundColor: C.PRIMARY_LIGHT,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+  // Initials text — always white; background is deterministic dark color
+  orgSwitcherAvatarText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  // "Create New" avatar — dashed border feel
+  orgSwitcherAvatarCreate: {
+    backgroundColor: C.BG,
+    borderWidth: 1.5,
+    borderColor: C.BORDER,
+    borderStyle: 'dashed',
   },
-  orgSwitcherActiveBadgeText: { fontSize: 11, fontWeight: '700', color: C.PRIMARY },
+  orgSwitcherCreatePlus: { fontSize: 22, color: C.TEXT2, lineHeight: 28 },
+  orgSwitcherName:    { fontSize: 15, fontWeight: '700', color: C.TEXT },
+  orgSwitcherMeta:    { fontSize: 12, color: C.TEXT2, marginTop: 2 },
+  orgSwitcherChevron: { fontSize: 18, color: C.TEXT3, paddingLeft: 4 },
+  // Checkmark badge for the active org
+  orgSwitcherCheck: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: C.PRIMARY,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  orgSwitcherCheckText: { fontSize: 14, color: '#fff', fontWeight: '800' },
 
   // ── Post options menu sheet ──────────────────────────────────────────────────
   menuOverlay: {
@@ -1280,7 +1555,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.CARD,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingBottom: 32,
+    // paddingBottom handled by SafeAreaView spacer at bottom of sheet
     maxHeight: '92%',
   },
   reportHeader: {

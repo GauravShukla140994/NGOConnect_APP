@@ -15,20 +15,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
+  Pressable,
   StyleSheet,
   Text,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import Video from 'react-native-video';
 
 interface Props {
-  uri:          string;
-  isActive:     boolean;
-  muted:        boolean;
-  onToggleMute: () => void;
-  width:        number;
-  height:       number;
+  uri:           string;
+  isActive:      boolean;
+  muted:         boolean;
+  onToggleMute:  () => void;
+  onDoubleTap?:  () => void;
+  width:         number;
+  height:        number;
 }
 
 function fmtTime(secs: number): string {
@@ -38,7 +40,7 @@ function fmtTime(secs: number): string {
 }
 
 export default function VideoFeedPlayer({
-  uri, isActive, muted, onToggleMute, width, height,
+  uri, isActive, muted, onToggleMute, onDoubleTap, width, height,
 }: Props) {
 
   const [duration,    setDuration]    = useState(0);
@@ -71,17 +73,69 @@ export default function VideoFeedPlayer({
     }, 800);
   }, [muteFlashOpacity]);
 
+  // ── Heart animation (rendered INSIDE the video View — correct z layer) ──────
+  const heartOpacity = useRef(new Animated.Value(0)).current;
+  const heartScale   = useRef(new Animated.Value(0.3)).current;
+  const heartY       = useRef(new Animated.Value(0)).current;
+
+  const triggerHeart = useCallback(() => {
+    heartOpacity.setValue(0);
+    heartScale.setValue(0.3);
+    heartY.setValue(0);
+    // Flat parallel — no sequence blocking on spring settle time.
+    // Phase 1 (0–200ms): fade in + elastic scale-up
+    // Phase 2 (500–850ms): fade out + float up
+    Animated.parallel([
+      Animated.timing(heartOpacity, {
+        toValue: 1, duration: 150, useNativeDriver: true,
+      }),
+      Animated.timing(heartScale, {
+        toValue: 1.2, duration: 220,
+        easing: Easing.out(Easing.elastic(1.5)),
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.delay(500),
+        Animated.parallel([
+          Animated.timing(heartOpacity, { toValue: 0,   duration: 350, useNativeDriver: true }),
+          Animated.timing(heartY,       { toValue: -65, duration: 350, useNativeDriver: true }),
+        ]),
+      ]),
+    ]).start();
+  }, [heartOpacity, heartScale, heartY]);
+
+  // ── Double-tap vs single-tap ─────────────────────────────────────────────
+  // Single-tap  → toggle mute (delayed 300ms so we can cancel on double-tap)
+  // Double-tap  → show heart + fire onDoubleTap (like) — mute is NOT toggled
+  // Timer is 300ms (= double-tap window) so it never fires before detection.
+  const lastTapRef  = useRef(0);
+  const tapTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleTap = useCallback(() => {
-    onToggleMute();
-    showMuteFlash();
-  }, [onToggleMute, showMuteFlash]);
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      // Double-tap confirmed — cancel pending mute action
+      if (tapTimer.current) { clearTimeout(tapTimer.current); tapTimer.current = null; }
+      lastTapRef.current = 0;
+      triggerHeart();     // Show ❤️ inside the video layer
+      onDoubleTap?.();    // Like the post (handled by PostCard)
+    } else {
+      lastTapRef.current = now;
+      tapTimer.current = setTimeout(() => {
+        tapTimer.current = null;
+        onToggleMute();
+        showMuteFlash();
+      }, 300); // 300ms matches double-tap window — never fires mid-detection
+    }
+  }, [onToggleMute, showMuteFlash, onDoubleTap, triggerHeart]);
 
   // ── v6-compatible callbacks ────────────────────────────────────────────────
   const handleLoad = useCallback((data: any) => {
+    console.log('[VideoFeedPlayer] onLoad uri=' + uri, 'duration=' + data?.duration);
     setDuration(data?.duration ?? 0);
     setReady(true);
     setBuffering(false);
-  }, []);
+  }, [uri]);
 
   const handleProgress = useCallback((data: any) => {
     setCurrentTime(data?.currentTime ?? 0);
@@ -92,9 +146,10 @@ export default function VideoFeedPlayer({
     setBuffering(data?.isBuffering ?? false);
   }, []);
 
-  const handleError = useCallback(() => {
+  const handleError = useCallback((err: any) => {
+    console.error('[VideoFeedPlayer] onError uri=' + uri, JSON.stringify(err));
     setReady(false);
-  }, []);
+  }, [uri]);
 
   const handleReadyForDisplay = useCallback(() => {
     setReady(true);
@@ -105,92 +160,108 @@ export default function VideoFeedPlayer({
   const showTime     = ready && duration > 0;
 
   return (
-    <TouchableWithoutFeedback
-      onPress={handleTap}
-      accessibilityLabel={muted ? 'Tap to unmute' : 'Tap to mute'}
-    >
-      <View style={[styles.container, { width, height }]}>
+    <View style={[styles.container, { width, height }]}>
 
-        {/* ── Video ───────────────────────────────────────────────── */}
-        <Video
-          source={{ uri }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-          paused={!isActive}
-          muted={muted}
-          repeat={true}
-          controls={false}
-          disableFocus={true}
-          progressUpdateInterval={250}
-          onLoad={handleLoad}
-          onProgress={handleProgress}
-          onBuffer={handleBuffer}
-          onError={handleError}
-          onReadyForDisplay={handleReadyForDisplay}
-          bufferConfig={{
-            minBufferMs:                      2500,
-            maxBufferMs:                      15000,
-            bufferForPlaybackMs:              1500,
-            bufferForPlaybackAfterRebufferMs: 3000,
-          }}
-        />
+      {/* ── Video ───────────────────────────────────────────────── */}
+      <Video
+        source={{ uri }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+        paused={!isActive}
+        muted={muted}
+        repeat={true}
+        controls={false}
+        disableFocus={true}
+        progressUpdateInterval={250}
+        onLoad={handleLoad}
+        onProgress={handleProgress}
+        onBuffer={handleBuffer}
+        onError={handleError}
+        onReadyForDisplay={handleReadyForDisplay}
+      />
 
-        {/* ── Progress bar (bottom edge) ───────────────────────────── */}
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: progressPct }]} />
-        </View>
-
-        {/* ── Time display (bottom-left: elapsed / total) ──────────── */}
-        {showTime && (
-          <View style={styles.timeBadge}>
-            <Text style={styles.timeText}>
-              {fmtTime(currentTime)}
-              <Text style={styles.timeSep}> / </Text>
-              {fmtTime(duration)}
-            </Text>
-          </View>
-        )}
-
-        {/* ── Center mute flash ─────────────────────────────────────── */}
-        <Animated.View
-          style={[styles.muteFlashWrap, { opacity: muteFlashOpacity }]}
-          pointerEvents="none"
-        >
-          <View style={styles.muteFlashBg}>
-            <Text style={styles.muteFlashIcon}>{muted ? '🔇' : '🔊'}</Text>
-          </View>
-        </Animated.View>
-
-        {/* ── Corner mute badge ─────────────────────────────────────── */}
-        {isActive && (
-          <View style={styles.muteCorner}>
-            <Text style={styles.muteCornerIcon}>{muted ? '🔇' : '🔊'}</Text>
-          </View>
-        )}
-
-        {/* ── VIDEO pill (top-left) ─────────────────────────────────── */}
-        <View style={styles.videoPill}>
-          <Text style={styles.videoPillText}>▶  VIDEO</Text>
-        </View>
-
-        {/* ── Buffering spinner ─────────────────────────────────────── */}
-        {isActive && buffering && (
-          <View style={styles.bufferingWrap} pointerEvents="none">
-            <View style={styles.bufferingRing} />
-          </View>
-        )}
-
-        {/* ── Paused play-button hint (when in viewport but not playing yet) */}
-        {!isActive && (
-          <View style={styles.pausedHint} pointerEvents="none">
-            <View style={styles.pausedPlayBtn}>
-              <Text style={styles.pausedPlayIcon}>▶</Text>
-            </View>
-          </View>
-        )}
-
+      {/* ── Progress bar (bottom edge) ───────────────────────────── */}
+      <View style={styles.progressTrack} pointerEvents="none">
+        <View style={[styles.progressFill, { width: progressPct }]} />
       </View>
-    </TouchableWithoutFeedback>
+
+      {/* ── Time display (bottom-left: elapsed / total) ──────────── */}
+      {showTime && (
+        <View style={styles.timeBadge} pointerEvents="none">
+          <Text style={styles.timeText}>
+            {fmtTime(currentTime)}
+            <Text style={styles.timeSep}> / </Text>
+            {fmtTime(duration)}
+          </Text>
+        </View>
+      )}
+
+      {/* ── Center mute flash ─────────────────────────────────────── */}
+      <Animated.View
+        style={[styles.muteFlashWrap, { opacity: muteFlashOpacity }]}
+        pointerEvents="none"
+      >
+        <View style={styles.muteFlashBg}>
+          <Text style={styles.muteFlashIcon}>{muted ? '🔇' : '🔊'}</Text>
+        </View>
+      </Animated.View>
+
+      {/* ── Corner mute badge ─────────────────────────────────────── */}
+      {isActive && (
+        <View style={styles.muteCorner} pointerEvents="none">
+          <Text style={styles.muteCornerIcon}>{muted ? '🔇' : '🔊'}</Text>
+        </View>
+      )}
+
+      {/* ── VIDEO pill (top-left) ─────────────────────────────────── */}
+      <View style={styles.videoPill} pointerEvents="none">
+        <Text style={styles.videoPillText}>▶  VIDEO</Text>
+      </View>
+
+      {/* ── Buffering spinner ─────────────────────────────────────── */}
+      {isActive && buffering && (
+        <View style={styles.bufferingWrap} pointerEvents="none">
+          <View style={styles.bufferingRing} />
+        </View>
+      )}
+
+      {/* ── Paused play-button hint ───────────────────────────────── */}
+      {!isActive && (
+        <View style={styles.pausedHint} pointerEvents="none">
+          <View style={styles.pausedPlayBtn}>
+            <Text style={styles.pausedPlayIcon}>▶</Text>
+          </View>
+        </View>
+      )}
+
+      {/* ── Touch capture overlay — LAST non-heart child so it sits above
+           the native Video SurfaceView and receives touches everywhere.
+           TouchableWithoutFeedback cannot do this on Android because the
+           native video surface consumes touches before the JS responder
+           system. A Pressable child rendered after <Video> is above it
+           in the Android View z-order and intercepts correctly. ─────── */}
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={handleTap}
+        android_ripple={null}
+        accessibilityLabel={muted ? 'Tap to unmute' : 'Tap to mute'}
+      />
+
+      {/* ── Double-tap heart — AFTER the Pressable so it renders above it ── */}
+      <Animated.Text
+        style={[
+          styles.heartOverlay,
+          {
+            opacity:   heartOpacity,
+            transform: [{ scale: heartScale }, { translateY: heartY }],
+          },
+        ]}
+        pointerEvents="none"
+      >
+        ❤️
+      </Animated.Text>
+
+    </View>
   );
 }
 
@@ -296,6 +367,15 @@ const styles = StyleSheet.create({
     borderWidth:  3,
     borderColor:  'rgba(255,255,255,0.75)',
     borderTopColor: 'transparent',
+  },
+
+  // Double-tap heart overlay (inside video, correct z-order)
+  heartOverlay: {
+    position:  'absolute',
+    alignSelf: 'center',
+    top:       '35%',
+    fontSize:  80,
+    zIndex:    20,
   },
 
   // Paused play hint (when off-screen / not yet active)

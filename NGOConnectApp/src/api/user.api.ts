@@ -53,6 +53,12 @@ export const userApi = {
   deleteDocument: (userDocumentId: number) =>
     apiClient.delete<ApiResponse<null>>(`/user/documents/${userDocumentId}`),
 
+  sendContactOtp: (type: 'EMAIL' | 'PHONE', value: string) =>
+    apiClient.post<ApiResponse<null>>('/user/contact/send-otp', { type, value }),
+
+  verifyContactOtp: (type: 'EMAIL' | 'PHONE', value: string, otpCode: string) =>
+    apiClient.post<ApiResponse<null>>('/user/contact/verify', { type, value, otpCode }),
+
   // getMyProjects — no backend endpoint yet (ProjectController has no /user/my-projects route)
   // Will be added when the "My Projects" screen (s-all-projects) is built
 };
@@ -74,3 +80,5 @@ export const updateSafetyPrefs = (data: Partial<SafetyPrefs>) => userApi.updateS
 export const getMyDocuments    = () => userApi.getMyDocuments();
 export const uploadDocument    = (data: {documentTypeLkpId: number; fileUrl: string; fileName: string; fileSizeKb: number}) => userApi.uploadDocument(data);
 export const deleteDocument    = (userDocumentId: number) => userApi.deleteDocument(userDocumentId);
+export const sendContactOtp    = (type: 'EMAIL' | 'PHONE', value: string) => userApi.sendContactOtp(type, value);
+export const verifyContactOtp  = (type: 'EMAIL' | 'PHONE', value: string, otpCode: string) => userApi.verifyContactOtp(type, value, otpCode);

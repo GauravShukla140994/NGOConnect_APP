@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {useAuthStore} from '../store/authStore';
@@ -9,6 +9,13 @@ const Stack = createNativeStackNavigator();
 
 const RootNavigator = () => {
   const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const loadProfile     = useAuthStore(state => state.loadProfile);
+
+  // Load user profile whenever auth state becomes true —
+  // covers both fresh OTP login and app restarts with an existing session.
+  useEffect(() => {
+    if (isAuthenticated) { loadProfile(); }
+  }, [isAuthenticated]);
 
   return (
     <NavigationContainer>

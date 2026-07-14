@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -37,6 +38,8 @@ const ROLE_COLOR: Record<string, string> = {
 
 type MainTab  = 'pending' | 'members' | 'posts';
 type PostsTab = 'all' | 'pending' | 'reported';
+const MAIN_TABS:  MainTab[]  = ['pending', 'members', 'posts'];
+const POSTS_TABS: PostsTab[] = ['all', 'pending', 'reported'];
 
 // ── Pending member card ───────────────────────────────────────────────────────
 function PendingCard({
@@ -192,10 +195,7 @@ function PostCard({
         </View>
       ) : (
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.pinBtn} onPress={onPin} accessibilityLabel="Pin post">
-            <Text style={styles.pinBtnText}>{post.isPinned ? '📍 Unpin' : '📌 Pin'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.deletePostBtn} onPress={onDelete} accessibilityLabel="Delete post">
+          <TouchableOpacity style={[styles.deletePostBtn, { flex: 1 }]} onPress={onDelete} accessibilityLabel="Delete post">
             <Text style={styles.deleteBtnText}>⊘ Delete</Text>
           </TouchableOpacity>
         </View>
@@ -443,6 +443,36 @@ export default function AdminVolunteersScreen() {
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
 
+  // ── Swipe to change tab ──────────────────────────────────────────────────────
+  // When mainTab === 'posts', swipe switches the posts sub-tab.
+  // Otherwise, swipe switches the main tab.
+  const swipeState = useRef({
+    mainTab: 'pending' as MainTab,
+    postsTab: 'all' as PostsTab,
+    setMainTab: (_t: MainTab) => {},
+    setPostsTab: (_t: PostsTab) => {},
+  });
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.5,
+      onPanResponderRelease: (_, { dx, vx }) => {
+        const { mainTab: curMain, postsTab: curPosts, setMainTab, setPostsTab } = swipeState.current;
+        if (curMain === 'posts') {
+          const idx = POSTS_TABS.indexOf(curPosts);
+          if ((dx < -40 || vx < -0.4) && idx < POSTS_TABS.length - 1) setPostsTab(POSTS_TABS[idx + 1]);
+          else if ((dx > 40 || vx > 0.4) && idx > 0) setPostsTab(POSTS_TABS[idx - 1]);
+        } else {
+          const idx = MAIN_TABS.indexOf(curMain);
+          if ((dx < -40 || vx < -0.4) && idx < MAIN_TABS.length - 1) setMainTab(MAIN_TABS[idx + 1]);
+          else if ((dx > 40 || vx > 0.4) && idx > 0) setMainTab(MAIN_TABS[idx - 1]);
+        }
+      },
+    })
+  ).current;
+  swipeState.current = { mainTab, postsTab, setMainTab, setPostsTab };
+
   const [selectedMember, setSelectedMember] = useState<OrgMember | null>(null);
 
   // ── Ensure selectedOrg is loaded (handles direct tab navigation) ──────────
@@ -531,13 +561,25 @@ export default function AdminVolunteersScreen() {
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const approveMember = useCallback(async (member: OrgMember) => {
-    if (!member.membershipRequestId) { return; }
+    const reqId = member.membershipRequestId ?? (member as any).requestId;
+    if (!reqId) {
+      Alert.alert('Error', 'Could not identify membership request. Please refresh and try again.');
+      return;
+    }
     try {
-      await orgApi.reviewMembershipRequest(orgId, {
-        membershipRequestId: member.membershipRequestId,
+      const res = await orgApi.reviewMembershipRequest(orgId, {
+        membershipRequestId: reqId,
         statusCode: 'APPROVED',
       });
-      setPendingList(prev => prev.filter(m => m.userId !== member.userId));
+      if (res.data?.isSuccess) {
+        setPendingList(prev => prev.filter(m => m.userId !== member.userId));
+        // Reload members list so the newly approved member appears there
+        orgApi.getMembers(orgId).then(r => {
+          if (r.data?.isSuccess) setMemberList(r.data.data ?? []);
+        }).catch(() => {/* silent */});
+      } else {
+        Alert.alert('Error', res.data?.message ?? 'Could not approve member. Please try again.');
+      }
     } catch { Alert.alert('Error', 'Could not approve member. Please try again.'); }
   }, [orgId]);
 
@@ -549,13 +591,21 @@ export default function AdminVolunteersScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Reject', style: 'destructive', onPress: async () => {
-            if (!member.membershipRequestId) { return; }
+            const reqId = member.membershipRequestId ?? (member as any).requestId;
+            if (!reqId) {
+              Alert.alert('Error', 'Could not identify membership request. Please refresh and try again.');
+              return;
+            }
             try {
-              await orgApi.reviewMembershipRequest(orgId, {
-                membershipRequestId: member.membershipRequestId,
+              const res = await orgApi.reviewMembershipRequest(orgId, {
+                membershipRequestId: reqId,
                 statusCode: 'REJECTED',
               });
-              setPendingList(prev => prev.filter(m => m.userId !== member.userId));
+              if (res.data?.isSuccess) {
+                setPendingList(prev => prev.filter(m => m.userId !== member.userId));
+              } else {
+                Alert.alert('Error', res.data?.message ?? 'Could not reject application.');
+              }
             } catch { Alert.alert('Error', 'Could not reject application.'); }
           },
         },
@@ -583,8 +633,12 @@ export default function AdminVolunteersScreen() {
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
           try {
-            await orgApi.deletePost(orgId, postId);
-            setPostList(prev => prev.filter(p => p.postId !== postId));
+            const res = await orgApi.deletePost(orgId, postId);
+            if (res.data?.isSuccess === 1) {
+              setPostList(prev => prev.filter(p => p.postId !== postId));
+            } else {
+              Alert.alert('Error', res.data?.message ?? 'Could not delete post.');
+            }
           } catch { Alert.alert('Error', 'Could not delete post.'); }
         },
       },
@@ -593,11 +647,16 @@ export default function AdminVolunteersScreen() {
 
   const moderatePost = useCallback(async (postId: number, action: 'KEEP' | 'REMOVE') => {
     try {
-      await orgApi.moderatePost(orgId, postId, action);
-      if (action === 'REMOVE') {
-        setPostList(prev => prev.filter(p => p.postId !== postId));
+      const res = await orgApi.moderatePost(orgId, postId, action);
+      if (res.data?.isSuccess === 1) {
+        if (action === 'REMOVE') {
+          setPostList(prev => prev.filter(p => p.postId !== postId));
+        } else {
+          // KEEP — clear the report flag so the card moves out of reported state
+          setPostList(prev => prev.map(p => p.postId === postId ? { ...p, reportCount: 0 } : p));
+        }
       } else {
-        setPostList(prev => prev.map(p => p.postId === postId ? { ...p, reportCount: 0 } : p));
+        Alert.alert('Error', res.data?.message ?? 'Could not moderate post.');
       }
     } catch { Alert.alert('Error', 'Could not moderate post.'); }
   }, [orgId]);
@@ -674,6 +733,8 @@ export default function AdminVolunteersScreen() {
         )}
       </View>
 
+      {/* Swipe area — wraps main tabs + all tab content */}
+      <View style={{ flex: 1 }} {...panResponder.panHandlers}>
       {/* ── Main tabs ──────────────────────────────────────────────────────── */}
       <View style={styles.tabs}>
         {([
@@ -800,6 +861,8 @@ export default function AdminVolunteersScreen() {
           />
         </>
       )}
+
+      </View>{/* end swipe area */}
 
       {/* ── Member Details Sheet ────────────────────────────────────────────── */}
       <MemberDetailsSheet
