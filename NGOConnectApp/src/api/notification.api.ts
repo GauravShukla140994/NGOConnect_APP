@@ -6,7 +6,7 @@ export const notificationApi = {
     apiClient.get<ApiResponse<PagedResult<Notification>>>('/notifications', {params}),
 
   getUnreadCount: () =>
-    apiClient.get<ApiResponse<{count: number}>>('/notifications/unread-count'),
+    apiClient.get<ApiResponse<{unreadCount: number}>>('/notifications/unread-count'),
 
   markRead: (notificationId: number) =>
     apiClient.put<ApiResponse<null>>(`/notifications/${notificationId}/read`),
@@ -16,4 +16,7 @@ export const notificationApi = {
 
   registerDeviceToken: (token: string) =>
     apiClient.post<ApiResponse<null>>('/notifications/device-token', {token, platform: 'android'}),
+
+  sendTest: (payload: {token: string; title: string; body: string; notifType?: string; refId?: number; refType?: string}) =>
+    apiClient.post<ApiResponse<null>>('/notifications/send-test', payload),
 };

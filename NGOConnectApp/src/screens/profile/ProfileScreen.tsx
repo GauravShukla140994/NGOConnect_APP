@@ -16,12 +16,19 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { getMyProfile } from '../../api/user.api';
-import { getMyOrgs } from '../../api/user.api';
+import { getMyProfile, getMyOrgs, getMyDocuments } from '../../api/user.api';
 import { sosApi } from '../../api/sos.api';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminStore } from '../../store/adminStore';
 import type { UserProfile, Organisation } from '../../types/api.types';
+import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
+
+const PALETTE = ['#6B4EFF', '#059669', '#FF8C42', '#2563EB', '#B45309', '#16A34A'];
+function avatarColor(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) { h = (h * 31 + name.charCodeAt(i)) % PALETTE.length; }
+  return PALETTE[Math.abs(h)];
+}
 
 const ACTIVITY_ITEMS = [
   { icon: '✏️', label: 'Edit Profile',       screen: 'EditProfile' },
@@ -33,6 +40,8 @@ const ACTIVITY_ITEMS = [
 
 // Returns true if the org is one the user administers (ADMIN or FOUNDER role).
 function isAdminOrg(o: Organisation): boolean {
+  // Org must be fully approved before it appears in Admin Dashboard
+  if (o.orgStatusCode !== 'APPROVED') return false;
   const vals = [o.myRoleCode, o.myRole, (o as any).roleCode]
     .map((v: any) => (v ?? '').toString().toUpperCase().trim());
   return vals.some((v) => v === 'FOUNDER' || v === 'ADMIN');
@@ -48,7 +57,7 @@ export default function ProfileScreen() {
   const nav    = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { logout } = useAuthStore();
-  const { setSelectedOrg, setAdminOrgs } = useAdminStore();
+  const { selectedOrg: currentAdminOrg, setSelectedOrg, setAdminOrgs } = useAdminStore();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [orgs, setOrgs] = useState<Organisation[]>([]);
@@ -57,6 +66,9 @@ export default function ProfileScreen() {
   const [sosChecking, setSosChecking] = useState(false);
   const [showAdminPicker, setShowAdminPicker] = useState(false);
   const [adminPickerOrgs, setAdminPickerOrgs] = useState<Organisation[]>([]);
+  const [gateVisible,    setGateVisible]    = useState(false);
+  const [gateMissing,    setGateMissing]    = useState<string[]>([]);
+  const [gateTargetStep, setGateTargetStep] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -112,9 +124,42 @@ export default function ProfileScreen() {
     ]);
   }, [logout]);
 
+  // Profile gate check — same logic as MyOrgsScreen
+  const handleCreateOrg = useCallback(async () => {
+    const currentUser = useAuthStore.getState().user as any;
+    const missing: string[] = [];
+    if (!currentUser?.firstName || !currentUser?.lastName) missing.push('Full name');
+    if (!currentUser?.city)                                missing.push('City');
+    if (!currentUser?.mobile)                              missing.push('Mobile number');
+    let hasGovtId = false, hasAddrProof = false;
+    try {
+      const docRes = await getMyDocuments();
+      if (docRes.data?.isSuccess && Array.isArray(docRes.data.data)) {
+        const docs = docRes.data.data as Array<{ docTypeCode: string }>;
+        const GOVT_ID_CODES = ['PHOTO_ID', 'AADHAAR', 'PAN', 'PASSPORT', 'VOTER_ID', 'DRIVING_LIC'];
+        hasGovtId    = docs.some(d => GOVT_ID_CODES.includes(d.docTypeCode));
+        hasAddrProof = docs.some(d => d.docTypeCode === 'ADDR_PROOF');
+      }
+    } catch { /* assume missing */ }
+    if (!hasGovtId)    missing.push('Government Photo ID');
+    if (!hasAddrProof) missing.push('Address Proof');
+    if (missing.length > 0) {
+      const onlyDocs = missing.every(m => m === 'Government Photo ID' || m === 'Address Proof');
+      setGateMissing(missing);
+      setGateTargetStep(onlyDocs ? 4 : 0);
+      setGateVisible(true);
+      return;
+    }
+    nav.navigate('CreateOrg');
+  }, [nav]);
+
   // Admin Dashboard entry point — filters to ADMIN/FOUNDER orgs before navigating.
   const handleAdminDashboard = useCallback(() => {
-    const adminOrgs = orgs.filter(isAdminOrg);
+    const adminOrgs = orgs.filter(isAdminOrg).sort((a, b) => {
+      if (currentAdminOrg && a.orgId === currentAdminOrg.orgId) return -1;
+      if (currentAdminOrg && b.orgId === currentAdminOrg.orgId) return  1;
+      return (a.orgName ?? '').localeCompare(b.orgName ?? '');
+    });
 
     if (adminOrgs.length === 0) {
       Alert.alert(
@@ -122,7 +167,7 @@ export default function ProfileScreen() {
         'You are not managing any organisation yet. Create one to access the Admin Dashboard.',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Create Organisation', onPress: () => nav.navigate('CreateOrg') },
+          { text: 'Create Organisation', onPress: handleCreateOrg },
         ],
       );
       return;
@@ -328,9 +373,9 @@ export default function ProfileScreen() {
                     nav.navigate('AdminTabs');
                   }}
                 >
-                  <View style={styles.pickerOrgIcon}>
-                    {item.logoUrl ? (
-                      <Image source={{ uri: item.logoUrl }} style={styles.pickerOrgImg} resizeMode="cover" />
+                  <View style={[styles.pickerOrgIcon, { backgroundColor: avatarColor(item.orgName ?? 'NG') }]}>
+                    {item.logoUrl || item.orgLogoUrl ? (
+                      <Image source={{ uri: (item.logoUrl ?? item.orgLogoUrl)! }} style={styles.pickerOrgImg} resizeMode="cover" />
                     ) : (
                       <Text style={styles.pickerOrgInitials}>
                         {(item.orgName ?? 'NG').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
@@ -348,6 +393,13 @@ export default function ProfileScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ProfileIncompleteSheet
+        visible={gateVisible}
+        onClose={() => setGateVisible(false)}
+        missingItems={gateMissing}
+        targetStep={gateTargetStep}
+      />
 
     </SafeAreaView>
   );
@@ -380,27 +432,31 @@ const styles = StyleSheet.create({
   sosSub:            { fontSize: 12, color: 'rgba(255,255,255,0.8)', lineHeight: 16 },
   menuCard:          { backgroundColor: C.CARD, borderRadius: 12, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
   menuItem:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, gap: 10 },
-  menuItemBorder:    { borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  menuIcon:          { fontSize: 18 },
-  menuLabel:         { flex: 1, fontSize: 14, color: C.TEXT },
-  chevron:           { fontSize: 20, color: C.TEXT3 },
-  tagRow:            { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  tag:               { backgroundColor: C.PRIMARY_LIGHT, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14 },
-  tagText:           { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
-  signOutBtn:        { marginHorizontal: 14, marginTop: 4, marginBottom: 16, borderWidth: 1, borderColor: C.RED, borderRadius: 12, padding: 14, alignItems: 'center' },
-  signOutText:       { color: C.RED, fontSize: 14, fontWeight: '600' },
+  menuItemBorder:    { borderTopWidth: 1, borderTopColor: C.BORDER },
+  menuIcon:          { fontSize: 18, width: 24, textAlign: 'center' },
+  menuLabel:         { fontSize: 15, color: C.TEXT, flex: 1 },
+  chevron:           { fontSize: 16, color: C.TEXT3 },
 
-  // Admin org picker modal
-  pickerOverlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  pickerSheet:       { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12, paddingHorizontal: 0, maxHeight: '70%' },
-  pickerHandle:      { width: 40, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginBottom: 16 },
-  pickerTitle:       { fontSize: 16, fontWeight: '700', color: C.TEXT, textAlign: 'center', marginBottom: 4 },
-  pickerSub:         { fontSize: 13, color: C.TEXT2, textAlign: 'center', marginBottom: 16 },
-  pickerRow:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
-  pickerOrgIcon:     { width: 44, height: 44, borderRadius: 22, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  pickerOrgImg:      { width: 44, height: 44, borderRadius: 22 },
-  pickerOrgInitials: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  pickerOrgName:     { fontSize: 15, fontWeight: '600', color: C.TEXT },
-  pickerOrgRole:     { fontSize: 12, color: C.TEXT2, marginTop: 2 },
-  pickerChevron:     { fontSize: 20, color: C.TEXT3 },
+  // Sign out
+  signOutBtn:  { margin: 16, marginTop: 8, borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#EF4444' },
+  signOutText: { fontSize: 15, fontWeight: '700', color: '#EF4444' },
+
+  // Tags (interests)
+  tagRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag:     { backgroundColor: C.PRIMARY + '15', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  tagText: { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
+
+  // Org picker
+  pickerOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  pickerSheet:      { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '70%' },
+  pickerHandle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
+  pickerTitle:      { fontSize: 16, fontWeight: '700', color: C.TEXT, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  pickerSub:        { fontSize: 12, color: C.TEXT2, paddingHorizontal: 16, paddingBottom: 8 },
+  pickerRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  pickerOrgImg:     { width: 40, height: 40, borderRadius: 10 },
+  pickerOrgIcon:    { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  pickerOrgInitials:{ color: '#fff', fontSize: 13, fontWeight: '800' },
+  pickerOrgName:    { fontSize: 14, fontWeight: '600', color: C.TEXT },
+  pickerOrgRole:    { fontSize: 12, color: C.TEXT2, marginTop: 1 },
+  pickerChevron:    { fontSize: 18, color: C.TEXT3, marginLeft: 'auto' as any },
 });

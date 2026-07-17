@@ -5,6 +5,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { fmtDate, fmtTime, fmtTimeRange } from '../../utils/dateUtils';
 import {
   ActivityIndicator,
   Linking,
@@ -24,17 +25,7 @@ const C = AppConfig.COLORS;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const fmtDate = (d?: string) => {
-  if (!d) return '';
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-};
-
-const fmtTime = (t?: string) => {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
-};
+// fmtDate / fmtTime / fmtTimeRange imported from dateUtils
 
 const durationHours = (start?: string, end?: string) => {
   if (!start || !end) return null;
@@ -206,7 +197,7 @@ export default function ProjectDetailModal({ visible, application, onClose, onSc
                     icon="👥"
                     text={[
                       `${detail.approvedCount} attending`,
-                      spotsLeft != null && spotsLeft > 0 ? `· ${spotsLeft} spots left` : '',
+                      spotsLeft != null && spotsLeft > 0 ? `· ${spotsLeft} ${spotsLeft === 1 ? 'spot' : 'spots'} left` : '',
                     ].filter(Boolean).join(' ')}
                   />
                 ) : null}

@@ -12,9 +12,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-// getMyProjects — backend endpoint not yet implemented (s-all-projects screen pending)
-// import { getMyProjects } from '../../api/user.api';
-const getMyProjects = (_p: any): Promise<{ data?: { isSuccess: number; data?: { items: any[] } } }> => Promise.reject(new Error('Not implemented'));
+import { getMyApplications } from '../../api/user.api';
+import type { UserApplication } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
 
@@ -38,35 +37,57 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   WITHDRAWN: { bg: '#F3F4F6', text: C.TEXT2 },
 };
 
-function ProjectCard({ item, tab }: { item: any; tab: Tab }) {
+// ── Tab filtering (mirrors ImpactScreen logic) ──────────────────────────────
+const isCompleted = (a: UserApplication) =>
+  ['COMPLETED', 'EXPIRED', 'CANCELLED'].includes(a.projectStatusCode ?? '');
+const isUpcoming  = (a: UserApplication) =>
+  a.statusCode === 'APPROVED' && ['UPCOMING', 'ACTIVE'].includes(a.projectStatusCode ?? '');
+const isApplied   = (a: UserApplication) =>
+  !isUpcoming(a) && !isCompleted(a);
+
+function fmtDate(iso?: string) {
+  if (!iso) return undefined;
+  try {
+    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch { return iso; }
+}
+
+function ProjectCard({ item, tab }: { item: UserApplication; tab: Tab }) {
   const statusColor = STATUS_COLORS[item.statusCode] ?? STATUS_COLORS.APPROVED;
   const borderColor = TAB_BORDER[tab];
+  const location    = [item.landmark, item.city].filter(Boolean).join(', ');
+  const dateLabel   = item.recurStart ? fmtDate(item.recurStart) : undefined;
 
   return (
     <View style={[styles.projectCard, { borderLeftColor: borderColor }]}>
       <View style={styles.cardRow}>
-        <Text style={styles.projectTitle}>{item.title ?? item.projectTitle}</Text>
+        <Text style={styles.projectTitle}>{item.projectName}</Text>
         <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
           <Text style={[styles.statusText, { color: statusColor.text }]}>
-            {item.statusCode === 'PENDING' ? '⏳ Pending' :
-             item.statusCode === 'APPROVED' ? '✓ Approved' :
-             item.statusCode ?? item.applicationStatusCode ?? 'Applied'}
+            {item.statusCode === 'PENDING'   ? '⏳ Pending'  :
+             item.statusCode === 'APPROVED'  ? '✓ Approved' :
+             item.statusCode === 'REJECTED'  ? '✗ Rejected' :
+             item.statusCode === 'WITHDRAWN' ? 'Withdrawn'  :
+             item.statusCode}
           </Text>
         </View>
       </View>
+
       <Text style={styles.orgName}>{item.orgName}</Text>
-      {(item.startDate || item.scheduleDate) && (
+
+      {(dateLabel || location) ? (
         <Text style={styles.dateText}>
-          📅 {item.startDate ?? item.scheduleDate}
-          {item.locationName ? ` · ${item.locationName}` : ''}
+          {dateLabel ? `📅 ${dateLabel}` : ''}
+          {dateLabel && location ? ' · ' : ''}
+          {location}
         </Text>
-      )}
+      ) : null}
 
       {/* Applied tab footer */}
-      {tab === 'applied' && item.appliedAt && (
+      {tab === 'applied' && (
         <View style={styles.cardFooter}>
           <Text style={[styles.footerMeta, { color: statusColor.text }]}>
-            Applied {item.appliedAt}
+            Applied {fmtDate(item.createdAt) ?? ''}
             {item.statusCode === 'PENDING' ? ' · Awaiting review' : ''}
           </Text>
           {item.statusCode === 'PENDING' && (
@@ -87,8 +108,12 @@ function ProjectCard({ item, tab }: { item: any; tab: Tab }) {
       {/* Upcoming tab — QR button */}
       {tab === 'upcoming' && (
         <>
-          {item.sessionCount != null && (
-            <Text style={styles.sessionText}>Registered for {item.sessionCount} sessions</Text>
+          {item.scheduleTypeCode && (
+            <Text style={styles.sessionText}>
+              {item.scheduleTypeName ?? item.scheduleTypeCode}
+              {item.recurDays ? ` · ${item.recurDays}` : ''}
+              {item.sessionStartTime ? ` · ${item.sessionStartTime}` : ''}
+            </Text>
           )}
           <View style={styles.qrSection}>
             <Text style={styles.qrHint}>At the venue? Ask admin to show the QR and scan it to log attendance.</Text>
@@ -103,7 +128,7 @@ function ProjectCard({ item, tab }: { item: any; tab: Tab }) {
         </>
       )}
 
-      {/* Completed tab — hours / rating / certificate */}
+      {/* Completed tab — hours / skills / certificate */}
       {tab === 'completed' && (
         <>
           <View style={styles.completedRow}>
@@ -113,27 +138,22 @@ function ProjectCard({ item, tab }: { item: any; tab: Tab }) {
                 <Text style={styles.completedValue}>{item.hoursLogged}h</Text>
               </View>
             )}
-            {item.rating != null && (
+            {item.skillRatings && item.skillRatings.length > 0 && (
               <View>
-                <Text style={styles.completedLabel}>Rating</Text>
-                <Text style={styles.completedValue}>{'⭐'.repeat(Math.round(item.rating ?? 0))} {item.rating?.toFixed(1)}</Text>
+                <Text style={styles.completedLabel}>Top Skill</Text>
+                <Text style={styles.completedValue}>{item.skillRatings[0].skillName}</Text>
               </View>
             )}
-            {item.impactNote && (
+            {item.impactNote ? (
               <View style={{ flex: 1, alignItems: 'flex-end' }}>
                 <Text style={styles.completedLabel}>Impact</Text>
                 <Text style={styles.completedValue}>{item.impactNote}</Text>
               </View>
-            )}
+            ) : null}
           </View>
-          {item.certificateUrl && (
-            <View style={styles.certRow}>
-              <Text style={styles.certStatus}>✓ Completed</Text>
-              <TouchableOpacity style={styles.certBtn} accessibilityLabel="Download certificate">
-                <Text style={styles.certBtnText}>🎖 Download Certificate</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <View style={styles.certRow}>
+            <Text style={styles.certStatus}>✓ Completed</Text>
+          </View>
         </>
       )}
     </View>
@@ -143,9 +163,10 @@ function ProjectCard({ item, tab }: { item: any; tab: Tab }) {
 export default function MyProjectsScreen() {
   const nav    = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const [tab, setTab]               = useState<Tab>('applied');
-  const [items, setItems]           = useState<any[]>([]);
-  const [loading, setLoading]       = useState(true);
+
+  const [allApps,    setAllApps]    = useState<UserApplication[]>([]);
+  const [tab,        setTab]        = useState<Tab>('applied');
+  const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // ── Swipe to change tab ──────────────────────────────────────────────────────
@@ -168,9 +189,11 @@ export default function MyProjectsScreen() {
   const load = useCallback(async (refresh = false) => {
     refresh ? setRefreshing(true) : setLoading(true);
     try {
-      const res = await getMyProjects({ tab, pageNumber: 1, pageSize: 20 });
+      const res = await getMyApplications();
       if (res.data?.isSuccess) {
-        setItems(res.data.data?.items ?? []);
+        setAllApps(res.data.data ?? []);
+      } else {
+        Alert.alert('Error', res.data?.message ?? 'Could not load your projects.');
       }
     } catch {
       Alert.alert('Error', 'Could not load your projects.');
@@ -178,9 +201,15 @@ export default function MyProjectsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [tab]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Client-side tab filtering
+  const tabItems: UserApplication[] =
+    tab === 'applied'   ? allApps.filter(isApplied) :
+    tab === 'upcoming'  ? allApps.filter(isUpcoming) :
+                          allApps.filter(isCompleted);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -189,63 +218,63 @@ export default function MyProjectsScreen() {
         <TouchableOpacity onPress={() => nav.goBack()} accessibilityLabel="Go back">
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>All Projects</Text>
+        <Text style={styles.topBarTitle}>My Projects</Text>
         <View style={{ width: 44 }} />
       </View>
 
-      {/* Swipe area — wraps tabs + content */}
+      {/* Swipe area */}
       <View style={{ flex: 1 }} {...panResponder.panHandlers}>
-      {/* Tabs */}
-      <View style={styles.tabBar}>
-        {TABS.map((t) => (
-          <TouchableOpacity
-            key={t.key}
-            style={[styles.tab, tab === t.key && styles.tabActive]}
-            onPress={() => setTab(t.key)}
-            accessibilityLabel={t.label}
-          >
-            <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Info banner for applied */}
-      {tab === 'applied' && (
-        <View style={styles.infoBanner}>
-          <Text style={styles.infoBannerText}>
-            ⏳ Pending applications are reviewed by admin. Once approved they move to Upcoming.
-          </Text>
+        {/* Tabs */}
+        <View style={styles.tabBar}>
+          {TABS.map((t) => (
+            <TouchableOpacity
+              key={t.key}
+              style={[styles.tab, tab === t.key && styles.tabActive]}
+              onPress={() => setTab(t.key)}
+              accessibilityLabel={t.label}
+            >
+              <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
-      )}
 
-      {loading ? (
-        <View style={styles.centered}><ActivityIndicator size="large" color={C.PRIMARY} /></View>
-      ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item, idx) => `${item.projectId ?? item.applicationId ?? idx}`}
-          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 24 }]}
-          renderItem={({ item }) => <ProjectCard item={item} tab={tab} />}
-          onRefresh={() => load(true)}
-          refreshing={refreshing}
-          ListEmptyComponent={
-            <View style={styles.centered}>
-              <Text style={styles.emptyText}>No {tab} projects yet.</Text>
-              <TouchableOpacity onPress={() => nav.navigate('AllOpportunities')}>
-                <Text style={styles.emptyLink}>Explore opportunities →</Text>
-              </TouchableOpacity>
-            </View>
-          }
-        />
-      )}
-      </View>{/* end swipe area */}
+        {/* Info banner for applied */}
+        {tab === 'applied' && (
+          <View style={styles.infoBanner}>
+            <Text style={styles.infoBannerText}>
+              ⏳ Pending applications are reviewed by admin. Once approved they move to Upcoming.
+            </Text>
+          </View>
+        )}
+
+        {loading ? (
+          <View style={styles.centered}><ActivityIndicator size="large" color={C.PRIMARY} /></View>
+        ) : (
+          <FlatList
+            data={tabItems}
+            keyExtractor={(item, idx) => `${item.applicationId ?? idx}`}
+            contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 24 }]}
+            renderItem={({ item }) => <ProjectCard item={item} tab={tab} />}
+            onRefresh={() => load(true)}
+            refreshing={refreshing}
+            ListEmptyComponent={
+              <View style={styles.centered}>
+                <Text style={styles.emptyText}>No {tab} projects yet.</Text>
+                <TouchableOpacity onPress={() => nav.navigate('AllOpportunities' as never)}>
+                  <Text style={styles.emptyLink}>Explore opportunities →</Text>
+                </TouchableOpacity>
+              </View>
+            }
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container:       { flex: 1, backgroundColor: C.BG },
-  centered:        { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  centered:        { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, marginTop: 60 },
   topBar:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
   backText:        { color: C.PRIMARY, fontSize: 15 },
   topBarTitle:     { fontSize: 16, fontWeight: '700', color: C.TEXT },
@@ -277,9 +306,7 @@ const styles = StyleSheet.create({
   completedLabel:  { fontSize: 11, color: C.TEXT2, marginBottom: 2 },
   completedValue:  { fontSize: 12, fontWeight: '700', color: C.YELLOW },
   certRow:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
-  certStatus:      { fontSize: 11, color: C.YELLOW },
-  certBtn:         { backgroundColor: C.PRIMARY, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 },
-  certBtnText:     { fontSize: 13, color: '#fff', fontWeight: '700' },
+  certStatus:      { fontSize: 11, color: C.TEAL },
   emptyText:       { fontSize: 16, color: C.TEXT2, fontWeight: '600', marginBottom: 8 },
   emptyLink:       { color: C.PRIMARY, fontSize: 14, fontWeight: '600' },
 });

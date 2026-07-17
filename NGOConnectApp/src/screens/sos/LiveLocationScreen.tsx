@@ -63,9 +63,15 @@ function walkTime(m: number): string {
   return `~${Math.floor(mins / 60)}h ${mins % 60}min walk`;
 }
 
+// Server returns UTC datetimes without 'Z'. Without this, JS treats them as local
+// time causing wrong "time ago" on every timezone. Appending 'Z' forces UTC parse.
+function asUtc(iso: string): Date {
+  return new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+}
+
 function timeAgoShort(iso: string | undefined | null): string {
   if (!iso) { return '—'; }
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const diff = Math.floor((Date.now() - asUtc(iso).getTime()) / 1000);
   if (diff < 5)    { return 'just now'; }
   if (diff < 60)   { return `${diff}s ago`; }
   if (diff < 3600) { return `${Math.floor(diff / 60)}m ago`; }
@@ -73,7 +79,7 @@ function timeAgoShort(iso: string | undefined | null): string {
 }
 
 function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return asUtc(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
 // ── Leaflet map HTML (OpenStreetMap tiles, no API key) ────────────────────────
@@ -668,16 +674,9 @@ const styles = StyleSheet.create({
     alignItems:         'center',
     borderWidth:        1.5,
     borderColor:        '#10B981',
-    backgroundColor:    '#fff',
+    backgroundColor: 'rgba(16,185,129,0.12)',
   },
-  callBtnTxt: { fontSize: 15, fontWeight: '700', color: '#059669' },
-
-  // ── Footer note
-  footerNote: {
-    fontSize:   12,
-    color:      C.TEXT2,
-    textAlign:  'center',
-    lineHeight: 18,
-  },
+  callBtnTxt: { fontSize: 15, fontWeight: '700', color: '#10B981' },
+  footerNote: { fontSize: 12, color: C.TEXT2, textAlign: 'center', marginTop: 10, lineHeight: 18 },
   footerBold: { fontWeight: '700', color: C.TEXT },
 });

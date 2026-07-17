@@ -30,6 +30,7 @@ import { WebView } from 'react-native-webview';
 import AppConfig from '../../config/AppConfig';
 import { get, apply } from '../../api/project.api';
 import type { Project } from '../../types/api.types';
+import { fmtDate, fmtDateRange, fmtTime, fmtTimeRange } from '../../utils/dateUtils';
 
 const C = AppConfig.COLORS;
 
@@ -241,12 +242,12 @@ export default function ProjectDetailScreen() {
     const s = project.startDate ?? project.oneTimeDate ?? project.recurStart ?? project.flexFromDate;
     const e = project.endDate ?? project.recurEnd ?? project.flexToDate;
     if (!s) { return null; }
-    return e && e !== s ? `${s} – ${e}` : s;
+    return e && e !== s ? fmtDateRange(s, e) : fmtDate(s);
   })();
   const timeRange = (() => {
     const st = project.startTime ?? project.sessionStartTime;
     const en = project.endTime ?? project.sessionEndTime;
-    return st ? `${st}${en ? ` – ${en}` : ''}` : null;
+    return st ? fmtTimeRange(st, en) : null;
   })();
   const dur     = project.durationMinutes ? `${project.durationMinutes} min/session` : null;
   const address = [project.address, project.locationName, project.city, project.state]

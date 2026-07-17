@@ -23,17 +23,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getComments, addComment } from '../../api/feed.api';
 import type { Post } from '../../types/api.types';
 import { UserAvatar } from '../ui';
+import { fmtDate } from '../../utils/dateUtils';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
+// Server returns UTC datetimes without 'Z'. Without this, JS treats them as local
+// time causing wrong "time ago" on every timezone. Appending 'Z' forces UTC parse.
+function asUtc(iso: string): Date {
+  return new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+}
+
 function timeAgoFromDate(iso: string | undefined | null): string {
   if (!iso) { return ''; }
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const diff = Math.floor((Date.now() - asUtc(iso).getTime()) / 1000);
   if (diff < 60)        { return 'Just now'; }
   if (diff < 3600)      { return `${Math.floor(diff / 60)}m ago`; }
   if (diff < 86400)     { return `${Math.floor(diff / 3600)}h ago`; }
   if (diff < 7 * 86400) { return `${Math.floor(diff / 86400)}d ago`; }
-  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  return fmtDate(iso);
 }
 
 // ── CommentRow ────────────────────────────────────────────────────────────────
@@ -288,11 +295,14 @@ const s = StyleSheet.create({
     fontSize: 14, color: '#111827', backgroundColor: '#F9FAFB',
   },
   sendBtn: {
-    backgroundColor: '#4F46E5', borderRadius: 12,
-    paddingHorizontal: 16, paddingVertical: 11,
-    justifyContent: 'center', alignItems: 'center',
-    minWidth: 64, minHeight: 44,
+    backgroundColor: '#4F46E5',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  sendBtnDisabled: { backgroundColor: '#A5B4FC' },
-  sendBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  sendBtnDisabled: { backgroundColor: '#9CA3AF' },
+  sendBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  sendIcon: { color: '#fff', fontSize: 18 },
 });

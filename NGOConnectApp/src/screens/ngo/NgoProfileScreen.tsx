@@ -254,7 +254,7 @@ function ProjectDetailModal({
                 ) : null}
                 {max > 0 ? (
                   <InfoRow icon="👥"
-                    text={`${curr} of ${max} spots filled per session${isFull ? ' · FULL' : spotsLeft ? ` · ${spotsLeft} spots left` : ''}`}
+                    text={`${curr} of ${max} spots filled per session${isFull ? ' · FULL' : spotsLeft ? ` · ${spotsLeft} ${spotsLeft === 1 ? 'spot' : 'spots'} left` : ''}`}
                   />
                 ) : null}
               </View>
@@ -633,11 +633,19 @@ export default function NgoProfileScreen() {
       >
         {/* Hero */}
         <View style={styles.hero}>
-          <View style={[styles.heroIcon, { backgroundColor: color }]}>
-            <Text style={styles.heroIconText}>{ini}</Text>
-          </View>
+          {org.logoUrl || org.orgLogoUrl
+            ? <Image source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={[styles.heroIcon, { overflow: 'hidden' }]} resizeMode="cover" />
+            : <View style={[styles.heroIcon, { backgroundColor: color }]}><Text style={styles.heroIconText}>{ini}</Text></View>
+          }
           <View style={styles.heroInfo}>
-            <Text style={styles.heroName}>{name}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={styles.heroName}>{name}</Text>
+              {org.verificationStatusCode === 'VERIFIED' && (
+                <View style={styles.orgVerifiedBadge}>
+                  <Text style={styles.orgVerifiedBadgeText}>✓ Verified</Text>
+                </View>
+              )}
+            </View>
             <View style={styles.heroTagRow}>
               <View style={styles.categoryPill}>
                 <Text style={styles.categoryPillText}>{org.categoryName ?? org.category ?? 'NGO'}</Text>
@@ -650,7 +658,7 @@ export default function NgoProfileScreen() {
             </View>
             <Text style={styles.heroMeta}>
               {[org.city, org.state].filter(Boolean).join(', ')}
-              {org.memberCount ? ` · ${org.memberCount.toLocaleString('en-IN')} members` : ''}
+              {org.memberCount ? ` · ${org.memberCount.toLocaleString('en-IN')} ${org.memberCount === 1 ? 'member' : 'members'}` : ''}
               {org.followerCount ? ` · ${org.followerCount.toLocaleString('en-IN')} followers` : ''}
             </Text>
           </View>
@@ -922,6 +930,8 @@ const styles = StyleSheet.create({
   categoryPill:      { backgroundColor: C.PRIMARY_LIGHT, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
   categoryPillText:  { fontSize: 11, fontWeight: '600', color: C.PRIMARY },
   badge80G:          { backgroundColor: '#DCFCE7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  orgVerifiedBadge:     { backgroundColor: '#ECFDF5', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: '#6EE7B7' },
+  orgVerifiedBadgeText: { fontSize: 11, fontWeight: '700', color: '#059669' },
   badge80GText:      { fontSize: 11, fontWeight: '700', color: '#16A34A' },
   heroMeta:          { fontSize: 12, color: C.TEXT2 },
 
@@ -1032,13 +1042,13 @@ const mdStyles = StyleSheet.create({
   skillTagText: { fontSize: 12, color: C.PRIMARY, fontWeight: '500' },
 
   sessionCard:  { margin: 12, marginTop: 0, backgroundColor: C.CARD, borderRadius: 14, padding: 14 },
-  sessionTitle: { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 3 },
-  sessionSub:   { fontSize: 13, color: C.TEXT2, marginBottom: 10 },
-  sessionItem:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, borderRadius: 9, borderWidth: 1.5, borderColor: C.PRIMARY, backgroundColor: `${C.PRIMARY}08` },
-  sessionDay:   { fontSize: 12, fontWeight: '700', marginBottom: 2 },
-  sessionMeta:  { fontSize: 11, color: C.TEXT2 },
+  sessionItem:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: C.BORDER, marginBottom: 8, backgroundColor: C.BG },
+  sessionDay:   { fontSize: 13, fontWeight: '700', color: C.PRIMARY, minWidth: 30, textAlign: 'center' },
+  sessionMeta:  { flex: 1, gap: 2 },
+  sessionSub:   { fontSize: 12, color: C.TEXT2 },
+  sessionTitle: { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
 
-  applyFooter:  { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 12, paddingTop: 12, backgroundColor: C.CARD, borderTopWidth: 1, borderTopColor: C.BORDER },
-  applyBtn:     { backgroundColor: C.PRIMARY, borderRadius: 12, padding: 14, alignItems: 'center' },
-  applyBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  applyFooter:  { paddingHorizontal: 12, paddingTop: 8 },
+  applyBtn:     { borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: C.PRIMARY },
+  applyBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -16,6 +17,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import Geolocation from '@react-native-community/geolocation';
 import AppConfig from '../../config/AppConfig';
 import { getCommunityFeed, acknowledgePost, voteOnPoll, likePost } from '../../api/community.api';
+import { feedApi } from '../../api/feed.api';
 import { sosApi } from '../../api/sos.api';
 import { getMyOrgs } from '../../api/user.api';
 import { useAuthStore }  from '../../store/authStore';
@@ -44,9 +46,15 @@ const SOS_STATUS_META: Record<string, { label: string; dot: string; pillBg: stri
   CANCELLED: { label: 'CANCELLED', dot: '✕', pillBg: '#F3F4F6', dotColor: '#6B7280', textColor: '#6B7280' },
 };
 
+// Server returns UTC datetimes without 'Z'. Without this, JS treats them as local
+// time causing wrong "time ago" on every timezone. Appending 'Z' forces UTC parse.
+function asUtc(iso: string): Date {
+  return new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+}
+
 function timeAgoShort(iso: string | undefined): string {
   if (!iso) { return ''; }
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const diff = Math.floor((Date.now() - asUtc(iso).getTime()) / 1000);
   if (diff < 60)    { return 'just now'; }
   if (diff < 3600)  { return `${Math.floor(diff / 60)}m ago`; }
   if (diff < 86400) { return `${Math.floor(diff / 3600)}h ago`; }
@@ -263,6 +271,7 @@ export default function CommunityScreen() {
   const [page,        setPage]        = useState(1);
   const [totalCount,  setTotalCount]  = useState(0);
   const [showModal,         setShowModal]         = useState(false);
+  const [communityPermChecking, setCommunityPermChecking] = useState(false);
   const [commentPostId,     setCommentPostId]     = useState<number | null>(null);
   const [sosAlerts,         setSosAlerts]         = useState<any[]>([]);
   const [sosHistory,        setSosHistory]        = useState<any[]>([]);
@@ -289,6 +298,26 @@ export default function CommunityScreen() {
     if (activeOrg) { setActiveOrg(activeOrg); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
+
+  // ── Community FAB: check CanCommunityPost before opening modal ───────────────
+  const handleComposeFabPress = useCallback(async () => {
+    if (!orgId || communityPermChecking) return;
+    setCommunityPermChecking(true);
+    try {
+      const res = await feedApi.getPostPermissions(orgId);
+      const p   = res.data?.data;
+      if (!p?.isMember) {
+        Alert.alert('Not a Member', 'You must be an approved member to post in this community.');
+        return;
+      }
+      if (!p.canCommunityPost) {
+        Alert.alert('Posting Disabled', 'The admin has disabled community posting for members. Contact your organisation admin.');
+        return;
+      }
+    } catch { /* server will enforce anyway — open modal optimistically */ }
+    finally { setCommunityPermChecking(false); }
+    setShowModal(true);
+  }, [orgId, communityPermChecking]);
 
   /** Get current viewer's GPS once — used to show distance to active SOS incidents.
    *  Low-accuracy is fine here (cell/wifi), maximumAge 5 min prevents repeated requests. */
@@ -514,9 +543,17 @@ export default function CommunityScreen() {
             onPress={() => setShowOrgSwitcher(true)}
             accessibilityLabel="Switch organization"
           >
-            <View style={styles.orgAvatar}>
-              <Text style={styles.orgAvatarText}>{orgInitials}</Text>
-            </View>
+            {activeOrg?.logoUrl || activeOrg?.orgLogoUrl ? (
+              <Image
+                source={{ uri: (activeOrg.logoUrl ?? activeOrg.orgLogoUrl)! }}
+                style={styles.orgAvatar}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.orgAvatar}>
+                <Text style={styles.orgAvatarText}>{orgInitials}</Text>
+              </View>
+            )}
             <Text style={styles.orgName} numberOfLines={1}>{orgName}</Text>
             <Text style={styles.orgChevron}>▾</Text>
           </TouchableOpacity>
@@ -662,8 +699,8 @@ export default function CommunityScreen() {
         />
       )}
 
-      {/* FAB */}
-      <ComposeFab onPress={() => setShowModal(true)} />
+      {/* FAB — gated by CanCommunityPost permission */}
+      <ComposeFab onPress={handleComposeFabPress} />
 
       {/* New Post Modal */}
       <NewPostModal
@@ -729,9 +766,17 @@ export default function CommunityScreen() {
                   }}
                   accessibilityLabel={`Switch to ${oName}`}
                 >
-                  <View style={[styles.orgSwitcherAvatar, isActive && { backgroundColor: C.PRIMARY }]}>
-                    <Text style={styles.orgSwitcherAvatarText}>{initials}</Text>
-                  </View>
+                  {org.logoUrl || org.orgLogoUrl ? (
+                    <Image
+                      source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }}
+                      style={styles.orgSwitcherAvatar}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.orgSwitcherAvatar, isActive && { backgroundColor: C.PRIMARY }]}>
+                      <Text style={styles.orgSwitcherAvatarText}>{initials}</Text>
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.orgSwitcherName, isActive && { color: C.PRIMARY }]}>{oName}</Text>
                     {subtitle ? <Text style={styles.orgSwitcherMeta}>{subtitle}</Text> : null}
@@ -762,7 +807,7 @@ const styles = StyleSheet.create({
   header:               { backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 },
   headerRow:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   orgSelector:          { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
-  orgAvatar:            { width: 36, height: 36, borderRadius: 10, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  orgAvatar:            { width: 36, height: 36, borderRadius: 10, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   orgAvatarText:        { fontSize: 12, fontWeight: '800', color: '#fff' },
   orgName:              { fontSize: 15, fontWeight: '700', color: C.TEXT, maxWidth: 170 },
   orgChevron:           { fontSize: 12, color: C.TEXT2 },
@@ -785,23 +830,23 @@ const styles = StyleSheet.create({
   emptyEmoji:           { fontSize: 40, marginBottom: 12 },
   emptyTitle:           { fontSize: 18, fontWeight: '700', color: C.TEXT2, marginBottom: 6 },
   emptySub:             { fontSize: 14, color: C.TEXT3, marginBottom: 16 },
-  emptyBtn:             { backgroundColor: C.PRIMARY, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
-  emptyBtnText:         { color: '#fff', fontWeight: '700', fontSize: 13 },
+  emptyBtn:             { backgroundColor: C.PRIMARY, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
+  emptyBtnText:         { color: '#fff', fontSize: 14, fontWeight: '700' },
+  modalOverlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalHandle:          { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
 
-  // ── Org Switcher Modal ───────────────────────────────────────────────────────
-  modalOverlay:               { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  orgSwitcherSheet:           { backgroundColor: C.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10 },
-  modalHandle:                { width: 40, height: 4, backgroundColor: C.BORDER, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
-  orgSwitcherHeader:          { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  orgSwitcherTitle:           { fontSize: 16, fontWeight: '800', color: C.TEXT, marginBottom: 2 },
-  orgSwitcherSubtitle:        { fontSize: 12, color: C.TEXT2 },
-  orgSwitcherClose:           { fontSize: 18, color: C.TEXT2, paddingLeft: 12 },
-  orgSwitcherItem:            { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  orgSwitcherItemActive:      { backgroundColor: `${C.PRIMARY}08` },
-  orgSwitcherAvatar:          { width: 42, height: 42, borderRadius: 12, backgroundColor: C.BORDER, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  orgSwitcherAvatarText:      { fontSize: 14, fontWeight: '800', color: C.PRIMARY },
-  orgSwitcherName:            { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
-  orgSwitcherMeta:            { fontSize: 12, color: C.TEXT2 },
-  orgSwitcherActiveBadge:     { backgroundColor: `${C.PRIMARY}15`, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
-  orgSwitcherActiveBadgeText: { fontSize: 11, fontWeight: '700', color: C.PRIMARY },
+  // Org switcher
+  orgSwitcherSheet:      { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '70%' },
+  orgSwitcherHeader:     { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  orgSwitcherTitle:      { fontSize: 16, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  orgSwitcherSubtitle:   { fontSize: 12, color: C.TEXT2 },
+  orgSwitcherClose:      { fontSize: 18, color: C.TEXT2, paddingLeft: 12 },
+  orgSwitcherItem:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  orgSwitcherItemActive: { backgroundColor: C.PRIMARY + '08' },
+  orgSwitcherAvatar:     { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  orgSwitcherAvatarText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  orgSwitcherName:       { fontSize: 14, fontWeight: '600', color: C.TEXT },
+  orgSwitcherMeta:       { fontSize: 12, color: C.TEXT2, marginTop: 1 },
+  orgSwitcherActiveBadge:    { width: 22, height: 22, borderRadius: 11, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  orgSwitcherActiveBadgeText:{ color: '#fff', fontSize: 11, fontWeight: '700' },
 });

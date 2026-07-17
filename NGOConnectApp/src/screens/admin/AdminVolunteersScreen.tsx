@@ -51,7 +51,14 @@ function PendingCard({
       <View style={styles.memberRow}>
         <UserAvatar name={member.fullName} photoUrl={member.profilePhoto} size={44} style={styles.avatar} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.memberName}>{member.fullName}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={styles.memberName}>{member.fullName}</Text>
+            {member.profileVerificationStatusCode === 'VERIFIED' && (
+              <View style={styles.verifiedBadge}>
+                <Text style={styles.verifiedBadgeText}>✓ Verified</Text>
+              </View>
+            )}
+          </View>
           <Text style={styles.memberMeta} numberOfLines={1}>
             {[member.email, member.occupation, member.joinedAt].filter(Boolean).join(' · ')}
           </Text>
@@ -111,6 +118,11 @@ function MemberRow({ member, onView }: { member: OrgMember; onView: () => void }
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <Text style={styles.memberName}>{member.fullName}</Text>
+          {member.profileVerificationStatusCode === 'VERIFIED' && (
+            <View style={styles.verifiedBadge}>
+              <Text style={styles.verifiedBadgeText}>✓ Verified</Text>
+            </View>
+          )}
           <View style={[styles.rolePill, { backgroundColor: roleColor + '20', borderColor: roleColor + '40' }]}>
             <Text style={[styles.rolePillText, { color: roleColor }]}>
               {ROLE_LABEL[member.roleCode?.toUpperCase() ?? 'MEMBER'] ?? member.roleName}
@@ -243,11 +255,42 @@ function MemberDetailsSheet({
     if (!member?.memberId || !orgId) { return; }
     setSaving(true);
     try {
-      await orgApi.updateMemberPermissions(orgId, member.memberId, {
-        canPost, canComment, canCommunityPost: canCommunity, locationSharing: locSharing, maxPostsPerDay: maxPosts,
+      const res = await orgApi.updateMemberPermissions(orgId, member.memberId, {
+        canPost, canComment, canCommunityPost: canCommunity, maxPostsPerDay: maxPosts,
       });
-    } catch { /* silent */ } finally { setSaving(false); }
-  }, [member, orgId, canPost, canComment, canCommunity, locSharing, maxPosts]);
+      if (res.data?.isSuccess) {
+        Alert.alert('Saved', 'Member permissions updated successfully.');
+      } else {
+        Alert.alert('Error', res.data?.message ?? 'Could not save permissions. Please try again.');
+      }
+    } catch {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }, [member, orgId, canPost, canComment, canCommunity, maxPosts]);
+
+  const saveRole = useCallback(async () => {
+    if (!member?.memberId || !orgId) { return; }
+    // FOUNDER role cannot be reassigned via this screen
+    if (member.roleCode?.toUpperCase() === 'FOUNDER') {
+      Alert.alert('Cannot Change', 'Founder role cannot be changed here.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await orgApi.updateMemberRole(orgId, { memberId: member.memberId, roleCode });
+      if (res.data?.isSuccess) {
+        Alert.alert('Saved', `Role updated to ${ROLE_LABEL[roleCode] ?? roleCode}.`);
+      } else {
+        Alert.alert('Error', res.data?.message ?? 'Could not update role. Please try again.');
+      }
+    } catch {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }, [member, orgId, roleCode]);
 
   const handleDeactivate = () => {
     if (!member) { return; }
@@ -369,6 +412,11 @@ function MemberDetailsSheet({
             >
               <Text style={styles.roleDropdownText}>{ROLE_LABEL[roleCode] ?? roleCode}</Text>
               <Text style={{ color: C.TEXT2 }}>▾</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.savePermBtn} onPress={saveRole} disabled={saving}>
+              {saving
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.savePermBtnText}>Save Role</Text>}
             </TouchableOpacity>
 
             {/* View Full Profile */}
@@ -926,6 +974,8 @@ const styles = StyleSheet.create({
   rolePill:     { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1 },
   rolePillText: { fontSize: 10, fontWeight: '600' },
   pendingBadge: { backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  verifiedBadge: { backgroundColor: '#ECFDF5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#6EE7B7' },
+  verifiedBadgeText: { fontSize: 10, fontWeight: '700', color: '#059669' },
   pendingBadgeText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
 
   // Pending card details
@@ -975,27 +1025,29 @@ const styles = StyleSheet.create({
   contactIcon:    { fontSize: 14, width: 20, textAlign: 'center' },
   contactText:    { fontSize: 13, color: C.TEXT, flex: 1 },
 
-  controlsCard:   { backgroundColor: '#FFFBEB', borderRadius: 12, borderWidth: 1, borderColor: '#FEF08A', overflow: 'hidden' },
-  controlRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 11 },
-  controlBorder:  { borderBottomWidth: 1, borderBottomColor: '#FEF08A' },
-  controlLabel:   { fontSize: 13, color: C.TEXT, fontWeight: '500' },
-  dropdownChip:   { backgroundColor: C.BG, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: C.BORDER },
-  dropdownChipText:{ fontSize: 12, color: C.TEXT, fontWeight: '500' },
+  // Controls card (permissions panel)
+  controlsCard:   { backgroundColor: C.CARD, borderRadius: 14, padding: 14, marginTop: 12, ...AppConfig.SHADOW.CARD },
+  controlLabel:   { fontSize: 13, fontWeight: '700', color: C.TEXT, marginBottom: 8 },
+  controlRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
+  controlBorder:  { borderTopWidth: 1, borderTopColor: C.BORDER },
+  savePermBtn:    { backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 11, alignItems: 'center', marginTop: 12 },
+  savePermBtnText:{ color: '#fff', fontSize: 14, fontWeight: '700' },
 
-  savePermBtn:    { backgroundColor: C.PRIMARY, paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginTop: 10 },
-  savePermBtnText:{ color: '#fff', fontWeight: '700', fontSize: 14 },
+  // Role dropdown
+  roleDropdown:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.INPUT_BG, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  roleDropdownText: { fontSize: 13, color: C.TEXT, fontWeight: '600' },
+  dropdownChip:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: C.BORDER },
+  dropdownChipText: { fontSize: 12, color: C.TEXT2 },
 
-  roleDropdown:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.INPUT_BG, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, borderWidth: 1.5, borderColor: C.BORDER },
-  roleDropdownText:{ fontSize: 14, color: C.TEXT, fontWeight: '500' },
+  // Picker
+  pickerSheet:    { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 20, maxHeight: '60%' },
+  pickerTitle:    { fontSize: 16, fontWeight: '700', color: C.TEXT, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  pickerRow:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER, gap: 10 },
+  pickerRowText:  { fontSize: 14, color: C.TEXT, flex: 1 },
 
-  viewProfileBtn: { marginTop: 10, paddingVertical: 13, borderRadius: 12, alignItems: 'center', borderWidth: 1.5, borderColor: C.PRIMARY, backgroundColor: C.PRIMARY + '08' },
-  viewProfileBtnText:{ color: C.PRIMARY, fontWeight: '700', fontSize: 14 },
-  deactivateBtn:  { marginTop: 8, marginBottom: 4, paddingVertical: 13, borderRadius: 12, alignItems: 'center', borderWidth: 1.5, borderColor: '#FECACA', backgroundColor: '#FEF2F2' },
-  deactivateBtnText:{ color: '#DC2626', fontWeight: '700', fontSize: 14 },
-
-  // Picker modals
-  pickerSheet:    { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 10, paddingHorizontal: 16 },
-  pickerTitle:    { fontSize: 15, fontWeight: '700', color: C.TEXT, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.BORDER, marginBottom: 4 },
-  pickerRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  pickerRowText:  { fontSize: 14, color: C.TEXT },
+  // Deactivate / View Profile buttons
+  deactivateBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: '#DC2626', borderRadius: 10, paddingVertical: 10, marginTop: 8 },
+  deactivateBtnText: { color: '#DC2626', fontSize: 14, fontWeight: '600' },
+  viewProfileBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: C.PRIMARY + '15', borderRadius: 10, paddingVertical: 10, marginTop: 8 },
+  viewProfileBtnText:{ color: C.PRIMARY, fontSize: 14, fontWeight: '600' },
 });

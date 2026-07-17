@@ -15,9 +15,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getDashboard } from '../../api/org.api';
-import { getMyOrgs } from '../../api/user.api';
+import { getMyOrgs, getMyDocuments } from '../../api/user.api';
 import { useAdminStore } from '../../store/adminStore';
+import { useAuthStore } from '../../store/authStore';
 import type { OrgDashboard, Organisation } from '../../types/api.types';
+import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
 
 const C = AppConfig.COLORS;
 
@@ -123,10 +125,13 @@ export default function AdminDashboardScreen() {
 
   const { adminOrgs, selectedOrg, setAdminOrgs, setSelectedOrg } = useAdminStore();
 
-  const [dashboard,     setDashboard]     = useState<OrgDashboard | null>(null);
-  const [loading,       setLoading]       = useState(true);
-  const [refreshing,    setRefreshing]    = useState(false);
-  const [showOrgPicker, setShowOrgPicker] = useState(false);
+  const [dashboard,      setDashboard]      = useState<OrgDashboard | null>(null);
+  const [loading,        setLoading]        = useState(true);
+  const [refreshing,     setRefreshing]     = useState(false);
+  const [showOrgPicker,  setShowOrgPicker]  = useState(false);
+  const [gateVisible,    setGateVisible]    = useState(false);
+  const [gateMissing,    setGateMissing]    = useState<string[]>([]);
+  const [gateTargetStep, setGateTargetStep] = useState(0);
 
   const isAdminOrg = (o: Organisation): boolean => {
     const a = o as any;
@@ -140,7 +145,11 @@ export default function AdminDashboardScreen() {
       const res = await getMyOrgs();
       if (res.data?.isSuccess) {
         const all: Organisation[] = Array.isArray(res.data.data) ? res.data.data : [];
-        let filtered = all.filter(isAdminOrg);
+        let filtered = all.filter(isAdminOrg).sort((a, b) => {
+          if (selectedOrg && a.orgId === selectedOrg.orgId) return -1;
+          if (selectedOrg && b.orgId === selectedOrg.orgId) return  1;
+          return (a.orgName ?? (a as any).name ?? '').localeCompare(b.orgName ?? (b as any).name ?? '');
+        });
         if (filtered.length === 0 && all.length > 0) { filtered = all; }
         setAdminOrgs(filtered);
         return filtered;
@@ -193,6 +202,34 @@ export default function AdminDashboardScreen() {
 
   const goAdmin = (screen: string) => nav.navigate(screen, { orgId: selectedOrg?.orgId });
 
+  const handleCreateOrg = useCallback(async () => {
+    const currentUser = useAuthStore.getState().user as any;
+    const missing: string[] = [];
+    if (!currentUser?.firstName || !currentUser?.lastName) missing.push('Full name');
+    if (!currentUser?.city)                                missing.push('City');
+    if (!currentUser?.mobile)                              missing.push('Mobile number');
+    let hasGovtId = false, hasAddrProof = false;
+    try {
+      const docRes = await getMyDocuments();
+      if (docRes.data?.isSuccess && Array.isArray(docRes.data.data)) {
+        const docs = docRes.data.data as Array<{ docTypeCode: string }>;
+        const GOVT_ID_CODES = ['PHOTO_ID', 'AADHAAR', 'PAN', 'PASSPORT', 'VOTER_ID', 'DRIVING_LIC'];
+        hasGovtId    = docs.some(d => GOVT_ID_CODES.includes(d.docTypeCode));
+        hasAddrProof = docs.some(d => d.docTypeCode === 'ADDR_PROOF');
+      }
+    } catch { /* assume missing */ }
+    if (!hasGovtId)    missing.push('Government Photo ID');
+    if (!hasAddrProof) missing.push('Address Proof');
+    if (missing.length > 0) {
+      const onlyDocs = missing.every(m => m === 'Government Photo ID' || m === 'Address Proof');
+      setGateMissing(missing);
+      setGateTargetStep(onlyDocs ? 4 : 0);
+      setGateVisible(true);
+      return;
+    }
+    nav.navigate('CreateOrg');
+  }, [nav]);
+
   if (!loading && adminOrgs.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -209,10 +246,16 @@ export default function AdminDashboardScreen() {
           <Text style={styles.emptyText}>
             {'You are not an admin or founder of any NGO.\nCreate one to get started.'}
           </Text>
-          <TouchableOpacity style={styles.createBtn} onPress={() => nav.navigate('CreateOrg')}>
+          <TouchableOpacity style={styles.createBtn} onPress={handleCreateOrg}>
             <Text style={styles.createBtnText}>+ Create Organisation</Text>
           </TouchableOpacity>
         </View>
+        <ProfileIncompleteSheet
+          visible={gateVisible}
+          onClose={() => setGateVisible(false)}
+          missingItems={gateMissing}
+          targetStep={gateTargetStep}
+        />
       </SafeAreaView>
     );
   }
@@ -231,9 +274,10 @@ export default function AdminDashboardScreen() {
           activeOpacity={adminOrgs.length > 1 ? 0.75 : 1}
           accessibilityLabel="Select organisation"
         >
-          <View style={[styles.orgLogo, { backgroundColor: orgColor }]}>
-            <Text style={styles.orgLogoText}>{orgInit}</Text>
-          </View>
+          {selectedOrg?.logoUrl || selectedOrg?.orgLogoUrl
+            ? <Image source={{ uri: (selectedOrg.logoUrl ?? selectedOrg.orgLogoUrl)! }} style={[styles.orgLogo, { overflow: 'hidden' }]} resizeMode="cover" />
+            : <View style={[styles.orgLogo, { backgroundColor: orgColor }]}><Text style={styles.orgLogoText}>{orgInit}</Text></View>
+          }
           <Text style={styles.orgName} numberOfLines={1}>{orgName}</Text>
           {adminOrgs.length > 1 && <ChevronDown />}
         </TouchableOpacity>
@@ -517,29 +561,31 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   activitySymbol: { fontSize: 13, fontWeight: '700' },
-  activityMsg:    { fontSize: 13, fontWeight: '500', color: C.TEXT, marginBottom: 2 },
-  activityTime:   { fontSize: 11, color: C.TEXT3 },
+  activityMsg:    { fontSize: 13, color: C.TEXT, lineHeight: 18, flex: 1 },
+  activityTime:   { fontSize: 11, color: C.TEXT3, marginTop: 2 },
 
-  emptyTitle:    { fontSize: 18, fontWeight: '700', color: C.TEXT, marginBottom: 6, textAlign: 'center' },
-  emptyText:     { fontSize: 13, color: C.TEXT2, textAlign: 'center', marginBottom: 20, lineHeight: 20 },
-  createBtn:     { backgroundColor: C.PRIMARY, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 12 },
-  createBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  // Empty state
+  emptyTitle:  { fontSize: 17, fontWeight: '700', color: C.TEXT, marginBottom: 8, textAlign: 'center' },
+  emptyText:   { fontSize: 14, color: C.TEXT2, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  createBtn:   { backgroundColor: C.PRIMARY, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12 },
+  createBtnText:{ color: '#fff', fontSize: 15, fontWeight: '700' },
 
-  sheetBackdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  sheet:            { backgroundColor: C.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 10, paddingHorizontal: 17 },
-  sheetHandle:      { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginBottom: 14 },
-  sheetHeaderRow:   { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
-  sheetTitle:       { fontSize: 16, fontWeight: '800', color: C.TEXT },
-  sheetSubtitle:    { fontSize: 12, color: C.TEXT2, marginTop: 2 },
-  sheetClose:       { fontSize: 18, color: C.TEXT2, paddingLeft: 12, marginTop: 2 },
-  sheetList:        { maxHeight: 420 },
-  sheetRow:         { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, borderTopWidth: 1, borderTopColor: C.BORDER },
-  sheetRowActive:   { backgroundColor: C.PRIMARY + '08' },
-  sheetAvatar:      { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  sheetAvatarText:  { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
-  sheetOrgName:     { fontSize: 14, fontWeight: '600', color: C.TEXT },
-  sheetOrgRole:     { fontSize: 11, color: C.TEXT2, marginTop: 1 },
-  sheetActiveBadge: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center' },
-  sheetActiveTick:  { color: '#fff', fontSize: 14, fontWeight: '700' },
-  sheetChevron:     { fontSize: 20, color: C.TEXT3, marginRight: 2 },
+  // Org picker sheet
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet:         { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  sheetHandle:   { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
+  sheetHeaderRow:{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  sheetTitle:    { fontSize: 16, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  sheetSubtitle: { fontSize: 12, color: C.TEXT2 },
+  sheetClose:    { fontSize: 18, color: C.TEXT2, paddingLeft: 12 },
+  sheetList:     { maxHeight: 320 },
+  sheetRow:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  sheetRowActive:{ backgroundColor: C.PRIMARY + '10' },
+  sheetAvatar:   { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  sheetAvatarText:{ fontSize: 13, fontWeight: '800', color: '#fff' },
+  sheetOrgName:  { fontSize: 14, fontWeight: '600', color: C.TEXT },
+  sheetOrgRole:  { fontSize: 12, color: C.TEXT2, marginTop: 1 },
+  sheetActiveBadge:{ marginLeft: 'auto' as any, width: 22, height: 22, borderRadius: 11, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center' },
+  sheetActiveTick: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  sheetChevron:  { fontSize: 18, color: C.TEXT3 },
 });

@@ -265,7 +265,7 @@ export default function CreateOrgScreen() {
         orgName:            form.orgName.trim(),
         orgTypeLkpId:       form.orgTypeLkpId!,
         registrationNumber: form.registrationNumber.trim(),
-        category:           categories.find(c => c.lookupValueId === form.categoryLkpId)?.valueName ?? '',
+        category:           categories.find(c => c.lookupValueId === form.categoryLkpId)?.valueCode ?? '',
         logoUrl:            finalLogoUrl || undefined,
         contactPerson:      form.contactPerson.trim(),
         contactEmail:       form.contactEmail.trim(),

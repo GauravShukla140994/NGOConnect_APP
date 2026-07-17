@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { fmtDate, fmtTime, fmtDateTime } from '../../utils/dateUtils';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
@@ -29,8 +31,10 @@ import CreateFeedPostModal from '../../components/home/CreateFeedPostModal';
 import FeedCommentsModal from '../../components/home/FeedCommentsModal';
 import ApplyModal from '../../components/project/ApplyModal';
 import { feedApi, getPersonalizedFeed, likePost, unlikePost } from '../../api/feed.api';
+import { notificationApi } from '../../api/notification.api';
 import { getNearbyFeed } from '../../api/project.api';
-import { getMyOrgs } from '../../api/user.api';
+import { getMyOrgs, getMyDocuments } from '../../api/user.api';
+import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
 import { haversineKm, formatDistance } from '../../utils/geo';
 import { orgApi } from '../../api/org.api';
 import { storage } from '../../api/apiClient';
@@ -138,10 +142,14 @@ function OppCard({ project, onApply }: { project: Project; onApply?: (p: Project
           const p = project as any;
           const summary = project.scheduleSummary
             ?? (p.recurDays
-                ? `${String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3)).join(' & ')}${p.sessionStartTime ? ` · ${p.sessionStartTime}${p.sessionEndTime ? `–${p.sessionEndTime}` : ''}` : ''}`
+                ? `${String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3)).join(' & ')}${p.sessionStartTime ? ` · ${fmtTime(p.sessionStartTime)}${p.sessionEndTime ? `–${fmtTime(p.sessionEndTime)}` : ''}` : ''}`
                 : p.oneTimeDate
-                  ? p.oneTimeDate
-                  : null);
+                  ? fmtDateTime(p.oneTimeDate, p.sessionStartTime ?? null)
+                  : p.recurStart
+                    ? fmtDateTime(p.recurStart, p.sessionStartTime ?? null)
+                    : p.flexFromDate
+                      ? fmtDate(p.flexFromDate)
+                      : null);
           return summary ? (
             <Text style={styles.oppMetaItem}>{sIcon} {summary}</Text>
           ) : null;
@@ -157,7 +165,7 @@ function OppCard({ project, onApply }: { project: Project; onApply?: (p: Project
           {isFull
             ? 'Capacity Full'
             : spotsLeft <= 5
-              ? `${spotsLeft} spots!`
+              ? `${spotsLeft} ${spotsLeft === 1 ? 'spot' : 'spots'}!`
               : `${spotsLeft} spots left`}
         </Text>
       ) : null}
@@ -292,11 +300,15 @@ const PostCard = React.memo(function PostCard({
     if (!selectedReason) return;
     setReportSubmitting(true);
     try {
-      await feedApi.reportPost(post.postId!, {
+      const res = await feedApi.reportPost(post.postId!, {
         reasonCode: selectedReason.code,
         details: reportDetails.trim() || undefined,
       });
-      setReportDone(true);
+      if (res.data?.isSuccess) {
+        setReportDone(true);
+      } else {
+        Alert.alert('Error', res.data?.message || 'Could not submit report. Please try again.');
+      }
     } catch {
       Alert.alert('Error', 'Could not submit report. Please try again.');
     } finally {
@@ -412,7 +424,7 @@ const PostCard = React.memo(function PostCard({
                   <Text style={{ fontSize: 40, marginBottom: 12 }}>✅</Text>
                   <Text style={styles.reportSuccessTitle}>Report Submitted</Text>
                   <Text style={styles.reportSuccessSub}>Our team will review this post and take appropriate action.</Text>
-                  <TouchableOpacity style={styles.reportSubmitBtn} onPress={() => setShowReport(false)}>
+                  <TouchableOpacity style={[styles.reportSubmitBtn, { alignSelf: 'stretch' }]} onPress={() => setShowReport(false)}>
                     <Text style={styles.reportSubmitText}>Done</Text>
                   </TouchableOpacity>
                 </View>
@@ -459,7 +471,7 @@ const PostCard = React.memo(function PostCard({
                     disabled={!selectedReason || reportSubmitting}
                   >
                     {reportSubmitting
-                      ? <ActivityIndicator color="#DC2626" />
+                      ? <ActivityIndicator color="#FFFFFF" />
                       : <Text style={styles.reportSubmitText}>Submit Report</Text>
                     }
                   </TouchableOpacity>
@@ -705,7 +717,12 @@ export default function HomeScreen() {
   const [showCreatePost,   setShowCreatePost]   = useState(false);
   const [permChecking,     setPermChecking]     = useState(false);
   const [commentPost,      setCommentPost]      = useState<Post | null>(null);
+  // Cache fetched permissions per org so comment gate doesn't need a separate API call
+  const postPermsCache = useRef<{ [orgId: number]: import('../../types/api.types').PostPermissions }>({});
   const [applyProject,     setApplyProject]     = useState<Project | null>(null);
+  const [gateVisible,      setGateVisible]      = useState(false);
+  const [gateMissing,      setGateMissing]      = useState<string[]>([]);
+  const [gateTargetStep,   setGateTargetStep]   = useState(0);
   const [showOrgSwitcher,  setShowOrgSwitcher]  = useState(false);
   // Initialise from MMKV so the last-selected org is remembered across sessions
   const [activeOrgId, setActiveOrgId] = useState<number | null>(() => {
@@ -716,6 +733,58 @@ export default function HomeScreen() {
   const [locationLoading,  setLocationLoading]  = useState(false);
   const [userCoords,       setUserCoords]       = useState<{ lat: number; lon: number } | null>(null);
   const userCoordsRef = useRef<{ lat: number; lon: number } | null>(null);
+  const [unreadCount,      setUnreadCount]      = useState(0);
+
+  // ── Unread notification count — refresh on every focus ───────────────────────
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    notificationApi.getUnreadCount()
+      .then(res => {
+        if (!cancelled && res.data?.isSuccess) {
+          setUnreadCount(res.data.data?.unreadCount ?? 0);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []));
+
+  // ── Profile gate ────────────────────────────────────────────────────────────
+  const checkProfileComplete = useCallback(async () => {
+    const u = useAuthStore.getState().user as any;
+    const missing: string[] = [];
+    if (!u?.firstName || !u?.lastName) missing.push('Full name');
+    if (!u?.city)                       missing.push('City');
+    if (!u?.mobile)                     missing.push('Mobile number');
+    // Default: assume docs are OK — only block if we can confirm they're absent.
+    // If the API call fails (network/timeout), don't block the user falsely.
+    let hasGovtId = true, hasAddrProof = true;
+    try {
+      const docRes = await getMyDocuments();
+      if (docRes.data?.isSuccess && Array.isArray(docRes.data.data)) {
+        const docs = docRes.data.data as Array<{ docTypeCode: string }>;
+        const GOVT_ID_CODES = ['PHOTO_ID', 'AADHAAR', 'PAN', 'PASSPORT', 'VOTER_ID', 'DRIVING_LIC'];
+        hasGovtId    = docs.some(d => GOVT_ID_CODES.includes(d.docTypeCode));
+        hasAddrProof = docs.some(d => d.docTypeCode === 'ADDR_PROOF');
+      }
+      // If isSuccess=0 or data is not an array, keep defaults (true) — API issue, not missing docs
+    } catch { /* API unreachable — skip doc check, don't block user */ }
+    if (!hasGovtId)    missing.push('Government Photo ID');
+    if (!hasAddrProof) missing.push('Address Proof');
+    if (missing.length === 0) return { passed: true, missing: [], targetStep: 0 };
+    const onlyDocsMissing = missing.every(m => m === 'Government Photo ID' || m === 'Address Proof');
+    return { passed: false, missing, targetStep: onlyDocsMissing ? 4 : 0 };
+  }, []);
+
+  const handleApplyProject = useCallback(async (project: Project) => {
+    const result = await checkProfileComplete();
+    if (result.passed) {
+      setApplyProject(project);
+    } else {
+      setGateMissing(result.missing);
+      setGateTargetStep(result.targetStep);
+      setGateVisible(true);
+    }
+  }, [checkProfileComplete]);
 
   // Fetch GPS location → reverse-geocode to city via OpenStreetMap Nominatim (free, no key)
   const refreshLocation = useCallback(async () => {
@@ -841,7 +910,10 @@ export default function HomeScreen() {
         if (r.data?.isSuccess) {
           const orgs = r.data.data ?? [];
           setUserOrgs(orgs);
-          const approvedOrgs = orgs.filter((o: Organisation) => o.memberStatusCode === 'APPROVED');
+          // Only show orgs where BOTH the user's membership AND the org itself are approved
+          const approvedOrgs = orgs.filter((o: Organisation) =>
+            o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED'
+          );
           // Try to restore the previously selected org (validate it's still approved)
           const savedId  = storage.getNumber(ACTIVE_ORG_KEY);
           const restored = savedId ? approvedOrgs.find((o: Organisation) => o.orgId === savedId) : null;
@@ -909,11 +981,20 @@ export default function HomeScreen() {
 
   // Derive active-org values BEFORE the FAB callback — required so activeOrg
   // is in scope when useCallback evaluates its dependency array.
-  const activeOrg    = userOrgs.find(o => o.orgId === activeOrgId)
-                    ?? userOrgs.find(o => o.memberStatusCode === 'APPROVED');
+  // An org is active-eligible only when BOTH the user's membership AND the org itself are approved
+  const isFullyApproved = (o: Organisation) =>
+    o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED';
+  const activeOrg    = userOrgs.find(o => o.orgId === activeOrgId && isFullyApproved(o))
+                    ?? userOrgs.find(isFullyApproved);
   const orgName      = activeOrg?.orgName ?? activeOrg?.name ?? 'NGO Connect';
   const orgInitials  = orgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-  const approvedOrgs = userOrgs.filter(o => o.memberStatusCode === 'APPROVED');
+  const approvedOrgs = userOrgs
+    .filter(isFullyApproved)
+    .sort((a, b) => {
+      if (a.orgId === activeOrgId) return -1;
+      if (b.orgId === activeOrgId) return  1;
+      return (a.orgName ?? '').localeCompare(b.orgName ?? '');
+    });
 
   // ── Create Post: permission gate ──────────────────────────────────────────
   // Called when FAB is tapped. Checks org-level posting rules before opening modal.
@@ -947,6 +1028,8 @@ export default function HomeScreen() {
         );
         return;
       }
+      // Cache for comment gate reuse
+      postPermsCache.current[activeOrg.orgId] = p;
       // All checks passed — open the modal
       setShowCreatePost(true);
     } catch {
@@ -955,6 +1038,37 @@ export default function HomeScreen() {
       setPermChecking(false);
     }
   }, [activeOrg, permChecking]);
+
+  // ── Comment gate ─────────────────────────────────────────────────────────────
+  // Uses cached permissions if available (populated by FAB press).
+  // Server enforces CanComment too, so this is a UX-only fast path.
+  const handleCommentPress = useCallback(async (post: Post) => {
+    const orgId = (post as any).orgId as number | undefined;
+    if (!orgId) { setCommentPost(post); return; }  // non-org post — allow freely
+
+    const cached = postPermsCache.current[orgId];
+    if (cached !== undefined) {
+      // We have a cached result — use it immediately
+      if (!cached.canComment) {
+        Alert.alert('Comments Disabled', 'The admin of this organisation has disabled commenting for members.');
+        return;
+      }
+      setCommentPost(post);
+      return;
+    }
+
+    // No cache — fetch permissions (first comment tap for this org today)
+    try {
+      const res = await feedApi.getPostPermissions(orgId);
+      const p   = res.data?.data;
+      if (p) postPermsCache.current[orgId] = p;
+      if (p && !p.canComment) {
+        Alert.alert('Comments Disabled', 'The admin of this organisation has disabled commenting for members.');
+        return;
+      }
+    } catch { /* server will enforce anyway */ }
+    setCommentPost(post);
+  }, []);
 
   const userInitials = [user?.firstName?.[0], user?.lastName?.[0]]
     .filter(Boolean).join('').toUpperCase() || 'ME';
@@ -975,9 +1089,9 @@ export default function HomeScreen() {
             onPress={() => setShowOrgSwitcher(true)}
             accessibilityLabel="Switch organization"
           >
-            {activeOrg?.logoUrl ? (
+            {activeOrg?.logoUrl || activeOrg?.orgLogoUrl ? (
               <Image
-                source={{ uri: activeOrg.logoUrl }}
+                source={{ uri: (activeOrg.logoUrl ?? activeOrg.orgLogoUrl)! }}
                 style={styles.orgAvatarImg}
                 resizeMode="cover"
               />
@@ -992,11 +1106,21 @@ export default function HomeScreen() {
 
           <View style={styles.headerActions}>
             <TouchableOpacity
-              onPress={() => nav.navigate('Notifications')}
+              onPress={() => {
+                setUnreadCount(0);   // optimistic clear so badge disappears instantly
+                nav.navigate('Notifications');
+              }}
               style={styles.headerIconBtn}
               accessibilityLabel="Notifications"
             >
               <Text style={styles.headerIcon}>🔔</Text>
+              {unreadCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadCount > 99 ? '99+' : String(unreadCount)}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => nav.navigate('Profile')}
@@ -1080,7 +1204,7 @@ export default function HomeScreen() {
                       <OppCard
                         key={p.projectId}
                         project={p}
-                        onApply={setApplyProject}
+                        onApply={handleApplyProject}
                       />
                     ))}
                   </ScrollView>
@@ -1097,7 +1221,7 @@ export default function HomeScreen() {
             <PostCard
               post={item}
               onLike={handleLike}
-              onCommentPress={p => setCommentPost(p)}
+              onCommentPress={handleCommentPress}
               isActive={String(item.postId) === activePostId}
               globalMuted={globalMuted}
               onToggleMute={toggleMute}
@@ -1150,6 +1274,20 @@ export default function HomeScreen() {
         visible={applyProject !== null}
         project={applyProject}
         onClose={() => setApplyProject(null)}
+        onProfileIncomplete={(missing, targetStep) => {
+          setApplyProject(null);
+          setGateMissing(missing);
+          setGateTargetStep(targetStep);
+          setGateVisible(true);
+        }}
+      />
+
+      {/* ── Profile Incomplete Gate ──────────────────────────────────────── */}
+      <ProfileIncompleteSheet
+        visible={gateVisible}
+        onClose={() => setGateVisible(false)}
+        missingItems={gateMissing}
+        targetStep={gateTargetStep}
       />
 
          {/* ── Org Switcher Modal ──────────────────────────────────── */}
@@ -1201,9 +1339,9 @@ export default function HomeScreen() {
                   accessibilityLabel={`Switch to ${oName}`}
                 >
                   {/* Logo or initials */}
-                  {org.logoUrl ? (
+                  {org.logoUrl || org.orgLogoUrl ? (
                     <Image
-                      source={{ uri: org.logoUrl }}
+                      source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }}
                       style={styles.orgSwitcherAvatar}
                       resizeMode="cover"
                     />
@@ -1236,7 +1374,17 @@ export default function HomeScreen() {
             {/* Create New Organisation */}
             <Pressable
               style={styles.orgSwitcherItem}
-              onPress={() => { setShowOrgSwitcher(false); nav.navigate('CreateOrg' as never); }}
+              onPress={async () => {
+                setShowOrgSwitcher(false);
+                const result = await checkProfileComplete();
+                if (result.passed) {
+                  nav.navigate('CreateOrg' as never);
+                } else {
+                  setGateMissing(result.missing);
+                  setGateTargetStep(result.targetStep);
+                  setGateVisible(true);
+                }
+              }}
               accessibilityLabel="Create new organisation"
             >
               <View style={[styles.orgSwitcherAvatar, styles.orgSwitcherAvatarCreate]}>
@@ -1294,6 +1442,11 @@ const styles = StyleSheet.create({
   headerActions:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerIconBtn:  { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerIcon:     { fontSize: 20 },
+  notifBadge:     { position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16,
+                    borderRadius: 8, backgroundColor: C.RED, alignItems: 'center',
+                    justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1.5,
+                    borderColor: C.CARD },
+  notifBadgeText: { fontSize: 9, color: '#FFF', fontWeight: '700', lineHeight: 12 },
   userAvatar: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: C.PRIMARY_LIGHT,
@@ -1468,155 +1621,75 @@ const styles = StyleSheet.create({
   // ── Org Switcher ─────────────────────────────────────────────────────────────
   orgSwitcherSheet: {
     backgroundColor: C.CARD,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    // max height so it doesn't cover full screen on many-org accounts
-    maxHeight: '70%',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 0,
+    maxHeight: '75%',
   },
   orgSwitcherHeader: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: C.BORDER,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: C.BORDER,
   },
-  orgSwitcherTitle:    { fontSize: 17, fontWeight: '800', color: C.TEXT, marginBottom: 2 },
+  orgSwitcherTitle:    { fontSize: 16, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
   orgSwitcherSubtitle: { fontSize: 12, color: C.TEXT2 },
-  orgSwitcherClose:    { fontSize: 18, color: C.TEXT2, paddingLeft: 12, paddingTop: 2 },
+  orgSwitcherClose:    { fontSize: 18, color: C.TEXT2, paddingLeft: 12 },
   orgSwitcherItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: C.BORDER,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.BORDER,
   },
-  // Active row gets a very subtle tint — more visible than before
-  orgSwitcherItemActive: {
-    backgroundColor: `${C.PRIMARY}0D`,  // ~5% opacity
-    borderLeftWidth: 3,
-    borderLeftColor: C.PRIMARY,
-  },
-  // Avatar — same shape for Image and View (overflow hidden clips the image)
+  orgSwitcherItemActive: { backgroundColor: C.PRIMARY + '08' },
   orgSwitcherAvatar: {
-    width: 46, height: 46, borderRadius: 14,
-    overflow: 'hidden',
-    alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  // Initials text — always white; background is deterministic dark color
-  orgSwitcherAvatarText: { fontSize: 15, fontWeight: '800', color: '#fff' },
-  // "Create New" avatar — dashed border feel
-  orgSwitcherAvatarCreate: {
-    backgroundColor: C.BG,
-    borderWidth: 1.5,
-    borderColor: C.BORDER,
-    borderStyle: 'dashed',
-  },
-  orgSwitcherCreatePlus: { fontSize: 22, color: C.TEXT2, lineHeight: 28 },
-  orgSwitcherName:    { fontSize: 15, fontWeight: '700', color: C.TEXT },
-  orgSwitcherMeta:    { fontSize: 12, color: C.TEXT2, marginTop: 2 },
-  orgSwitcherChevron: { fontSize: 18, color: C.TEXT3, paddingLeft: 4 },
-  // Checkmark badge for the active org
+  orgSwitcherAvatarText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  orgSwitcherName:       { fontSize: 14, fontWeight: '600', color: C.TEXT, marginBottom: 2 },
+  orgSwitcherMeta:       { fontSize: 12, color: C.TEXT2 },
   orgSwitcherCheck: {
-    width: 28, height: 28, borderRadius: 14,
+    width: 24, height: 24, borderRadius: 12,
     backgroundColor: C.PRIMARY,
     alignItems: 'center', justifyContent: 'center',
   },
-  orgSwitcherCheckText: { fontSize: 14, color: '#fff', fontWeight: '800' },
+  orgSwitcherCheckText:  { color: '#fff', fontSize: 12, fontWeight: '700' },
+  orgSwitcherChevron:    { fontSize: 18, color: C.TEXT3 },
+  orgSwitcherAvatarCreate: { backgroundColor: C.PRIMARY },
+  orgSwitcherCreatePlus:   { fontSize: 22, color: '#fff', fontWeight: '700', lineHeight: 28 },
+  // ── Post menu (3-dot) ──────────────────────────────────────────────────
+  menuOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  menuSheet:      { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 0 },
+  menuHandle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 8 },
+  menuRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, gap: 14, borderTopWidth: 1, borderTopColor: C.BORDER },
+  menuIcon:       { fontSize: 20, width: 26, textAlign: 'center' },
+  menuLabel:      { fontSize: 15, color: C.TEXT },
+  menuRowReport:  { borderTopColor: '#FEE2E2' },
 
-  // ── Post options menu sheet ──────────────────────────────────────────────────
-  menuOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  menuSheet: {
-    backgroundColor: C.CARD,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 32,
-  },
-  menuHandle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: C.BORDER,
-    alignSelf: 'center',
-    marginTop: 10, marginBottom: 8,
-  },
-  menuRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    gap: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: C.BORDER,
-  },
-  menuRowReport: { borderBottomWidth: 0 },
-  menuIcon:  { fontSize: 18 },
-  menuLabel: { fontSize: 15, color: C.TEXT, fontWeight: '500' },
+  // ── Report sheet ───────────────────────────────────────────────────────
+  reportSheet:            { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  reportHeader:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  reportTitle:            { fontSize: 16, fontWeight: '700', color: C.TEXT },
+  reportClose:            { fontSize: 18, color: C.TEXT2, padding: 4 },
+  reportSubtitle:         { fontSize: 13, color: C.TEXT2, paddingHorizontal: 16, paddingVertical: 10 },
+  reportReason:           { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.BORDER, gap: 12 },
+  reportReasonSelected:   { backgroundColor: C.PRIMARY + '0D' },
+  reportReasonText:       { fontSize: 14, fontWeight: '600', color: C.TEXT },
+  reportReasonSub:        { fontSize: 12, color: C.TEXT2, marginTop: 2 },
+  reportDetailsLabel:     { fontSize: 12, fontWeight: '600', color: C.TEXT2, paddingHorizontal: 16, marginTop: 12, marginBottom: 6 },
+  reportDetailsInput:     { marginHorizontal: 16, backgroundColor: C.BG, borderRadius: 10, padding: 12, fontSize: 13, color: C.TEXT, minHeight: 72, textAlignVertical: 'top', borderWidth: 1, borderColor: C.BORDER },
+  reportSubmitBtn:        { backgroundColor: C.PRIMARY, margin: 16, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  reportSubmitBtnDisabled:{ opacity: 0.5 },
+  reportSubmitText:       { color: '#fff', fontSize: 15, fontWeight: '700' },
+  reportSuccess:          { alignItems: 'center', padding: 24 },
+  reportSuccessTitle:     { fontSize: 18, fontWeight: '700', color: C.TEXT, marginBottom: 6 },
+  reportSuccessSub:       { fontSize: 13, color: C.TEXT2, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
 
-  // ── Report Post modal ────────────────────────────────────────────────────────
-  reportSheet: {
-    backgroundColor: C.CARD,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    // paddingBottom handled by SafeAreaView spacer at bottom of sheet
-    maxHeight: '92%',
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: C.BORDER,
-  },
-  reportTitle:    { fontSize: 17, fontWeight: '700', color: C.TEXT },
-  reportClose:    { fontSize: 18, color: C.TEXT2, paddingLeft: 8 },
-  reportSubtitle: { fontSize: 13, color: C.TEXT2, paddingHorizontal: 20, paddingVertical: 10 },
-  reportReason: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: C.BORDER,
-    gap: 10,
-  },
-  reportReasonSelected: { backgroundColor: `${C.PRIMARY}08` },
-  reportReasonText:     { fontSize: 14, fontWeight: '600', color: C.TEXT },
-  reportReasonSub:      { fontSize: 12, color: C.TEXT2, marginTop: 2 },
-  reportDetailsLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.TEXT2,
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 6,
-  },
-  reportDetailsInput: {
-    marginHorizontal: 16,
-    borderWidth: 1,
-    borderColor: C.BORDER,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 13,
-    color: C.TEXT,
-    minHeight: 80,
-    textAlignVertical: 'top',
-    backgroundColor: C.BG,
-  },
-  reportSubmitBtn: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    backgroundColor: '#FEE2E2',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  reportSubmitBtnDisabled: { opacity: 0.5 },
-  reportSubmitText: { fontSize: 15, fontWeight: '700', color: '#DC2626' },
-  reportSuccess: {
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 32,
-  },
-  reportSuccessTitle: { fontSize: 17, fontWeight: '700', color: C.TEXT, marginBottom: 8 },
-  reportSuccessSub:   { fontSize: 13, color: C.TEXT2, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
 });

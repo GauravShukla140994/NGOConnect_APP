@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { fmtDate, fmtTime, fmtDateTime, fmtDateRange, fmtTimeRange } from '../../utils/dateUtils';
 import {
   ActivityIndicator,
   Alert,
@@ -68,27 +69,27 @@ function deriveScheduleType(item: Project): string | null {
   return null;
 }
 
-/** Build a date/time summary line from raw SP fields */
+/** Build a date/time summary line from raw SP fields — format: DD MMM YYYY hh:mm AM/PM */
 function buildDateLine(item: Project): string | null {
   if (item.scheduleSummary) return item.scheduleSummary;
   const p = item as any;
   if (p.recurDays) {
     const days = String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3)).join(' & ');
-    const range = p.recurStart ? ` · ${p.recurStart}${p.recurEnd ? ` – ${p.recurEnd}` : ''}` : '';
+    const range = p.recurStart ? ` · ${fmtDateRange(p.recurStart, p.recurEnd)}` : '';
     return `${days}${range}`;
   }
-  if (p.oneTimeDate) return p.oneTimeDate;
-  if (p.flexFromDate) return `${p.flexFromDate}${p.flexToDate ? ` – ${p.flexToDate}` : ''}`;
-  if (item.startDate) return `${item.startDate}${item.endDate && item.endDate !== item.startDate ? ` – ${item.endDate}` : ''}`;
+  if (p.oneTimeDate)  return fmtDateTime(p.oneTimeDate,  p.sessionStartTime ?? null);
+  if (p.flexFromDate) return fmtDateRange(p.flexFromDate, p.flexToDate);
+  if (item.startDate) return fmtDateRange(item.startDate, item.endDate && item.endDate !== item.startDate ? item.endDate : null);
   return null;
 }
 
-/** Build a time line from raw SP fields */
+/** Build a time line from raw SP fields — format: h:mm AM/PM */
 function buildTimeLine(item: Project): string | null {
   const st = item.startTime ?? (item as any).sessionStartTime;
   const et = item.endTime   ?? (item as any).sessionEndTime;
   if (!st) return null;
-  return et ? `${st} – ${et}` : st;
+  return fmtTimeRange(st, et);
 }
 
 
@@ -198,7 +199,7 @@ function OppCard({ item, onApply, onShare, onPress }: { item: Project; onApply: 
   const barColor = pct >= 1 ? '#EF4444' : pct >= 0.85 ? C.ORANGE : C.TEAL;
   const spotsTxt =
     isFull              ? 'Full'
-    : spots !== null && spots <= 3  ? `${spots} spots!`
+    : spots !== null && spots <= 3  ? `${spots} ${spots === 1 ? 'spot' : 'spots'}!`
     : spots !== null                ? `${spots} spots left`
     : null;
   const spotsClr = isFull ? '#EF4444' : (spots ?? 99) <= 3 ? C.ORANGE : C.TEAL;

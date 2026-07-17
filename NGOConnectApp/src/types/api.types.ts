@@ -42,6 +42,7 @@ export interface VerifyOtpRequest {
   recipient: string;
   otpCode: string;
   purposeLkpId: number;
+  countryCode?: string;  // dial code e.g. "+44" — stored on Users.CountryCode for new registrations
 }
 
 export interface AuthTokens {
@@ -57,10 +58,12 @@ export interface RefreshTokenRequest {
 
 // ── Post Permissions ─────────────────────────────────────────────────────────
 export interface PostPermissions {
-  isMember:       boolean;  // true if user is an APPROVED member of the org
-  canPost:        boolean;  // org admin's per-member posting toggle
-  maxPostsPerDay: number;   // org-configured daily limit (default 10)
-  todayPostCount: number;   // posts already created today for this org
+  isMember:          boolean;  // true if user is an APPROVED member of the org
+  canPost:           boolean;  // org admin's per-member posting toggle
+  canComment:        boolean;  // org admin's per-member commenting toggle
+  canCommunityPost:  boolean;  // org admin's toggle for community posts/polls
+  maxPostsPerDay:    number;   // org-configured daily limit (default 10)
+  todayPostCount:    number;   // posts already created today for this org
 }
 
 // ── User ─────────────────────────────────────────────────────────────────────
@@ -258,6 +261,7 @@ export interface Organisation {
   areasOfWork?: string[];
   followerCount?: number;         // denormalized — from Organisations.FollowerCount
   isFollowing?: number | boolean; // 0|1 from SP (use !! to convert to boolean)
+  verificationStatusCode?: string; // PENDING | VERIFIED | REJECTED (from ORG_VERIFICATION_STATUS lookup)
 }
 
 export interface OrgMember {
@@ -293,6 +297,7 @@ export interface OrgMember {
   locationSharing?: boolean;
   maxPostsPerDay?: number;
   reliabilityPct?: number;
+  profileVerificationStatusCode?: string;  // PENDING | VERIFIED | NEEDS_UPDATE | REJECTED (from PROFILE_VERIFICATION_STATUS lookup)
 }
 
 // ── Admin volunteer profile (GET /org/{orgId}/volunteers/{userId}) ────────────
@@ -639,19 +644,13 @@ export interface Notification {
   notificationId: number;
   title: string;
   body: string;
-  notificationType: string;
-  referenceId?: number;
-  referenceType?: string;
-  isRead: boolean;
+  notifType: string;       // matches SP: NotifType → camelCase notifType
+  refId?: number;
+  refType?: string;
+  isRead: number;          // 0 | 1 from MySQL — use === 1 check
+  readAt?: string;
   createdAt: string;
-}
-
-// ── Certificate ───────────────────────────────────────────────────────────────
-export interface Certificate {
-  certificateId:  number;
-  projectTitle:   string;
-  orgName:        string;
-  hoursLogged:    number;
-  issuedAt:       string;
-  fileUrl?:       string;
+  orgId?: number;
+  orgName?: string;
+  orgLogoUrl?: string;
 }

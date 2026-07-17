@@ -13,8 +13,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getNearbyFeed, apply } from '../../api/project.api';
+import { getMyDocuments } from '../../api/user.api';
+import { useAuthStore } from '../../store/authStore';
 import type { Project } from '../../types/api.types';
 import { haversineKm, formatDistance } from '../../utils/geo';
+import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
 
 const C = AppConfig.COLORS;
 
@@ -69,7 +72,7 @@ function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => voi
           </View>
           {!isFull && (
             <Text style={[styles.spotsText, { color: spotsColor(spots) }]}>
-              {spots <= 3 ? `${spots} spots!` : `${spots} spots left`}
+              {spots <= 3 ? `${spots} ${spots === 1 ? 'spot' : 'spots'}!` : `${spots} spots left`}
             </Text>
           )}
           {isFull && <Text style={[styles.spotsText, { color: '#EF4444' }]}>Full</Text>}
@@ -145,6 +148,12 @@ export default function AllOpportunitiesScreen() {
   const [totalCount, setTotalCount]       = useState(0);
   const [applying, setApplying]           = useState<number | null>(null);
 
+  // Profile gate state
+  const [gateVisible, setGateVisible]     = useState(false);
+  const [gateMissing, setGateMissing]     = useState<string[]>([]);
+  const [gateTargetStep, setGateTargetStep] = useState(0);
+  const [pendingProjectId, setPendingProjectId] = useState<number | null>(null);
+
   // GPS
   const [userCoords, setUserCoords]       = useState<{ lat: number; lon: number } | null>(null);
   const [locationReady, setLocationReady] = useState(false);
@@ -211,7 +220,50 @@ export default function AllOpportunitiesScreen() {
     if (locationReady) fetchData(1);
   }, [locationReady, fetchData]);
 
+  /** Returns { passed: true } or { passed: false, missing: string[], targetStep: number } */
+  const checkProfileComplete = useCallback(async () => {
+    const user = useAuthStore.getState().user as any;
+    const missing: string[] = [];
+
+    if (!user?.firstName || !user?.lastName) missing.push('Full name');
+    if (!user?.city)                          missing.push('City');
+    if (!user?.mobile)                        missing.push('Mobile number');
+
+    // Check documents
+    let hasGovtId   = false;
+    let hasAddrProof = false;
+    try {
+      const docRes = await getMyDocuments();
+      if (docRes.data?.isSuccess && Array.isArray(docRes.data.data)) {
+        const docs = docRes.data.data as Array<{ docTypeCode: string }>;
+        const GOVT_ID_CODES = ['PHOTO_ID', 'AADHAAR', 'PAN', 'PASSPORT', 'VOTER_ID', 'DRIVING_LIC'];
+        hasGovtId    = docs.some(d => GOVT_ID_CODES.includes(d.docTypeCode));
+        hasAddrProof = docs.some(d => d.docTypeCode === 'ADDR_PROOF');
+      }
+    } catch {
+      // If doc fetch fails, assume missing so user is guided to complete profile
+    }
+    if (!hasGovtId)    missing.push('Government Photo ID');
+    if (!hasAddrProof) missing.push('Address Proof');
+
+    if (missing.length === 0) return { passed: true, missing: [], targetStep: 0 };
+
+    // targetStep: if only docs missing → step 4 (Documents); else step 0 (Basic Info)
+    const onlyDocsMissing = missing.every(m => m === 'Government Photo ID' || m === 'Address Proof');
+    return { passed: false, missing, targetStep: onlyDocsMissing ? 4 : 0 };
+  }, []);
+
   const handleApply = useCallback(async (projectId: number) => {
+    // Gate check first
+    const gate = await checkProfileComplete();
+    if (!gate.passed) {
+      setGateMissing(gate.missing);
+      setGateTargetStep(gate.targetStep);
+      setPendingProjectId(projectId);
+      setGateVisible(true);
+      return;
+    }
+
     setApplying(projectId);
     try {
       const res = await apply(projectId);
@@ -225,7 +277,7 @@ export default function AllOpportunitiesScreen() {
     } finally {
       setApplying(null);
     }
-  }, []);
+  }, [checkProfileComplete]);
 
   const handleLoadMore = () => {
     if (!loadingMore && allProjects.length < totalCount) {
@@ -345,6 +397,13 @@ export default function AllOpportunitiesScreen() {
           </View>
         }
       />
+
+      <ProfileIncompleteSheet
+        visible={gateVisible}
+        onClose={() => { setGateVisible(false); setPendingProjectId(null); }}
+        missingItems={gateMissing}
+        targetStep={gateTargetStep}
+      />
     </SafeAreaView>
   );
 }
@@ -362,33 +421,37 @@ const styles = StyleSheet.create({
   filterChip:           { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: C.BG, borderWidth: 1, borderColor: C.BORDER },
   filterChipActive:     { backgroundColor: C.PRIMARY, borderColor: C.PRIMARY },
   filterChipText:       { fontSize: 12, color: C.TEXT2, fontWeight: '500' },
-  filterChipTextActive: { color: '#fff', fontWeight: '700' },
-  listContent:          { padding: 12 },
-  resultHeader:         { marginBottom: 10, gap: 3 },
-  resultCount:          { fontSize: 13, color: C.TEXT2 },
-  noGpsNote:            { fontSize: 11, color: C.TEXT3 },
-  oppCard:              { backgroundColor: C.CARD, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  oppRow:               { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 7 },
-  catPill:              { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginBottom: 4 },
-  catPillText:          { fontSize: 11, fontWeight: '600' },
-  oppTitle:             { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
-  oppSub:               { fontSize: 12, color: C.TEXT2 },
-  typePill:             { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, marginBottom: 4 },
-  typePillText:         { fontSize: 10, color: C.TEXT2, fontWeight: '600' },
-  spotsText:            { fontSize: 12, fontWeight: '700', marginTop: 2 },
-  infoRows:             { gap: 3, marginBottom: 7 },
-  infoRow:              { fontSize: 12, color: C.TEXT2 },
-  tagRow:               { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 7 },
-  skillTag:             { backgroundColor: `${C.PRIMARY}15`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  skillTagText:         { fontSize: 11, color: C.PRIMARY, fontWeight: '500' },
-  capText:              { fontSize: 11, color: C.TEXT2, marginBottom: 3 },
-  capBar:               { height: 5, backgroundColor: C.BORDER, borderRadius: 3, overflow: 'hidden', marginBottom: 9 },
-  capFill:              { height: '100%', borderRadius: 3 },
-  cardActions:          { flexDirection: 'row', gap: 7 },
-  applyBtn:             { backgroundColor: C.PRIMARY, borderRadius: 9, padding: 12, alignItems: 'center', justifyContent: 'center' },
-  applyBtnText:         { color: '#fff', fontSize: 14, fontWeight: '700' },
-  shareBtn:             { flex: 1, borderWidth: 1, borderColor: C.BORDER, borderRadius: 9, padding: 8, alignItems: 'center', justifyContent: 'center' },
-  shareBtnText:         { fontSize: 14, color: C.TEXT2 },
-  emptyText:            { fontSize: 16, color: C.TEXT2, fontWeight: '600', marginBottom: 4 },
-  emptySubText:         { fontSize: 13, color: C.TEXT3, textAlign: 'center' },
+  filterChipTextActive: { color: '#fff', fontWeight: '600' },
+  resultHeader:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8 },
+  resultCount:          { fontSize: 13, color: C.TEXT2, fontWeight: '500' },
+  noGpsNote:            { fontSize: 12, color: C.TEXT3, fontStyle: 'italic' },
+  listContent:          { paddingTop: 4 },
+
+  // Opportunity card
+  oppCard:    { backgroundColor: C.CARD, borderRadius: 14, marginHorizontal: 12, marginBottom: 10, padding: 14, ...AppConfig.SHADOW.CARD },
+  oppRow:     { flexDirection: 'row', gap: 10 },
+  catPill:    { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, alignSelf: 'flex-start', marginBottom: 6 },
+  catPillText:{ fontSize: 11, fontWeight: '700' },
+  typePill:   { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, alignSelf: 'flex-start' },
+  typePillText:{ fontSize: 10, fontWeight: '600', color: C.TEXT2 },
+  oppTitle:   { fontSize: 14, fontWeight: '700', color: C.TEXT, lineHeight: 20, marginBottom: 2, flex: 1 },
+  oppSub:     { fontSize: 12, color: C.TEXT2, marginBottom: 6 },
+  infoRows:   { gap: 3, marginBottom: 8 },
+  infoRow:    { fontSize: 12, color: C.TEXT3 },
+  tagRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 8 },
+  skillTag:   { backgroundColor: C.BG, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1, borderColor: C.BORDER },
+  skillTagText:{ fontSize: 11, color: C.TEXT2 },
+  spotsText:  { fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  capBar:     { height: 4, backgroundColor: C.BG, borderRadius: 2, overflow: 'hidden', marginBottom: 4 },
+  capFill:    { height: '100%' as any, borderRadius: 2 },
+  capText:    { fontSize: 11, color: C.TEXT3, marginBottom: 8 },
+  cardActions:{ flexDirection: 'row', gap: 8, marginTop: 4 },
+  applyBtn:   { flex: 1, backgroundColor: C.PRIMARY, paddingVertical: 9, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  applyBtnText:{ fontSize: 13, fontWeight: '700', color: '#fff' },
+  shareBtn:   { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderColor: C.BORDER, alignItems: 'center', justifyContent: 'center' },
+  shareBtnText:{ fontSize: 13, fontWeight: '600', color: C.TEXT2 },
+
+  // Empty state
+  emptyText:    { fontSize: 15, fontWeight: '600', color: C.TEXT, textAlign: 'center', marginBottom: 6 },
+  emptySubText: { fontSize: 13, color: C.TEXT2, textAlign: 'center' },
 });

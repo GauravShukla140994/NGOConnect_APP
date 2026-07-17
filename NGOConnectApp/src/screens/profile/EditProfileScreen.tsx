@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import AppConfig from '../../config/AppConfig';
 import {
@@ -128,9 +128,12 @@ function Input(props: React.ComponentProps<typeof TextInput>) {
 // -----------------------------------------------------------------
 export default function EditProfileScreen() {
   const nav      = useNavigation<any>();
+  const route    = useRoute<any>();
   const insets   = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
-  const [step, setStep] = useState<Step>(0);
+  // initialStep lets callers deep-link directly into a specific step,
+  // e.g. ProfileIncompleteSheet passes 4 to jump to the Documents step.
+  const [step, setStep] = useState<Step>((route.params?.initialStep as Step) ?? 0);
   const { setUser } = useAuthStore();
 
   // Loading / saving states
@@ -1473,9 +1476,9 @@ const safetyStyles = StyleSheet.create({
     marginTop: 1, flexShrink: 0,
   },
   checkboxChecked: {
-    backgroundColor: C.PRIMARY, borderColor: C.PRIMARY,
+    backgroundColor: C.PRIMARY, borderRadius: 4,
   },
-  checkMark:  { color: '#fff', fontSize: 13, fontWeight: '700' },
-  checkLabel: { fontSize: 14, fontWeight: '600', color: '#111827' },
+  checkLabel: { fontSize: 14, fontWeight: '600', color: '#374151' },
   checkSub:   { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  checkMark:  { fontSize: 12, color: '#fff', fontWeight: '700' },
 });

@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getMyImpact, getMyBadges, getMyApplications } from '../../api/user.api';
 import type { UserImpact, UserBadge, UserApplication } from '../../types/api.types';
@@ -358,6 +359,7 @@ const TABS: TabKey[] = ['Applied', 'Upcoming', 'Completed'];
 
 export default function ImpactScreen() {
   const insets = useSafeAreaInsets();
+  const nav    = useNavigation<any>();
 
   // ── Animated scroll tracking ──
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -531,7 +533,7 @@ export default function ImpactScreen() {
           <View style={s.section} {...panResponder.panHandlers}>
             <View style={s.sectionHdr}>
               <Text style={s.sectionTitle}>Events &amp; Projects</Text>
-              <TouchableOpacity activeOpacity={0.7}>
+              <TouchableOpacity activeOpacity={0.7} onPress={() => nav.navigate('MyProjects' as never)}>
                 <Text style={s.viewAllTxt}>View All</Text>
               </TouchableOpacity>
             </View>

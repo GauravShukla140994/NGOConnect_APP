@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { fmtDate, fmtTime } from '../../utils/dateUtils';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   ActivityIndicator, TextInput, Alert, Modal, RefreshControl, PanResponder,
@@ -76,16 +77,11 @@ function mapRow(r: any): AdminProject {
   };
 }
 
-function fmtDate(iso?: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso.slice(0, 10);
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
+// fmtDate imported from dateUtils
 
 function scheduleLabel(p: AdminProject): string {
   if (p.projectTypeCode === 'ONE_TIME') {
-    const t = p.sessionStartTime ? ` · ${p.sessionStartTime.slice(0, 5)}` : '';
+    const t = p.sessionStartTime ? ` · ${fmtTime(p.sessionStartTime)}` : '';
     return `One-time · ${fmtDate(p.oneTimeDate)}${t}`;
   }
   if (p.projectTypeCode === 'RECURRING') {

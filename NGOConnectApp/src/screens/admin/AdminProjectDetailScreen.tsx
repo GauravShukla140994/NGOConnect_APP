@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { fmtDate as _fmtDate, fmtTime as _fmtTime } from '../../utils/dateUtils';
 import {
   ActivityIndicator,
   Alert,
@@ -40,11 +41,11 @@ function fmtSchedule(p: any): string {
   return p.scheduleType ?? '';
 }
 
-function fmtTime(p: any): string | null {
+function buildTimeRange(p: any): string | null {
   const st = p.sessionStartTime ?? p.startTime;
   const et = p.sessionEndTime   ?? p.endTime;
   if (!st) return null;
-  return et ? `${st} – ${et}` : st;
+  return et ? `${_fmtTime(st)} – ${_fmtTime(et)}` : _fmtTime(st);
 }
 
 function locationTypeIcon(code?: string): string {
@@ -91,28 +92,27 @@ function getQrWindowState(session: any | null, todayStr: string): {
   const buffered = new Date(winStart.getTime() - QR_BUFFER_MINUTES * 60_000);
   const now      = new Date();
 
-  const fmtTime = (d: Date) =>
-    d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-  const fmtDate = (d: Date) =>
-    d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const toTimeStr = (d: Date) =>
+    _fmtTime(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`);
+  const toDateStr = (d: Date) => _fmtDate(d);
 
   // Session date is in the future (not today, not past)
   if (sessionDate > todayStr) {
     return {
       state:          'future',
-      startStr:       fmtTime(winStart),
-      openStr:        fmtTime(buffered),
-      sessionDateStr: fmtDate(winStart),
+      startStr:       toTimeStr(winStart),
+      openStr:        toTimeStr(buffered),
+      sessionDateStr: toDateStr(winStart),
     };
   }
 
   // Session date is today — check time window
   if (now < buffered) return {
     state:    'too_early',
-    startStr: fmtTime(winStart),
-    openStr:  fmtTime(buffered),
+    startStr: toTimeStr(winStart),
+    openStr:  toTimeStr(buffered),
   };
-  if (now > winEnd) return { state: 'ended', endStr: fmtTime(winEnd) };
+  if (now > winEnd) return { state: 'ended', endStr: toTimeStr(winEnd) };
   return { state: 'active' };
 }
 
@@ -152,17 +152,7 @@ function ActionBtn({ icon, label, onPress, outlined = true }: { icon: string; la
   );
 }
 
-function fmtTime12(t?: string): string {
-  if (!t) return '';
-  // Handle ISO datetime or plain time "09:02:00"
-  const d = new Date(t);
-  if (!isNaN(d.getTime())) {
-    return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-  }
-  const [h, m] = t.split(':').map(Number);
-  if (isNaN(h)) return t;
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
-}
+// fmtTime12 replaced by _fmtTime from dateUtils
 
 function ParticipantRow({ app }: { app: any }) {
   const STATUS_CFG: Record<string, { label: string; bg: string; color: string }> = {
@@ -179,7 +169,7 @@ function ParticipantRow({ app }: { app: any }) {
   let subtitle = app.city ?? '';
   if (app.statusCode === 'ATTENDED') {
     const parts = [
-      app.checkedInAt ? `QR ${fmtTime12(app.checkedInAt)}` : null,
+      app.checkedInAt ? `QR ${_fmtTime(app.checkedInAt)}` : null,
       app.hoursLogged  ? `${app.hoursLogged} hrs` : null,
     ].filter(Boolean);
     subtitle = parts.join(' · ') || subtitle;
@@ -744,7 +734,8 @@ const styles = StyleSheet.create({
   primaryBtn:          { backgroundColor: C.PRIMARY, borderRadius: 10, padding: 13, alignItems: 'center' },
   primaryBtnText:      { color: '#fff', fontSize: 14, fontWeight: '700' },
   // QR window banners
-  qrWindowBannerEnded:  { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  qrWindowBanner:        { borderRadius: 10, padding: 12, borderWidth: 1, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB' },
+  qrWindowBannerEnded:   { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
   qrWindowBannerFuture: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
   qrWindowIcon:        { fontSize: 18, marginTop: 1 },
   qrWindowTitle:       { fontSize: 13, fontWeight: '700', color: '#D97706', marginBottom: 2 },

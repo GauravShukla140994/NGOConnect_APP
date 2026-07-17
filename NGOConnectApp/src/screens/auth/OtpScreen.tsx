@@ -45,7 +45,7 @@ const OtpScreen = ({navigation, route}: Props) => {
     }
     setLoading(true);
     try {
-      const res = await authApi.verifyOtp({recipient, otpCode: code, purposeLkpId: 1});
+      const res = await authApi.verifyOtp({recipient, otpCode: code, purposeLkpId: 1, countryCode});
       if (res.data.isSuccess === 1 && res.data.data) {
         login(res.data.data);
       } else {

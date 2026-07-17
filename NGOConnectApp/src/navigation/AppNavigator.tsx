@@ -13,6 +13,7 @@ import ProfileScreen       from '../screens/profile/ProfileScreen';
 
 // ── Stack screens ─────────────────────────────────────────────────────────────
 import NotificationsScreen from '../screens/home/NotificationsScreen';
+import FCMTestScreen       from '../screens/home/FCMTestScreen';
 import NgoProfileScreen    from '../screens/ngo/NgoProfileScreen';
 import ProjectDetailScreen from '../screens/volunteer/ProjectDetailScreen';
 import JoinFormScreen      from '../screens/ngo/JoinFormScreen';
@@ -153,6 +154,7 @@ const AppNavigator = () => (
 
     {/* Misc */}
     <Stack.Screen name="Notifications"    component={NotificationsScreen}    />
+    <Stack.Screen name="FCMTest"          component={FCMTestScreen}          />
 
     {/* Admin — full bottom-tab navigator, replaces single AdminDashboard screen */}
     <Stack.Screen name="AdminTabs"          component={AdminNavigator}           options={{ headerShown: false }} />

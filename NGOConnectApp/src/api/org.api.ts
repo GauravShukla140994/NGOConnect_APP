@@ -47,7 +47,7 @@ export const orgApi = {
   removeMember: (orgId: number, userId: number) =>
     apiClient.delete<ApiResponse<null>>(`/org/${orgId}/members/${userId}`),
 
-  updateMemberRole: (orgId: number, data: { memberId: number; roleLkpId: number }) =>
+  updateMemberRole: (orgId: number, data: { memberId: number; roleCode: string }) =>
     apiClient.put<ApiResponse<null>>(`/org/${orgId}/members/role`, data),
 
   getVolunteerProfile: (orgId: number, userId: number) =>

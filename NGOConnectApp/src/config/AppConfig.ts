@@ -131,6 +131,11 @@ const AppConfig = {
     SHEET:   24,   // .sheet   border-radius: 24px 24px 0 0
   },
 
+  // ── Sentry Error Monitoring ───────────────────────────────────────────────
+  // DSN is project-specific — does NOT change on plan upgrade.
+  // Android + iOS both report to this single React Native project.
+  SENTRY_DSN: 'https://64a28e697455d4e17952db6e5bcd012e@o4511746239430656.ingest.de.sentry.io/4511746348548176',
+
   // ── Lookup Type Codes (matches LookupTypes in DB) ─────────────────────────
   LOOKUP: {
     GENDER:             'GENDER',

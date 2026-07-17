@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -76,11 +77,17 @@ function OrgRowCard({ org, distKm, onPress }: { org: Organisation; distKm?: numb
 
   return (
     <View style={styles.rowCard}>
-      <View style={[styles.rowAvatar, { backgroundColor: color }]}>
-        <Text style={styles.rowAvatarText}>{initials(name)}</Text>
-      </View>
+      {org.logoUrl || org.orgLogoUrl
+        ? <Image source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.rowAvatar} resizeMode="cover" />
+        : <View style={[styles.rowAvatar, { backgroundColor: color }]}><Text style={styles.rowAvatarText}>{initials(name)}</Text></View>
+      }
       <View style={{ flex: 1 }}>
-        <Text style={styles.rowName} numberOfLines={1}>{name}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Text style={styles.rowName} numberOfLines={1}>{name}</Text>
+          {org.verificationStatusCode === 'VERIFIED' && (
+            <View style={styles.verifiedBadge}><Text style={styles.verifiedBadgeText}>✓</Text></View>
+          )}
+        </View>
         <Text style={styles.rowMeta} numberOfLines={1}>{meta}</Text>
       </View>
       <TouchableOpacity style={styles.viewBtn} onPress={onPress} accessibilityLabel={`View ${name}`}>
@@ -97,10 +104,16 @@ function OrgGridCard({ org, onPress }: { org: Organisation; onPress: () => void 
   const rating = org.avgRating ?? org.rating ?? 0;
   return (
     <TouchableOpacity style={styles.gridCard} onPress={onPress} activeOpacity={0.8} accessibilityLabel={`View ${name}`}>
-      <View style={[styles.gridAvatar, { backgroundColor: color }]}>
-        <Text style={styles.gridAvatarText}>{initials(name)}</Text>
+      {org.logoUrl || org.orgLogoUrl
+        ? <Image source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.gridAvatar} resizeMode="cover" />
+        : <View style={[styles.gridAvatar, { backgroundColor: color }]}><Text style={styles.gridAvatarText}>{initials(name)}</Text></View>
+      }
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 3 }}>
+        <Text style={[styles.gridName, { marginBottom: 0 }]} numberOfLines={2}>{name}</Text>
+        {org.verificationStatusCode === 'VERIFIED' && (
+          <View style={styles.verifiedBadge}><Text style={styles.verifiedBadgeText}>✓</Text></View>
+        )}
       </View>
-      <Text style={styles.gridName} numberOfLines={2}>{name}</Text>
       <Text style={styles.gridMeta} numberOfLines={1}>
         {(org.categoryName ?? org.category ?? 'NGO')}{rating > 0 ? ` · ⭐${rating.toFixed(1)}` : ''}
       </Text>
@@ -124,9 +137,10 @@ function TrendingCard({ campaign, onPress }: { campaign: any; onPress: () => voi
         </View>
       )}
       <View style={styles.trendHeader}>
-        <View style={[styles.trendAvatar, { backgroundColor: avatarColor(campaign.orgName ?? 'NGO') }]}>
-          <Text style={styles.trendAvatarText}>{initials(campaign.orgName ?? 'NGO')}</Text>
-        </View>
+        {campaign.orgLogoUrl
+          ? <Image source={{ uri: campaign.orgLogoUrl }} style={styles.trendAvatar} resizeMode="cover" />
+          : <View style={[styles.trendAvatar, { backgroundColor: avatarColor(campaign.orgName ?? 'NGO') }]}><Text style={styles.trendAvatarText}>{initials(campaign.orgName ?? 'NGO')}</Text></View>
+        }
         <View style={{ flex: 1 }}>
           <Text style={styles.trendCampaign} numberOfLines={2}>{campaign.campaignName}</Text>
           <Text style={styles.trendOrg}>{campaign.orgName}</Text>
@@ -252,6 +266,7 @@ export default function ExploreScreen() {
 
   // ── Tab switch — load corresponding data ──────────────────────────────────
   useEffect(() => {
+    if (tab !== 'all' && search) { setSearch(''); } // clear search when leaving All tab
     if (tab === 'recommended') { loadRecommended(); }
     else if (tab === 'trending') { loadTrending(); }
     else { loadAll(1, true, search, categoryCode); }
@@ -295,13 +310,13 @@ export default function ExploreScreen() {
   // Recommended: filter by category code (org.category = DB code)
   const filteredRecommended = useMemo(() => {
     if (categoryCode === 'ALL') { return recommended; }
-    return recommended.filter(o => (o.category ?? '') === categoryCode);
+    return recommended.filter(o => (o.category ?? '').toUpperCase() === categoryCode.toUpperCase());
   }, [recommended, categoryCode]);
 
   // Trending: filter by orgCategory returned from SP (o.Category AS OrgCategory → camelCase orgCategory)
   const filteredTrending = useMemo(() => {
     if (categoryCode === 'ALL') { return trendingAll; }
-    return trendingAll.filter(c => (c.orgCategory ?? '') === categoryCode);
+    return trendingAll.filter(c => (c.orgCategory ?? '').toUpperCase() === categoryCode.toUpperCase());
   }, [trendingAll, categoryCode]);
 
   const goToNgo   = (orgId: number) => nav.navigate('NgoProfile', { orgId });
@@ -315,28 +330,30 @@ export default function ExploreScreen() {
         <Text style={styles.headerTitle}>Explore</Text>
       </View>
 
-      {/* Search */}
-      <View style={styles.searchBox}>
-        <Text style={styles.searchIcon}>&#128269;</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search NGOs, causes..."
-          placeholderTextColor={C.TEXT3}
-          value={search}
-          onChangeText={handleSearchChange}
-          returnKeyType="search"
-          onSubmitEditing={() => tab === 'all' && loadAll(1, true, search, categoryCode)}
-          accessibilityLabel="Search NGOs"
-        />
-        {search.length > 0 && (
-          <TouchableOpacity
-            onPress={() => { setSearch(''); if (tab === 'all') { loadAll(1, true, '', categoryCode); } }}
-            accessibilityLabel="Clear search"
-          >
-            <Text style={styles.clearBtn}>✕</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {/* Search — All NGOs tab only */}
+      {tab === 'all' && (
+        <View style={styles.searchBox}>
+          <Text style={styles.searchIcon}>&#128269;</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search NGOs, causes..."
+            placeholderTextColor={C.TEXT3}
+            value={search}
+            onChangeText={handleSearchChange}
+            returnKeyType="search"
+            onSubmitEditing={() => loadAll(1, true, search, categoryCode)}
+            accessibilityLabel="Search NGOs"
+          />
+          {search.length > 0 && (
+            <TouchableOpacity
+              onPress={() => { setSearch(''); loadAll(1, true, '', categoryCode); }}
+              accessibilityLabel="Clear search"
+            >
+              <Text style={styles.clearBtn}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* Category chips — applies to all 3 tabs */}
       <View style={styles.catWrapper}>
@@ -518,15 +535,17 @@ const styles = StyleSheet.create({
   secTitle:      { fontSize: 16, fontWeight: '700', color: C.TEXT },
   secSub:        { fontSize: 12, color: C.TEXT2, marginTop: 2 },
   rowCard:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.CARD, marginHorizontal: 12, marginTop: 8, borderRadius: 14, padding: 12, gap: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
-  rowAvatar:     { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  rowAvatar:     { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   rowAvatarText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   rowName:       { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  verifiedBadge:     { backgroundColor: '#ECFDF5', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#6EE7B7' },
+  verifiedBadgeText: { fontSize: 10, fontWeight: '700', color: '#059669' },
   rowMeta:       { fontSize: 11, color: C.TEXT2 },
   viewBtn:       { backgroundColor: C.PRIMARY, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
   viewBtnText:   { color: '#fff', fontSize: 13, fontWeight: '600' },
   gridRow:       { paddingHorizontal: 8 },
   gridCard:      { flex: 1, margin: 6, backgroundColor: C.CARD, borderRadius: 14, padding: 12, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
-  gridAvatar:    { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  gridAvatar:    { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8, overflow: 'hidden' },
   gridAvatarText:{ color: '#fff', fontSize: 15, fontWeight: '800' },
   gridName:      { fontSize: 13, fontWeight: '700', color: C.TEXT, textAlign: 'center', marginBottom: 3 },
   gridMeta:      { fontSize: 11, color: C.TEXT2, textAlign: 'center', marginBottom: 10 },
@@ -536,20 +555,20 @@ const styles = StyleSheet.create({
   emergencyBadge:{ alignSelf: 'flex-start', backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, marginBottom: 8 },
   emergencyText: { fontSize: 11, fontWeight: '700', color: '#DC2626' },
   trendHeader:   { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  trendAvatar:   { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  trendAvatar:   { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   trendAvatarText:{ color: '#fff', fontSize: 13, fontWeight: '800' },
-  trendCampaign: { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
-  trendOrg:      { fontSize: 12, color: C.TEXT2 },
-  progressBg:    { height: 7, backgroundColor: C.BORDER, borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
-  progressFill:  { height: '100%', backgroundColor: C.PRIMARY, borderRadius: 4 },
-  trendFooter:   { flexDirection: 'row', alignItems: 'baseline', marginBottom: 10, flexWrap: 'wrap' },
-  trendRaised:   { fontSize: 15, fontWeight: '800', color: C.TEXT },
-  trendOf:       { fontSize: 12, color: C.TEXT2 },
+  trendOrg:      { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  trendCampaign: { fontSize: 13, color: C.TEXT2 },
+  trendRaised:   { fontSize: 18, fontWeight: '800', color: C.TEAL, marginBottom: 2 },
+  trendOf:       { fontSize: 12, color: C.TEXT2, marginBottom: 10 },
+  progressBg:    { height: 6, backgroundColor: C.BG, borderRadius: 3, overflow: 'hidden', marginBottom: 6 },
+  progressFill:  { height: '100%' as any, borderRadius: 3, backgroundColor: C.TEAL },
   trendDonors:   { fontSize: 12, color: C.TEXT2 },
-  donateBtn:     { backgroundColor: '#FFF8EC', borderWidth: 1.5, borderColor: '#F59E0B', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  donateBtnText: { color: '#92400E', fontWeight: '700', fontSize: 14 },
-  center:        { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  emptyTxt:      { color: C.TEXT2, textAlign: 'center', fontSize: 14, lineHeight: 22 },
-  retryBtn:      { marginTop: 16, backgroundColor: C.PRIMARY, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12 },
-  retryBtnText:  { color: '#fff', fontWeight: '700', fontSize: 14 },
+  trendFooter:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  donateBtn:     { backgroundColor: C.TEAL, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20 },
+  donateBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  center:       { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  emptyTxt:     { fontSize: 14, color: C.TEXT2, textAlign: 'center', lineHeight: 20 },
+  retryBtn:     { marginTop: 12, backgroundColor: C.PRIMARY, paddingHorizontal: 20, paddingVertical: 9, borderRadius: 20 },
+  retryBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 });

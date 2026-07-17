@@ -14,10 +14,11 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { getMyOrgs } from '../../api/user.api';
+import { getMyOrgs, getMyDocuments } from '../../api/user.api';
 import { orgApi } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
 import type { Organisation } from '../../types/api.types';
+import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
 
 const C = AppConfig.COLORS;
 
@@ -70,9 +71,10 @@ function OrgCard({ org, isAdmin, onPress }: {
       activeOpacity={0.75}
       accessibilityLabel={`${name} — ${role}`}
     >
-      <View style={[styles.orgAvatar, { backgroundColor: color }]}>
-        <Text style={styles.orgAvatarText}>{initials(name)}</Text>
-      </View>
+      {org.logoUrl || org.orgLogoUrl
+        ? <Image source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.orgAvatar} resizeMode="cover" />
+        : <View style={[styles.orgAvatar, { backgroundColor: color }]}><Text style={styles.orgAvatarText}>{initials(name)}</Text></View>
+      }
       <View style={{ flex: 1 }}>
         <Text style={styles.orgName} numberOfLines={1}>{name}</Text>
         <Text style={styles.orgMeta} numberOfLines={1}>{meta}</Text>
@@ -192,7 +194,7 @@ function SuspendedOrgCard({ org }: { org: Organisation }) {
         <Text style={[styles.reasonText, { color: '#7C2D12' }]}>{reason}</Text>
       </View>
       <Text style={styles.suspendedNote}>
-        If you believe this is an error, contact support at support@ngoconnect.app
+        If you believe this is an error, contact support at contactus@ripplehub.app
       </Text>
     </View>
   );
@@ -223,6 +225,11 @@ export default function MyOrgsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error,      setError]      = useState<string | null>(null);
 
+  // Profile gate state
+  const [gateVisible,     setGateVisible]     = useState(false);
+  const [gateMissing,     setGateMissing]     = useState<string[]>([]);
+  const [gateTargetStep,  setGateTargetStep]  = useState(0);
+
   const load = useCallback(async () => {
     try {
       const res = await getMyOrgs();
@@ -248,24 +255,60 @@ export default function MyOrgsScreen() {
   useEffect(() => { load(); }, [load]);
   const onRefresh = useCallback(() => { setRefreshing(true); load(); }, [load]);
 
+  const handleCreateOrg = useCallback(async () => {
+    const currentUser = useAuthStore.getState().user as any;
+    const missing: string[] = [];
+
+    if (!currentUser?.firstName || !currentUser?.lastName) missing.push('Full name');
+    if (!currentUser?.city)                                missing.push('City');
+    if (!currentUser?.mobile)                              missing.push('Mobile number');
+
+    let hasGovtId    = true;
+    let hasAddrProof = true;
+    try {
+      const docRes = await getMyDocuments();
+      if (docRes.data?.isSuccess && Array.isArray(docRes.data.data)) {
+        const docs = docRes.data.data as Array<{ docTypeCode: string }>;
+        const GOVT_ID_CODES = ['PHOTO_ID', 'AADHAAR', 'PAN', 'PASSPORT', 'VOTER_ID', 'DRIVING_LIC'];
+        hasGovtId    = docs.some(d => GOVT_ID_CODES.includes(d.docTypeCode));
+        hasAddrProof = docs.some(d => d.docTypeCode === 'ADDR_PROOF');
+      }
+    } catch { /* API unreachable — skip doc check, don't block user */ }
+    if (!hasGovtId)    missing.push('Government Photo ID');
+    if (!hasAddrProof) missing.push('Address Proof');
+
+    if (missing.length > 0) {
+      const onlyDocs = missing.every(m => m === 'Government Photo ID' || m === 'Address Proof');
+      setGateMissing(missing);
+      setGateTargetStep(onlyDocs ? 4 : 0);
+      setGateVisible(true);
+      return;
+    }
+
+    nav.navigate('CreateOrg');
+  }, [nav]);
+
   // ── Partition by the 5 real status codes ─────────────────────────────────
   // activeOrgs    — APPROVED org, APPROVED member
   // pendingOrgs   — org PENDING/UNDER_REVIEW (founder waiting) OR member join-request pending
   // rejectedOrgs  — REJECTED org (founder must resubmit)
   // suspendedOrgs — SUSPENDED org (read-only)
+  const sortByOrgName = (a: Organisation, b: Organisation) =>
+    (a.orgName ?? (a as any).name ?? '').localeCompare(b.orgName ?? (b as any).name ?? '');
+
   const activeOrgs    = orgs.filter(o =>
     o.orgStatusCode === 'APPROVED' && o.memberStatusCode === 'APPROVED'
-  );
+  ).sort(sortByOrgName);
   const pendingOrgs   = orgs.filter(o =>
     o.memberStatusCode === 'PENDING' ||
     (o.memberStatusCode === 'APPROVED' && (o.orgStatusCode === 'PENDING' || o.orgStatusCode === 'UNDER_REVIEW'))
-  );
+  ).sort(sortByOrgName);
   const rejectedOrgs  = orgs.filter(o =>
     o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'REJECTED'
-  );
+  ).sort(sortByOrgName);
   const suspendedOrgs = orgs.filter(o =>
     o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'SUSPENDED'
-  );
+  ).sort(sortByOrgName);
 
   const userInitials = [user?.firstName?.[0], user?.lastName?.[0]]
     .filter(Boolean).join('').toUpperCase() || 'ME';
@@ -302,7 +345,7 @@ export default function MyOrgsScreen() {
         <View style={styles.section}>
           <Pressable
             style={styles.createCard}
-            onPress={() => nav.navigate('CreateOrg')}
+            onPress={handleCreateOrg}
             android_ripple={{ color: 'rgba(107,78,255,0.08)', borderless: false }}
             accessibilityLabel="Create new organization"
           >
@@ -402,6 +445,13 @@ export default function MyOrgsScreen() {
           </>
         )}
       </ScrollView>
+
+      <ProfileIncompleteSheet
+        visible={gateVisible}
+        onClose={() => setGateVisible(false)}
+        missingItems={gateMissing}
+        targetStep={gateTargetStep}
+      />
     </SafeAreaView>
   );
 }
@@ -440,41 +490,33 @@ const styles = StyleSheet.create({
   // Standard org card
   orgCard:            { backgroundColor: C.CARD, borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, ...AppConfig.SHADOW.CARD },
   orgCardAdmin:       { borderWidth: 1.5, borderColor: C.PRIMARY },
-  orgAvatar:          { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  orgAvatar:          { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   orgAvatarText:      { color: '#fff', fontSize: 15, fontWeight: '800' },
   orgName:            { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 3 },
-  orgMeta:            { fontSize: 12, color: C.TEXT2 },
+  orgMeta:            { fontSize: 12, color: C.TEXT2, marginTop: 2 },
+  statusPill:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  statusPillText:     { fontSize: 11, fontWeight: '600' },
 
-  // Status pill (shared)
-  statusPill:         { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  statusPillText:     { fontSize: 11, fontWeight: '700' },
-
-  // Alert cards (REJECTED / SUSPENDED)
-  alertCard:          { backgroundColor: C.CARD, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#FECACA', ...AppConfig.SHADOW.CARD },
-  alertCardSuspended: { borderColor: '#FED7AA' },
-  alertCardHeader:    { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
-
-  // Reason box
-  reasonBox:          { backgroundColor: '#FEF2F2', borderRadius: 10, padding: 12, marginBottom: 12 },
+  // Alert cards (rejected / suspended)
+  alertCard:          { backgroundColor: C.CARD, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#DC2626', ...AppConfig.SHADOW.CARD },
+  alertCardSuspended: { borderColor: '#EA580C' },
+  alertCardHeader:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  reasonBox:          { backgroundColor: '#FEF2F2', borderRadius: 8, padding: 10, marginBottom: 12 },
   reasonLabel:        { fontSize: 11, fontWeight: '700', color: '#DC2626', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  reasonText:         { fontSize: 13, color: '#7F1D1D', lineHeight: 19 },
-
-  // Resubmit button
-  resubmitBtn:        { backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  reasonText:         { fontSize: 13, color: '#7F1D1D', lineHeight: 18 },
+  resubmitBtn:        { backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   resubmitBtnText:    { color: '#fff', fontSize: 14, fontWeight: '700' },
+  suspendedNote:      { fontSize: 12, color: C.TEXT2, textAlign: 'center', marginTop: 4 },
 
-  // Suspended note
-  suspendedNote:      { fontSize: 12, color: '#9A3412', lineHeight: 18 },
-
-  // Empty / error
-  emptyBox:           { backgroundColor: C.CARD, borderRadius: 12, padding: 20, alignItems: 'center', ...AppConfig.SHADOW.CARD_SM },
-  emptyText:          { fontSize: 14, color: C.TEXT2, textAlign: 'center' },
-  centeredMsg:        { alignItems: 'center', paddingTop: 40 },
-  errorText:          { fontSize: 14, color: C.RED, textAlign: 'center', marginBottom: 14 },
-  retryBtn:           { backgroundColor: C.PRIMARY, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20 },
-  retryText:          { color: '#fff', fontWeight: '600', fontSize: 14 },
+  // Empty / error states
+  emptyBox:           { backgroundColor: C.CARD, borderRadius: 12, padding: 20, alignItems: 'center', marginTop: 6 },
+  emptyText:          { fontSize: 13, color: C.TEXT2, textAlign: 'center' },
+  centeredMsg:        { alignItems: 'center', paddingVertical: 40 },
+  errorText:          { fontSize: 14, color: '#DC2626', marginBottom: 12 },
+  retryBtn:           { backgroundColor: C.PRIMARY, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8 },
+  retryText:          { color: '#fff', fontSize: 14, fontWeight: '600' },
 
   // Info tip
-  infoBox:            { marginHorizontal: 16, marginTop: 20, backgroundColor: '#FFFBEB', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#FEF08A' },
-  infoText:           { fontSize: 13, color: '#92400E', lineHeight: 20 },
+  infoBox:            { margin: 16, marginTop: 20, backgroundColor: '#EEF5FF', borderRadius: 10, padding: 12 },
+  infoText:           { fontSize: 12, color: '#2563EB', lineHeight: 18 },
 });

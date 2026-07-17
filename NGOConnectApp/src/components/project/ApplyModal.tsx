@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { fmtDate, fmtTime, fmtDateRange, fmtTimeRange } from '../../utils/dateUtils';
 import {
   Modal,
   View,
@@ -15,6 +16,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Project } from '../../types/api.types';
 import * as projectApi from '../../api/project.api';
+import { getMyDocuments } from '../../api/user.api';
+import { useAuthStore } from '../../store/authStore';
 
 /* ─── helpers ───────────────────────────────────────────────────────────────── */
 
@@ -48,17 +51,7 @@ function lastOccurrence(dayCode: string, toDateStr: string): Date {
   return d;
 }
 
-function fmtDate(d: Date): string {
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-}
-
-function fmtTime(t?: string): string {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-}
+// fmtDate / fmtTime imported from dateUtils — local wrappers removed
 
 function scheduleTypeBadge(scheduleType?: string): { label: string; color: string; bg: string } {
   switch ((scheduleType ?? '').toUpperCase()) {
@@ -87,7 +80,7 @@ function buildSessionOptions(p: Project): SessionOption[] {
     : (p.startTime && p.endTime ? ` · ${fmtTime(p.startTime)}–${fmtTime(p.endTime)}` : '');
 
   const options: SessionOption[] = days.map(day => {
-    const first = startStr ? fmtDate(firstOccurrence(day, startStr)) : '';
+    const first = startStr ? fmtDate(firstOccurrence(day, startStr)) : ''; // fmtDate accepts Date
     const last  = endStr   ? fmtDate(lastOccurrence(day, endStr))    : '';
     return {
       value: day,
@@ -118,10 +111,12 @@ interface Props {
   project: Project | null;
   onClose: () => void;
   onSuccess?: (applicationId: number) => void;
+  /** Called when profile is incomplete — parent should show ProfileIncompleteSheet */
+  onProfileIncomplete?: (missing: string[], targetStep: number) => void;
 }
 
 /* ─── component ─────────────────────────────────────────────────────────────── */
-export default function ApplyModal({ visible, project, onClose, onSuccess }: Props) {
+export default function ApplyModal({ visible, project, onClose, onSuccess, onProfileIncomplete }: Props) {
   const insets = useSafeAreaInsets();
   const [selectedDays, setSelectedDays] = useState<string>('');
   const [motivation, setMotivation]     = useState('');
@@ -157,26 +152,26 @@ export default function ApplyModal({ visible, project, onClose, onSuccess }: Pro
       const days = (p.recurDays ?? p.recurrenceDays ?? '')
         .split(',').map((d: string) => DAY_SHORT[d.trim().toUpperCase()] ?? d.trim()).join(' & ');
       const range = p.recurStart && p.recurEnd
-        ? ` · ${fmtDate(new Date(p.recurStart))}–${fmtDate(new Date(p.recurEnd))}`
+        ? ` · ${fmtDate(p.recurStart)} – ${fmtDate(p.recurEnd)}`
         : p.startDate && p.endDate
-        ? ` · ${fmtDate(new Date(p.startDate))}–${fmtDate(new Date(p.endDate))}`
+        ? ` · ${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}`
         : '';
       return `${days}${range}`;
     }
     if (p.oneTimeDate ?? p.startDate) {
-      const d = new Date(p.oneTimeDate ?? p.startDate);
-      const dateStr = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-      const timeStr = p.sessionStartTime
-        ? ` · ${fmtTime(p.sessionStartTime)}${p.sessionEndTime ? `–${fmtTime(p.sessionEndTime)}` : ''}`
-        : p.startTime
-        ? ` · ${fmtTime(p.startTime)}${p.endTime ? `–${fmtTime(p.endTime)}` : ''}`
+      const dateStr = fmtDate(p.oneTimeDate ?? p.startDate);
+      const st = p.sessionStartTime ?? p.startTime;
+      const et = p.sessionEndTime   ?? p.endTime;
+      const timeStr = st
+        ? ` · ${fmtTime(st)}${et ? `–${fmtTime(et)}` : ''}`
         : '';
       return `${dateStr}${timeStr}`;
     }
     if (p.flexFromDate ?? p.startDate) {
-      const from = fmtDate(new Date(p.flexFromDate ?? p.startDate));
-      const to   = p.flexToDate ?? p.endDate ? fmtDate(new Date(p.flexToDate ?? p.endDate)) : '';
-      return to ? `Flexible · ${from}–${to}` : `From ${from}`;
+      const from = fmtDate(p.flexFromDate ?? p.startDate);
+      const toRaw = p.flexToDate ?? p.endDate;
+      const to   = toRaw ? fmtDate(toRaw) : '';
+      return to ? `Flexible · ${from} – ${to}` : `From ${from}`;
     }
     return '';
   })();
@@ -192,6 +187,35 @@ export default function ApplyModal({ visible, project, onClose, onSuccess }: Pro
       Alert.alert('Select a session', 'Please choose which session(s) you can attend.');
       return;
     }
+
+    // ── Profile gate ─────────────────────────────────────────────────────────
+    if (onProfileIncomplete) {
+      const u = useAuthStore.getState().user as any;
+      const missing: string[] = [];
+      if (!u?.firstName || !u?.lastName) missing.push('Full name');
+      if (!u?.city)                       missing.push('City');
+      if (!u?.mobile)                     missing.push('Mobile number');
+      let hasGovtId = true, hasAddrProof = true;
+      try {
+        const docRes = await getMyDocuments();
+        if (docRes.data?.isSuccess && Array.isArray(docRes.data.data)) {
+          const docs = docRes.data.data as Array<{ docTypeCode: string }>;
+          const GOVT_ID_CODES = ['PHOTO_ID', 'AADHAAR', 'PAN', 'PASSPORT', 'VOTER_ID', 'DRIVING_LIC'];
+          hasGovtId    = docs.some(d => GOVT_ID_CODES.includes(d.docTypeCode));
+          hasAddrProof = docs.some(d => d.docTypeCode === 'ADDR_PROOF');
+        }
+      } catch { /* API unreachable — skip doc check, don't block user */ }
+      if (!hasGovtId)    missing.push('Government Photo ID');
+      if (!hasAddrProof) missing.push('Address Proof');
+      if (missing.length > 0) {
+        const onlyDocsMissing = missing.every(m => m === 'Government Photo ID' || m === 'Address Proof');
+        onClose();
+        setTimeout(() => onProfileIncomplete(missing, onlyDocsMissing ? 4 : 0), 300);
+        return;
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     setLoading(true);
     try {
       const res = await projectApi.apply(project.projectId, {
@@ -495,112 +519,19 @@ const S = StyleSheet.create({
     marginTop: 5,
     fontStyle: 'italic',
   },
-
-  /* sections */
-  section: {
-    marginTop: 16,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: C.text,
-    marginBottom: 10,
-  },
-
-  /* session rows */
-  sessionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    backgroundColor: C.bg,
-    marginBottom: 8,
-  },
-  sessionRowSelected: {
-    borderColor: C.purple,
-    backgroundColor: '#F5F3FF',
-  },
-  sessionText: {
-    flex: 1,
-    marginRight: 12,
-  },
-  sessionMain: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: C.text,
-    marginBottom: 2,
-  },
-  sessionSub: {
-    fontSize: 11,
-    color: C.sub,
-  },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: C.light,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radioSelected: {
-    borderColor: C.purple,
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: C.purple,
-  },
-
-  /* textarea */
-  textarea: {
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 13,
-    color: C.text,
-    minHeight: 90,
-    backgroundColor: C.bg,
-  },
-
-  /* QR info */
-  qrInfo: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FCD34D',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 14,
-  },
-  qrInfoText: {
-    fontSize: 12,
-    color: '#92400E',
-    lineHeight: 18,
-  },
-
-  /* submit */
-  submitBtn: {
-    marginTop: 20,
-    backgroundColor: C.purple,
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-    // gradient approximation via shadow
-    shadowColor: C.purple,
-    shadowOpacity: 0.3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  submitBtnText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
+  section:      { marginTop: 16 },
+  sectionLabel: { fontSize: 13, fontWeight: '700', color: C.text, marginBottom: 10 },
+  sessionRow:   { flexDirection: 'row', alignItems: 'flex-start', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 8, gap: 10 },
+  sessionRowSelected: { borderColor: '#6B4EFF', backgroundColor: '#F5F3FF' },
+  sessionMain:  { flex: 1 },
+  sessionText:  { fontSize: 13, fontWeight: '600', color: C.text, marginBottom: 2 },
+  sessionSub:   { fontSize: 12, color: C.sub },
+  radio:        { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  radioSelected:{ borderColor: '#6B4EFF' },
+  radioDot:     { width: 10, height: 10, borderRadius: 5, backgroundColor: '#6B4EFF' },
+  textarea:     { backgroundColor: C.card, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: C.text, minHeight: 80, textAlignVertical: 'top' },
+  qrInfo:       { flex: 1 },
+  qrInfoText:   { fontSize: 12, color: C.sub, lineHeight: 18 },
+  submitBtn:    { backgroundColor: '#6B4EFF', borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 16 },
+  submitBtnText:{ color: '#fff', fontSize: 16, fontWeight: '700' },
 });
