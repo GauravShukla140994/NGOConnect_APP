@@ -79,9 +79,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.ngoconnectapp"
+    namespace "app.ripplehub"
     defaultConfig {
-        applicationId "com.ngoconnectapp"
+        applicationId "app.ripplehub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

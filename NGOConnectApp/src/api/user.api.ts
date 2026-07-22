@@ -20,6 +20,9 @@ export const userApi = {
   getMyApplications: () =>
     apiClient.get<ApiResponse<UserApplication[]>>('/user/applications'),
 
+  withdrawApplication: (applicationId: number) =>
+    apiClient.delete<ApiResponse<null>>(`/applications/${applicationId}/withdraw`),
+
   getMySkills: () =>
     apiClient.get<ApiResponse<UserSkill[]>>('/user/skills'),
 
@@ -69,6 +72,7 @@ export const updateProfile     = (data: Partial<UserProfile>) => userApi.updateP
 export const getMyImpact          = () => userApi.getMyImpact();
 export const getMyBadges          = () => userApi.getMyBadges();
 export const getMyApplications    = () => userApi.getMyApplications();
+export const withdrawApplication  = (applicationId: number) => userApi.withdrawApplication(applicationId);
 export const getMySkills       = () => userApi.getMySkills();
 export const addSkill          = (data: {skillName: string}) => userApi.addSkill(data.skillName);
 export const removeSkill       = (userSkillId: number) => userApi.removeSkill(userSkillId);

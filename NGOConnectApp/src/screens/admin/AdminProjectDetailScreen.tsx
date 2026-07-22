@@ -292,7 +292,9 @@ export default function AdminProjectDetailScreen() {
   const handleGenerateQr = async () => {
     // Button is disabled outside the window, but guard here too for safety
     if (!todaySession) return;
-    const { state: windowState, startStr, openStr } = getQrWindowState(todaySession);
+    const _d2 = new Date();
+    const _today = `${_d2.getFullYear()}-${String(_d2.getMonth() + 1).padStart(2, '0')}-${String(_d2.getDate()).padStart(2, '0')}`;
+    const { state: windowState, startStr, openStr } = getQrWindowState(todaySession, _today);
     if (windowState === 'too_early') {
       Alert.alert('Too Early', `QR opens at ${openStr} (${QR_BUFFER_MINUTES} min before ${startStr}).`);
       return;
@@ -376,7 +378,7 @@ export default function AdminProjectDetailScreen() {
 
   const badge        = statusBadge(project?.statusCode);
   const schedule     = project ? fmtSchedule(project) : '';
-  const timeStr      = project ? fmtTime(project) : null;
+  const timeStr      = project ? buildTimeRange(project) : null;
   const skills: string[] = project?.skills?.map((s: any) => s.skillName ?? s) ?? [];
   const recentApps   = apps.slice(0, 3);
   // Use local date (not UTC) — toISOString() is UTC and shifts the date
@@ -410,7 +412,7 @@ export default function AdminProjectDetailScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => nav.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>←</Text>
+          <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Project Details</Text>
         <TouchableOpacity onPress={() => nav.navigate('CreateProject', { projectId, orgId })} style={styles.editBtn}>
@@ -683,8 +685,8 @@ const styles = StyleSheet.create({
 
   // Header
   header:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backBtn:         { padding: 4, minWidth: 36 },
-  backText:        { fontSize: 20, color: C.PRIMARY },
+  backBtn:         { padding: 4, minWidth: 70 },
+  backText:        { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle:     { fontSize: 16, fontWeight: '700', color: C.TEXT },
   editBtn:         { padding: 4, minWidth: 36, alignItems: 'flex-end' },
   editText:        { fontSize: 14, color: C.PRIMARY, fontWeight: '600' },

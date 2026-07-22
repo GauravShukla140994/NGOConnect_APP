@@ -37,6 +37,7 @@ import { getMyOrgs, getMyDocuments } from '../../api/user.api';
 import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
 import { haversineKm, formatDistance } from '../../utils/geo';
 import { orgApi } from '../../api/org.api';
+import { inviteApi, PendingInviteItem } from '../../api/invite.api';
 import { storage } from '../../api/apiClient';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminStore } from '../../store/adminStore';
@@ -99,6 +100,105 @@ const REPORT_REASONS: ReportReason[] = [
   { code: 'SCAM',          label: 'Scam or fraudulent activity',    sub: ''                                   },
   { code: 'OTHER',         label: 'Other',                          sub: ''                                   },
 ];
+
+/* ─── Pending Invite Banner ─────────────────────────────────────────────────── */
+
+interface PendingInviteBannerProps {
+  invite:     PendingInviteItem;
+  onAccept:   () => Promise<void>;
+  onDecline:  () => Promise<void>;
+  onDismiss:  () => void;          // ✕ button — just hides locally for this session
+  onViewOrg:  () => void;          // tap card body → open org profile
+}
+
+function PendingInviteBanner({ invite, onAccept, onDecline, onDismiss, onViewOrg }: PendingInviteBannerProps) {
+  const [accepting,  setAccepting]  = React.useState(false);
+  const [declining,  setDeclining]  = React.useState(false);
+  const busy = accepting || declining;
+
+  const handleAccept = async () => {
+    setAccepting(true);
+    await onAccept();
+    setAccepting(false);
+  };
+
+  const handleDecline = async () => {
+    setDeclining(true);
+    await onDecline();
+    setDeclining(false);
+  };
+
+  return (
+    <View style={invBannerStyles.card}>
+      {/* Tapping the info row opens org profile */}
+      <TouchableOpacity
+        style={invBannerStyles.row}
+        activeOpacity={0.7}
+        onPress={onViewOrg}
+        disabled={busy}>
+        <View style={invBannerStyles.iconWrap}>
+          <Text style={invBannerStyles.icon}>✉️</Text>
+        </View>
+        <View style={invBannerStyles.body}>
+          <Text style={invBannerStyles.title} numberOfLines={1}>
+            You've been invited to join
+          </Text>
+          <Text style={invBannerStyles.orgName} numberOfLines={1}>
+            {invite.orgName}
+          </Text>
+          {invite.invitedByName ? (
+            <Text style={invBannerStyles.sub} numberOfLines={1}>
+              From {invite.invitedByName}
+              {invite.orgCity ? ` · ${invite.orgCity}` : ''}
+            </Text>
+          ) : null}
+          <Text style={invBannerStyles.viewProfile}>View profile →</Text>
+        </View>
+        {/* ✕ = local dismiss only; user can still accept later via notification */}
+        <TouchableOpacity onPress={onDismiss} disabled={busy} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+          <Text style={invBannerStyles.dismiss}>✕</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+      <View style={invBannerStyles.actions}>
+        <TouchableOpacity
+          style={[invBannerStyles.btn, invBannerStyles.acceptBtn, busy && { opacity: 0.6 }]}
+          onPress={handleAccept}
+          disabled={busy}>
+          <Text style={invBannerStyles.acceptText}>
+            {accepting ? 'Joining…' : 'Accept'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[invBannerStyles.btn, invBannerStyles.declineBtn, busy && { opacity: 0.6 }]}
+          onPress={handleDecline}
+          disabled={busy}>
+          <Text style={invBannerStyles.declineText}>
+            {declining ? 'Declining…' : 'Decline'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const invBannerStyles = StyleSheet.create({
+  card:       { marginHorizontal: 14, marginTop: 10, backgroundColor: '#EEF4FF', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#C7D9F7' },
+  row:        { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  iconWrap:   { width: 38, height: 38, borderRadius: 19, backgroundColor: '#D6E6FF', alignItems: 'center', justifyContent: 'center' },
+  icon:       { fontSize: 18 },
+  body:       { flex: 1 },
+  title:      { fontSize: 12, color: '#5A6A85', fontWeight: '500' },
+  orgName:    { fontSize: 15, fontWeight: '700', color: '#1A2340', marginTop: 1 },
+  sub:        { fontSize: 12, color: '#7A8CA8', marginTop: 2 },
+  viewProfile: { fontSize: 11, color: C.PRIMARY, fontWeight: '600', marginTop: 4 },
+  dismiss:    { fontSize: 16, color: '#9AAFC5', lineHeight: 22 },
+  actions:    { flexDirection: 'row', gap: 8, marginTop: 12 },
+  btn:         { flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#C7D9F7' },
+  acceptBtn:   { backgroundColor: C.PRIMARY, borderColor: C.PRIMARY },
+  acceptText:  { fontSize: 13, fontWeight: '700', color: '#FFF' },
+  declineBtn:  { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  declineText: { fontSize: 13, fontWeight: '600', color: '#DC2626' },
+});
 
 /* ─── Opportunity Card ──────────────────────────────────────────────────────── */
 function OppCard({ project, onApply }: { project: Project; onApply?: (p: Project) => void }) {
@@ -683,7 +783,7 @@ export default function HomeScreen() {
   const nav         = useNavigation<any>();
   const insets      = useSafeAreaInsets();
   const { user } = useAuthStore();
-  const { setActiveOrg } = useAdminStore();
+  const { setActiveOrg, activeOrg: storeActiveOrg } = useAdminStore();
 
   // ── Video auto-play state ────────────────────────────────────────────────
   // activePostId: postId (as string) of the post currently in viewport
@@ -714,6 +814,9 @@ export default function HomeScreen() {
   const [loading,        setLoading]        = useState(true);
   const [refreshing,     setRefreshing]     = useState(false);
   const [error,          setError]          = useState<string | null>(null);
+  // ── Pending invite banners ────────────────────────────────────────────────
+  const [pendingInvites,    setPendingInvites]    = useState<PendingInviteItem[]>([]);
+  const [dismissedInviteIds, setDismissedInviteIds] = useState<Set<number>>(new Set());
   const [showCreatePost,   setShowCreatePost]   = useState(false);
   const [permChecking,     setPermChecking]     = useState(false);
   const [commentPost,      setCommentPost]      = useState<Post | null>(null);
@@ -738,6 +841,8 @@ export default function HomeScreen() {
   // ── Unread notification count — refresh on every focus ───────────────────────
   useFocusEffect(useCallback(() => {
     let cancelled = false;
+
+    // Refresh unread count every time screen gains focus
     notificationApi.getUnreadCount()
       .then(res => {
         if (!cancelled && res.data?.isSuccess) {
@@ -745,6 +850,17 @@ export default function HomeScreen() {
         }
       })
       .catch(() => {});
+
+    // Re-fetch pending invites on every focus so a re-invite after a decline
+    // shows the banner without requiring a full pull-to-refresh
+    inviteApi.getPending()
+      .then(r => {
+        if (!cancelled && r.data?.isSuccess) {
+          setPendingInvites(r.data.data ?? []);
+        }
+      })
+      .catch(() => {});
+
     return () => { cancelled = true; };
   }, []));
 
@@ -803,7 +919,7 @@ export default function HomeScreen() {
               setUserCoords({ lat: latitude, lon: longitude });
               const resp = await fetch(
                 `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
-                { headers: { 'Accept-Language': 'en', 'User-Agent': 'NGOConnect/1.0' } },
+                { headers: { 'Accept-Language': 'en', 'User-Agent': 'RippleHub/1.0' } },
               );
               const json = await resp.json();
               const addr = json?.address ?? {};
@@ -896,6 +1012,11 @@ export default function HomeScreen() {
     // Reset cursor state so first page loads fresh
     setCursorPostId(null);
     setCursorScore(null);
+    // Fetch pending invites here so pull-to-refresh also refreshes the banner
+    inviteApi.getPending().then(r => {
+      if (r.data?.isSuccess) setPendingInvites(r.data.data ?? []);
+    }).catch(() => {});
+
     await Promise.all([
       loadFeed(null, null, true),
       getNearbyFeed({
@@ -986,7 +1107,7 @@ export default function HomeScreen() {
     o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED';
   const activeOrg    = userOrgs.find(o => o.orgId === activeOrgId && isFullyApproved(o))
                     ?? userOrgs.find(isFullyApproved);
-  const orgName      = activeOrg?.orgName ?? activeOrg?.name ?? 'NGO Connect';
+  const orgName      = activeOrg?.orgName ?? activeOrg?.name ?? 'RippleHub';
   const orgInitials  = orgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const approvedOrgs = userOrgs
     .filter(isFullyApproved)
@@ -1073,9 +1194,17 @@ export default function HomeScreen() {
   const userInitials = [user?.firstName?.[0], user?.lastName?.[0]]
     .filter(Boolean).join('').toUpperCase() || 'ME';
 
-  // Sync the currently active org into the shared store so other screens
-  // (Community, etc.) can read it without their own API call.
+  // Push local active org into the shared store whenever it changes
   useEffect(() => { setActiveOrg(activeOrg ?? null); }, [activeOrg, setActiveOrg]);
+
+  // Sync FROM store when Community/Explore switches the active org
+  useEffect(() => {
+    if (storeActiveOrg?.orgId && storeActiveOrg.orgId !== activeOrgId) {
+      setActiveOrgId(storeActiveOrg.orgId);
+      storage.set(ACTIVE_ORG_KEY, storeActiveOrg.orgId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeActiveOrg?.orgId]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -1187,6 +1316,60 @@ export default function HomeScreen() {
           initialNumToRender={4}
           ListHeaderComponent={
             <>
+              {/* ── Pending Invite Banners ──────────────────────────────────── */}
+              {pendingInvites
+                .filter(inv => !dismissedInviteIds.has(inv.orgInvitationId))
+                .map(inv => (
+                  <PendingInviteBanner
+                    key={inv.orgInvitationId}
+                    invite={inv}
+                    onAccept={async () => {
+                      try {
+                        const r = await inviteApi.accept(inv.orgInvitationId);
+                        if (r.data?.isSuccess) {
+                          // Remove from list permanently so it never re-appears
+                          setPendingInvites(prev =>
+                            prev.filter(i => i.orgInvitationId !== inv.orgInvitationId)
+                          );
+                          Alert.alert(
+                            'Welcome! 🎉',
+                            r.data?.message ?? `You have joined ${inv.orgName} as a member.`,
+                          );
+                          // Refresh orgs list so newly joined org appears in switcher
+                          getMyOrgs().then(res => {
+                            if (res.data?.isSuccess) setUserOrgs(res.data.data ?? []);
+                          }).catch(() => {});
+                        } else {
+                          Alert.alert('Error', r.data?.message ?? 'Could not accept invitation.');
+                        }
+                      } catch {
+                        Alert.alert('Error', 'Network error. Please try again.');
+                      }
+                    }}
+                    onDecline={async () => {
+                      try {
+                        const r = await inviteApi.decline(inv.orgInvitationId);
+                        if (r.data?.isSuccess) {
+                          // Remove from list — backend marked it CANCELLED, won't return on next fetch
+                          setPendingInvites(prev =>
+                            prev.filter(i => i.orgInvitationId !== inv.orgInvitationId)
+                          );
+                        } else {
+                          Alert.alert('Error', r.data?.message ?? 'Could not decline invitation.');
+                        }
+                      } catch {
+                        Alert.alert('Error', 'Network error. Please try again.');
+                      }
+                    }}
+                    onDismiss={() =>
+                      // ✕ = hide locally for this session only; invite stays PENDING on server
+                      setDismissedInviteIds(prev => new Set(prev).add(inv.orgInvitationId))
+                    }
+                    onViewOrg={() => nav.navigate('NgoProfile', { orgId: inv.orgId })}
+                  />
+                ))
+              }
+
               {projects.length > 0 && (
                 <View style={styles.section}>
                   <View style={styles.sectionRow}>
@@ -1602,7 +1785,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: C.TEXT3,
     letterSpacing: 0.5,
-    textTransform: 'uppercase' as const,
   },
 
   // ── Modals (org switcher backdrop + handle) ──────────────────────────────────

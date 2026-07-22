@@ -48,7 +48,7 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
       `https://nominatim.openstreetmap.org/reverse` +
       `?lat=${lat}&lon=${lng}&format=json&zoom=16&addressdetails=1`;
     const res  = await fetch(url, {
-      headers: { 'User-Agent': 'NGOConnectApp/1.0 (ngoconnect.in)' },
+      headers: { 'User-Agent': 'RippleHub/1.0 (ripplehub.app)' },
     });
     if (!res.ok) { return ''; }
     const data = await res.json();
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
   // Header
   header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER, paddingHorizontal: 12, paddingVertical: 10 },
   backBtn:        { width: 64, paddingVertical: 4 },
-  backArrow:      { fontSize: 14, color: C.PRIMARY, fontWeight: '600' },
+  backArrow:      { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerCenter:   { flexDirection: 'row', alignItems: 'center', gap: 7 },
   headerTitle:    { fontSize: 17, fontWeight: '800' },
   sosTag:         { backgroundColor: RED, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3 },

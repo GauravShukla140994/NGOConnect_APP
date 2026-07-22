@@ -122,7 +122,7 @@ export default function QRScannerModal({
             <Text style={styles.bigIcon}>📷</Text>
             <Text style={styles.stateTitle}>Camera Permission Needed</Text>
             <Text style={styles.stateMsg}>
-              Allow camera access so NGO Connect can scan the session QR code.
+              Allow camera access so RippleHub can scan the session QR code.
             </Text>
             <TouchableOpacity style={styles.actionBtn} onPress={requestPerm}>
               <Text style={styles.actionBtnText}>Grant Permission</Text>

@@ -530,7 +530,7 @@ export default function ParticipantsScreen() {
       {/* ── Header ── */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={s.backArrow}>←</Text>
+          <Text style={s.backArrow}>← Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Participants</Text>
         {counts.pending > 0
@@ -659,8 +659,8 @@ const s = StyleSheet.create({
 
   // Header
   header:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backBtn:          { padding: 4, minWidth: 36 },
-  backArrow:        { fontSize: 20, color: C.PRIMARY },
+  backBtn:          { padding: 4, minWidth: 70 },
+  backArrow:        { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle:      { fontSize: 16, fontWeight: '700', color: C.TEXT },
   pendingBadge:     { backgroundColor: '#FEF3C7', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3 },
   pendingBadgeText: { fontSize: 11, color: '#D97706', fontWeight: '700' },

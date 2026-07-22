@@ -12,7 +12,26 @@ export const orgApi = {
     apiClient.put<ApiResponse<null>>(`/org/${orgId}`, data),
 
   // Called when founder fixes and resubmits a REJECTED org — status returns to PENDING
-  resubmit: (orgId: number, data: { orgName: string; about?: string; mission?: string; website?: string; contactEmail?: string; contactPhone?: string }) =>
+  resubmit: (orgId: number, data: {
+    orgName: string;
+    category?: string;
+    contactPerson?: string;
+    about?: string;
+    mission?: string;
+    vision?: string;
+    logoUrl?: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    website?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    pincode?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    is80GEligible?: boolean;
+    is12AEligible?: boolean;
+  }) =>
     apiClient.put<ApiResponse<null>>(`/org/${orgId}/resubmit`, data),
 
   list: (params: { keyword?: string; category?: string; pageNumber?: number; pageSize?: number }) =>
@@ -87,6 +106,15 @@ export const orgApi = {
 
   unfollowOrg: (orgId: number) =>
     apiClient.delete<ApiResponse<null>>(`/org/${orgId}/follow`),
+
+  // GET /org/{orgId}/documents — list org's uploaded documents (for org admin view)
+  getDocuments: (orgId: number) =>
+    apiClient.get<ApiResponse<any[]>>(`/org/${orgId}/documents`),
+
+  // POST /org/{orgId}/documents — saves a file reference to OrgDocuments table
+  // fileUrl can be a blob URL (public) or fileKey (private org-documents module)
+  uploadDocument: (orgId: number, data: { documentTypeLkpId: number; fileUrl: string; fileName: string }) =>
+    apiClient.post<ApiResponse<null>>(`/org/${orgId}/documents`, data),
 
   getDonationDashboard: (orgId: number) =>
     apiClient.get(`/org/${orgId}/donation-dashboard`),

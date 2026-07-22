@@ -115,7 +115,7 @@ function ActivityRow({ symbol, color, message, timeAgo, dimmed, noBorder }: {
   );
 }
 
-function BackIcon()    { return <Text style={styles.navIcon}>{'←'}</Text>; }
+function BackIcon()    { return <><Text style={styles.navIcon}>{'←'}</Text><Text style={styles.navBack}>{'Back'}</Text></>; }
 function RefreshIcon() { return <Text style={[styles.navIcon, { color: C.TEXT2 }]}>{'↻'}</Text>; }
 function ChevronDown() { return <Text style={styles.chevron}>{'⌄'}</Text>; }
 
@@ -234,7 +234,7 @@ export default function AdminDashboardScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.topbar}>
-          <TouchableOpacity onPress={() => nav.goBack()} style={styles.topbarBtn}>
+          <TouchableOpacity onPress={() => nav.goBack()} style={styles.topbarBack}>
             <BackIcon />
           </TouchableOpacity>
           <Text style={styles.topbarTitle}>Admin Dashboard</Text>
@@ -264,7 +264,7 @@ export default function AdminDashboardScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
 
       <View style={styles.topbar}>
-        <TouchableOpacity onPress={() => nav.goBack()} style={styles.topbarBtn} accessibilityLabel="Back">
+        <TouchableOpacity onPress={() => nav.goBack()} style={styles.topbarBack} accessibilityLabel="Back">
           <BackIcon />
         </TouchableOpacity>
 
@@ -493,8 +493,10 @@ const styles = StyleSheet.create({
     backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER,
   },
   topbarBtn:   { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  topbarBack:  { minWidth: 70, height: 40, flexDirection: 'row', alignItems: 'center', gap: 4 },
   topbarTitle: { fontSize: 15, fontWeight: '700', color: C.TEXT },
-  navIcon:     { fontSize: 20, color: C.TEXT2, fontWeight: '300' },
+  navIcon:     { fontSize: 20, color: C.PRIMARY, fontWeight: '600' },
+  navBack:     { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
 
   orgSelector: {
     flex: 1, flexDirection: 'row', alignItems: 'center',

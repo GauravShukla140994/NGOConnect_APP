@@ -1,4 +1,4 @@
-package com.ngoconnectapp
+package app.ripplehub
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -8,15 +8,11 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 class MainActivity : ReactActivity() {
 
   /**
-   * Returns the name of the main component registered from JavaScript. This is used to schedule
-   * rendering of the component.
+   * Returns the name of the main component registered from JavaScript.
+   * Must match AppRegistry.registerComponent() call in index.js.
    */
-  override fun getMainComponentName(): String = "NGOConnectApp"
+  override fun getMainComponentName(): String = "RippleHub"
 
-  /**
-   * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
-   * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
-   */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 }

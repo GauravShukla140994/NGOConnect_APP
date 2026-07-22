@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:869899592:android:01c1f8c77dd063fe90e77d",
+        "mobilesdk_app_id": "1:869899592:android:451b2e66b221683290e77d",
         "android_client_info": {
-          "package_name": "com.ngoconnectapp"
+          "package_name": "app.ripplehub"
         }
       },
       "oauth_client": [],

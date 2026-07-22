@@ -21,11 +21,40 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import DocumentPicker, { types as DocTypes } from 'react-native-document-picker';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import AppConfig from '../../config/AppConfig';
 import { userApi } from '../../api/user.api';
-import { uploadFile } from '../../api/upload.api';
+import { uploadFile, getSignedUrl } from '../../api/upload.api';
 import type { UserDocument, LookupValue } from '../../types/api.types';
+
+// ── Download icon (pure Views — no icon library needed) ───────────────────────
+function DownloadIcon({ color, size = 15 }: { color: string; size?: number }) {
+  return (
+    <View style={{ width: size, height: size + 4, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 2, height: size * 0.42, backgroundColor: color, borderRadius: 1 }} />
+      <View style={{
+        width: 0, height: 0,
+        borderLeftWidth: size * 0.32, borderRightWidth: size * 0.32, borderTopWidth: size * 0.32,
+        borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: color,
+        marginTop: -1,
+      }} />
+      <View style={{ width: size * 0.75, height: 2, backgroundColor: color, borderRadius: 1, marginTop: 3 }} />
+    </View>
+  );
+}
+
+type DlState = 'idle' | 'downloading' | 'done' | 'error';
+
+function getMimeType(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const map: Record<string, string> = {
+    pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    png: 'image/png', doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  };
+  return map[ext] ?? 'application/octet-stream';
+}
 
 const C = AppConfig.COLORS;
 
@@ -76,6 +105,8 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
   const [docs,      setDocs]      = useState<UserDocument[]>(initialDocs ?? []);
   const [loading,   setLoading]   = useState(initialDocs === undefined); // only show spinner in self-fetch mode
   const [uploading, setUploading] = useState<string | null>(null); // valueCode being uploaded
+  // keyed by userDocumentId
+  const [dlState, setDlState] = useState<Record<number, DlState>>({});
 
   // Tracks whether we've already synced from a non-empty initialDocs.
   // Prevents overwriting user-made changes if the parent re-renders later.
@@ -112,33 +143,66 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
   );
 
   const handleUpload = async (typeCode: string, typeLkpId: number) => {
-    const result = await launchImageLibrary({
-      mediaType: 'mixed',
-      quality: 0.85,
-      selectionLimit: 1,
-    });
-    const asset = result.assets?.[0];
-    if (!asset?.uri) return;
+    // ── 1. Open document picker immediately — never gate this on an API call ──
+    let pickedUri   = '';
+    let pickedName  = '';
+    let pickedMime  = 'application/octet-stream';
+    let pickedSize  = 0;
+    try {
+      // DocumentPicker shows the full file manager (PDFs, images, Word, etc.)
+      const [picked] = await DocumentPicker.pick({
+        type: [DocTypes.pdf, DocTypes.images, DocTypes.plainText, DocTypes.allFiles],
+        allowMultiSelection: false,
+        copyTo: 'cachesDirectory',  // ensures uri is readable on Android
+      });
+      pickedUri  = picked.fileCopyUri ?? picked.uri;
+      pickedName = picked.name  ?? `doc_${Date.now()}`;
+      pickedMime = picked.type  ?? 'application/octet-stream';
+      pickedSize = picked.size  ?? 0;
+    } catch (err: any) {
+      if (DocumentPicker.isCancel(err)) { return; } // user cancelled — silent
+      Alert.alert('Could not open file picker', err?.message ?? 'Please try again.');
+      return;
+    }
 
+    // ── 2. Resolve lkpId (after file is selected so picker is already closed) ──
+    let lkpId = typeLkpId;
+    if (!lkpId) {
+      try {
+        const { lookupApi } = await import('../../api/lookup.api');
+        const res = await lookupApi.getValuesByTypeCode('DOCUMENT_TYPE_USER');
+        const values: LookupValue[] = res.data?.data ?? [];
+        const found = values.find(v => v.valueCode === typeCode);
+        lkpId = found?.lookupValueId ?? 0;
+        if (lkpId) {
+          setTypeLkpMap(prev => ({ ...prev, [typeCode]: lkpId }));
+        }
+      } catch { /* proceed with lkpId = 0 */ }
+    }
+    if (!lkpId) {
+      Alert.alert('Upload Failed', 'Could not identify document type. Please try again.');
+      return;
+    }
+
+    // ── 3. Upload to Azure Blob ────────────────────────────────────────────────
     setUploading(typeCode);
     try {
-      // 1. Upload to blob storage
       const fileUrl = await uploadFile(
-        asset.uri,
-        asset.fileName ?? `doc_${Date.now()}`,
-        asset.type ?? 'image/jpeg',
-        'user-documents',
+        pickedUri,
+        pickedName,
+        pickedMime,
+        AppConfig.UPLOAD_MODULES.USER_DOCUMENTS,
       );
 
-      // 2. Save metadata to UserDocuments table (SP upserts by type)
+      // ── 4. Save metadata to UserDocuments (SP upserts by type) ────────────
       await userApi.uploadDocument({
-        documentTypeLkpId: typeLkpId,
+        documentTypeLkpId: lkpId,
         fileUrl,
-        fileName:  asset.fileName ?? `doc_${Date.now()}`,
-        fileSizeKb: Math.round((asset.fileSize ?? 0) / 1024),
+        fileName:   pickedName,
+        fileSizeKb: Math.round(pickedSize / 1024),
       });
 
-      // 3. Refresh docs list
+      // ── 5. Refresh docs list ───────────────────────────────────────────────
       const res = await userApi.getMyDocuments();
       if (res.data?.isSuccess) {
         const updated = res.data.data ?? [];
@@ -149,6 +213,39 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
       Alert.alert('Upload Failed', err?.message ?? 'Could not upload document.');
     } finally {
       setUploading(null);
+    }
+  };
+
+  const downloadDoc = async (doc: UserDocument) => {
+    const id = doc.userDocumentId;
+    if (dlState[id] === 'downloading') { return; }
+    if (!doc.fileUrl) {
+      Alert.alert('Not available', 'No file found for this document.');
+      return;
+    }
+    setDlState(prev => ({ ...prev, [id]: 'downloading' }));
+    try {
+      // If already a full URL (Cloudinary / public S3), download directly.
+      // If it's a bare S3 key (no http prefix), request a presigned URL first.
+      let downloadUrl = doc.fileUrl;
+      if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
+        downloadUrl = await getSignedUrl(doc.fileUrl);
+      }
+      const dest = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${doc.fileName}`;
+      await ReactNativeBlobUtil.config({
+        addAndroidDownloads: {
+          useDownloadManager: true,
+          notification: true,
+          title: doc.fileName,
+          description: 'Downloading document...',
+          path: dest,
+          mime: getMimeType(doc.fileName),
+        },
+      }).fetch('GET', downloadUrl);
+      setDlState(prev => ({ ...prev, [id]: 'done' }));
+    } catch (err: any) {
+      setDlState(prev => ({ ...prev, [id]: 'error' }));
+      Alert.alert('Download Failed', err?.message ?? 'Could not download document.');
     }
   };
 
@@ -186,30 +283,10 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
     setTypeLkpMap(prev => ({ ...prev, ...map }));
   }, [docs]);
 
-  // If we don't have a lkpId for a type (no existing doc), fetch from lookup
-  const getLkpId = async (typeCode: string): Promise<number> => {
-    if (typeLkpMap[typeCode]) return typeLkpMap[typeCode];
-    try {
-      const { lookupApi } = await import('../../api/lookup.api');
-      const res = await lookupApi.getValuesByTypeCode('DOCUMENT_TYPE_USER');
-      const values: LookupValue[] = res.data?.data ?? [];
-      const map: Record<string, number> = {};
-      values.forEach(v => { map[v.valueCode] = v.lookupValueId; });
-      setTypeLkpMap(prev => ({ ...prev, ...map }));
-      return map[typeCode] ?? 0;
-    } catch (err) {
-      console.warn('[DocumentUploadSection] getLkpId failed:', err);
-      return 0;
-    }
-  };
-
-  const onPressUpload = async (typeCode: string) => {
-    const lkpId = await getLkpId(typeCode);
-    if (!lkpId) {
-      Alert.alert('Error', 'Could not resolve document type. Please try again.');
-      return;
-    }
-    await handleUpload(typeCode, lkpId);
+  // Pass the cached lkpId (may be 0 for types with no existing doc).
+  // handleUpload will look it up from the API after the user selects a file.
+  const onPressUpload = (typeCode: string) => {
+    handleUpload(typeCode, typeLkpMap[typeCode] ?? 0);
   };
 
   const visibleTypes = compactMode
@@ -256,6 +333,31 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
                   </Text>
                 </View>
                 <View style={styles.uploadedActions}>
+                  {/* Download button */}
+                  {(() => {
+                    const ds = dlState[existing.userDocumentId] ?? 'idle';
+                    return (
+                      <TouchableOpacity
+                        style={[styles.dlBtn,
+                          ds === 'done'  && styles.dlBtnDone,
+                          ds === 'error' && styles.dlBtnErr,
+                        ]}
+                        onPress={() => downloadDoc(existing)}
+                        disabled={ds === 'downloading'}
+                        accessibilityLabel={`Download ${existing.fileName}`}
+                      >
+                        {ds === 'downloading' ? (
+                          <ActivityIndicator size={13} color={C.PRIMARY} />
+                        ) : ds === 'done' ? (
+                          <Text style={[styles.dlBtnTxt, { color: '#15803D' }]}>✓</Text>
+                        ) : ds === 'error' ? (
+                          <Text style={[styles.dlBtnTxt, { color: '#DC2626' }]}>✕</Text>
+                        ) : (
+                          <DownloadIcon color={C.PRIMARY} size={14} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })()}
                   <TouchableOpacity onPress={() => onPressUpload(type.code)} style={styles.replaceBtn}>
                     <Text style={styles.replaceBtnText}>Replace</Text>
                   </TouchableOpacity>
@@ -320,6 +422,12 @@ const styles = StyleSheet.create({
   replaceBtnText:  { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
   deleteBtn:       { padding: 4 },
   deleteBtnText:   { fontSize: 14, color: '#EF4444' },
+
+  dlBtn:     { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: C.PRIMARY,
+               alignItems: 'center', justifyContent: 'center', backgroundColor: `${C.PRIMARY}08` },
+  dlBtnDone: { borderColor: '#16A34A', backgroundColor: '#F0FDF4' },
+  dlBtnErr:  { borderColor: '#DC2626', backgroundColor: '#FEF2F2' },
+  dlBtnTxt:  { fontSize: 12, fontWeight: '700' },
 
   uploadZone: {
     borderWidth: 2, borderColor: C.BORDER, borderStyle: 'dashed',

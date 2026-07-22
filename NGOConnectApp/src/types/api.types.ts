@@ -93,10 +93,11 @@ export interface UserProfile {
   countryCode?: string;  // e.g. "+91", "+1"
   email?: string;
   memberSince?: string;
-  // Computed/extended fields returned by API
+  // Computed/extended fields returned by API (v4.9: now returned by User_GetProfile SP)
   totalHours?: number;
   projectsCount?: number;
   impactScore?: number;
+  ngosJoined?: number;
   skills?: UserSkill[];
 }
 
@@ -218,7 +219,8 @@ export interface Organisation {
   orgId: number;
   orgName: string;
   name?: string;           // alias for orgName (some endpoints return 'name')
-  registrationNumber?: string;
+  registrationNumber?: string; // Org_GetProfile SP returns this as 'regNumber' (DynamicRow camelCase of RegNumber)
+  regNumber?: string;          // alias — actual key returned by Org_GetProfile
   orgType?: string;
   orgTypeLkpId?: number;
   category?: string;
@@ -244,8 +246,10 @@ export interface Organisation {
   rating?: number;         // alias for avgRating
   latitude?: number;
   longitude?: number;
-  is80G?: boolean;
-  is12A?: boolean;
+  is80G?: boolean;             // interface alias — Org_GetProfile returns is80GEligible
+  is12A?: boolean;             // interface alias — Org_GetProfile returns is12AEligible
+  is80GEligible?: boolean;     // actual key from Org_GetProfile (DynamicRow camelCase of Is80GEligible)
+  is12AEligible?: boolean;     // actual key from Org_GetProfile (DynamicRow camelCase of Is12AEligible)
   statusCode?: string;
   // Extended fields
   activeProjects?: number;
@@ -513,33 +517,40 @@ export interface CommunityPost {
   pollEndsAt?: string;         // ISO date when poll closes (SP column: PollEndsAt → DynamicRow → pollEndsAt)
   pollIsMultiChoice?: boolean; // 1 = multiple options can be selected, 0/null = single-choice radio
 
+  // ── Shared extra field (EventRef column) ──────────────────────────────────
+  // SP column cp.EventRef → DynamicRow → eventRef. Meaning varies by type:
+  //   EVENT_UPDATE  → whatChanged text (e.g. "Venue changed")
+  //   VOL_REQUEST   → date/time display text (e.g. "Jun 14, 6:30 AM")
+  //   TASK          → free-text assignee name
+  eventRef?: string;
+
   // ── EVENT_UPDATE extra fields (SP columns, DynamicRow auto-maps) ──────────
-  mediaUrls?: string[];        // for RESOURCE type
   projectId?: number;
   projectTitle?: string;
-  changeType?: string;         // e.g. "VENUE CHANGED", "TIME CHANGED", "DATE CHANGED"
-  changeDetail?: string;       // human-readable summary of what changed
-  mapsUrl?: string;            // Google Maps deep-link for updated venue
+  // changeType / changeDetail / mapsUrl have no DB columns — use eventRef + title instead
   rsvpCount?: number;
   isRsvped?: boolean;
 
   // ── VOL_REQUEST extra fields ───────────────────────────────────────────────
-  filledCount?: number;        // volunteers already signed up
-  totalNeeded?: number;        // total slots
-  startTime?: string;          // e.g. "06:30 AM"
-  requiredSkills?: string[];   // skill chip labels
+  filledCount?: number;        // volunteers already signed up (no DB column yet)
+  volunteersNeeded?: number;   // SP column VolunteersNeeded → volunteersNeeded
+  totalNeeded?: number;        // legacy alias — prefer volunteersNeeded
   isVolunteered?: boolean;     // true if current user signed up
 
   // ── TASK extra fields ──────────────────────────────────────────────────────
-  assignedToName?: string;
+  assignedToUserId?: number;   // SP column AssignedToUserId
+  assignedToName?: string;     // SP JOIN on AssignedToUserId (null when not a real user)
   assignedToInitials?: string;
-  dueBy?: string;              // e.g. "Jun 14 · 6:30 AM"
+  dueDate?: string;            // SP column DueDate → dueDate (ISO string)
+  dueBy?: string;              // formatted display string (future: SP alias)
   taskStatus?: string;         // "Open" | "In Progress" | "Completed"
 
   // ── RESOURCE extra fields ──────────────────────────────────────────────────
+  resourceFileUrl?: string;    // SP column ResourceFileUrl → DynamicRow → resourceFileUrl (single file URL)
   fileNames?: string[];        // parallel array with mediaUrls
   fileSizes?: string[];        // e.g. ["2.3 MB", "1.1 MB"]
   fileTypes?: string[];        // e.g. ["PDF", "Image"]
+  mediaUrls?: string[];        // legacy / future multi-file support
 
   // ── QUESTION extra fields ─────────────────────────────────────────────────
   bestAnswerText?: string;
@@ -647,7 +658,7 @@ export interface Notification {
   notifType: string;       // matches SP: NotifType → camelCase notifType
   refId?: number;
   refType?: string;
-  isRead: number;          // 0 | 1 from MySQL — use === 1 check
+  isRead: number | boolean; // Pomelo returns TINYINT(1) as true/false — always use !isRead / !!isRead
   readAt?: string;
   createdAt: string;
   orgId?: number;

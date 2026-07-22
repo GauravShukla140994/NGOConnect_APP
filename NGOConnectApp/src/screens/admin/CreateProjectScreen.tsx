@@ -305,6 +305,12 @@ export default function CreateProjectScreen() {
   const currentLocationRef  = useRef<{ latitude: number; longitude: number } | null>(null);
   // True once map tiles have finished loading
   const tilesLoadedRef      = useRef(false);
+  // Controls whether GPS is allowed to set the map pin.
+  // NEW projects (no projectId): true immediately.
+  // EDIT projects: starts false — blocked until project data confirms the project
+  // has NO saved coordinates. This prevents any race condition: GPS can never
+  // overwrite saved DB coordinates regardless of which async operation arrives first.
+  const shouldUseGpsRef     = useRef(!projectId);
 
   // ---- date / time picker state ----
   type PickerTarget = 'date' | 'startDate' | 'endDate' | 'startTime' | 'endTime';
@@ -315,16 +321,21 @@ export default function CreateProjectScreen() {
 
   const isEdit = !!projectId;
 
-  // ── Fetch GPS at mount (new project only) ──────────────────────────────────
-  // Stores result in ref (readable synchronously) AND in form state.
-  // If map tiles haven't loaded yet the GPS callback injects JS when they do;
-  // if tiles loaded first the TILES_LOADED handler reads the ref directly.
+  // ── Fetch GPS at mount ───────────────────────────────────────────────────────
+  // For NEW projects: GPS fires immediately — provides a default pin the admin
+  // can drag to the exact spot.
+  // For EDIT projects: GPS is blocked (shouldUseGpsRef = false) until project
+  // data loads. If the project has saved coordinates, GPS stays blocked forever.
+  // Only if the project has NO saved coordinates does the project-load effect
+  // flip shouldUseGpsRef to true and apply the cached GPS result.
   useEffect(() => {
-    if (isEdit) return; // edit mode uses saved coordinates
-
     const onGPS = (pos: { coords: { latitude: number; longitude: number } }) => {
       const { latitude, longitude } = pos.coords;
       currentLocationRef.current = { latitude, longitude };
+
+      // Blocked until project data confirms no saved coordinates (edit mode).
+      if (!shouldUseGpsRef.current) return;
+
       setForm(f => ({ ...f, latitude, longitude, locationPinned: true }));
       reverseGeocode(latitude, longitude);
       // If the map is already showing, center + pin it now
@@ -346,7 +357,7 @@ export default function CreateProjectScreen() {
       doGPS();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit]);
+  }, []); // mount only
 
   useEffect(() => {
     if (!projectId) return;
@@ -380,6 +391,24 @@ export default function CreateProjectScreen() {
           skills:           [],
           age18Plus:        (p.ageRestriction ?? 0) === 1,
         });
+
+        if (p.latitude && p.longitude) {
+          // Project has saved coordinates — GPS stays permanently blocked.
+          // shouldUseGpsRef remains false. The TILES_LOADED handler will
+          // centre the map on the saved coordinates.
+          // (shouldUseGpsRef is already false for isEdit — no change needed)
+        } else {
+          // No saved coordinates — enable GPS so the admin has a starting pin.
+          shouldUseGpsRef.current = true;
+          if (currentLocationRef.current) {
+            // GPS already arrived while we were waiting for project data.
+            const { latitude, longitude } = currentLocationRef.current;
+            setForm(prev => ({ ...prev, latitude, longitude, locationPinned: true }));
+            reverseGeocode(latitude, longitude);
+          }
+          // If GPS hasn't arrived yet, the onGPS callback will fire shortly
+          // and shouldUseGpsRef.current === true will let it through.
+        }
       } finally {
         setLoading(false);
       }
@@ -454,12 +483,15 @@ export default function CreateProjectScreen() {
     }
   };
 
-  // Reverse geocode lat/lng → readable address via Nominatim
-  const reverseGeocode = async (lat: number, lng: number) => {
+  // Reverse geocode lat/lng → readable address via Nominatim.
+  // forceLandmark: true  → always update form.landmark (user manually moved pin)
+  // forceLandmark: false → only update landmark if it's currently empty
+  //                        (new project with no name typed, or GPS fallback)
+  const reverseGeocode = async (lat: number, lng: number, forceLandmark = false) => {
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
-        { headers: { 'User-Agent': 'NGOConnect/1.0' } }
+        { headers: { 'User-Agent': 'RippleHub/1.0' } }
       );
       const data = await res.json();
       let geocodedName = '';
@@ -474,13 +506,32 @@ export default function CreateProjectScreen() {
       }
       if (geocodedName) {
         setPinnedAddress(geocodedName);
-        // Save geocoded name as landmark — this is what shows in listings and the Apply modal
-        setForm(f => ({ ...f, landmark: geocodedName }));
+        // Update landmark only when user explicitly dragged pin, OR when landmark is empty.
+        // This prevents GPS auto-geocoding from overwriting a saved/typed landmark.
+        setForm(f => ({
+          ...f,
+          landmark: forceLandmark || !f.landmark.trim() ? geocodedName : f.landmark,
+        }));
       }
     } catch {
       const coords = `${lat.toFixed(5)}° N, ${lng.toFixed(5)}° E`;
       setPinnedAddress(coords);
-      setForm(f => ({ ...f, landmark: coords }));
+    }
+  };
+
+  // Forward geocode a city/place name → lat/lng via Nominatim (for centering the map
+  // view when a project has no saved coordinates but has a city text field filled in).
+  const forwardGeocode = async (query: string): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+        { headers: { 'User-Agent': 'RippleHub/1.0' } }
+      );
+      const data = await res.json();
+      if (data?.[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      return null;
+    } catch {
+      return null;
     }
   };
 
@@ -493,26 +544,42 @@ export default function CreateProjectScreen() {
         setTilesLoaded(true);
         tilesLoadedRef.current = true;
 
-        // Determine which coordinates to centre on (priority: edit saved > GPS already arrived)
-        const savedLat = form.locationPinned ? form.latitude  : undefined;
-        const savedLon = form.locationPinned ? form.longitude : undefined;
-        const gpsLat   = currentLocationRef.current?.latitude;
-        const gpsLon   = currentLocationRef.current?.longitude;
-
-        const lat = savedLat ?? gpsLat;
-        const lon = savedLon ?? gpsLon;
-
-        if (lat != null && lon != null) {
+        if (form.locationPinned && form.latitude != null && form.longitude != null) {
+          // Priority 1: coordinates already in form state (saved DB coords for edit,
+          // or GPS for new project if it arrived before tiles finished loading).
+          const lat = form.latitude;
+          const lon = form.longitude;
           mapWebViewRef.current?.injectJavaScript(
             `window.setCenter(${lat}, ${lon}, 16); window.placePin(${lat}, ${lon}); true;`
           );
-          if (!pinnedAddress) reverseGeocode(lat, lon);
+          // Always reverse geocode with the ACTUAL pinned coordinates so the
+          // address card reflects the correct location (not a stale GPS address).
+          reverseGeocode(lat, lon);
+        } else if (shouldUseGpsRef.current && currentLocationRef.current) {
+          // Priority 2: GPS arrived but form not yet updated (edge case — very fast map load).
+          const { latitude, longitude } = currentLocationRef.current;
+          mapWebViewRef.current?.injectJavaScript(
+            `window.setCenter(${latitude}, ${longitude}, 16); window.placePin(${latitude}, ${longitude}); true;`
+          );
+          reverseGeocode(latitude, longitude);
+          setForm(f => ({ ...f, latitude, longitude, locationPinned: true }));
+        } else if (form.city) {
+          // Priority 3: No pin yet, but city text is available — centre the view
+          // at city level so the admin sees a useful starting area (no pin placed).
+          forwardGeocode(form.city).then(coords => {
+            if (coords) {
+              mapWebViewRef.current?.injectJavaScript(
+                `window.setCenter(${coords.lat}, ${coords.lng}, 12); true;`
+              );
+            }
+          });
         }
-        // else: GPS still in flight — the mount-effect callback will inject once it arrives
+        // else: nothing available yet — map stays at the India default zoom (5)
       } else if (msg.type === 'PIN_DROPPED') {
         const { lat, lng } = msg;
         setForm(f => ({ ...f, latitude: lat, longitude: lng, locationPinned: true }));
-        reverseGeocode(lat, lng);
+        // forceLandmark = true: user manually moved the pin, so update the landmark field
+        reverseGeocode(lat, lng, true);
       }
     } catch { /* ignore malformed messages */ }
   };
@@ -829,7 +896,10 @@ export default function CreateProjectScreen() {
             <Text style={s.label}>Pin Project Location</Text>
             {form.locationPinned && (
               <View style={s.geoInfoBadge}>
-                <Text style={s.geoInfoBadgeText}>📍 Using current location</Text>
+                <Text style={s.geoInfoBadgeText}>
+                  {/* isEdit + has coordinates = saved DB pin; else = GPS default */}
+                  {isEdit && form.latitude ? '📌 Saved location' : '📍 Current location'}
+                </Text>
               </View>
             )}
           </View>
@@ -837,7 +907,9 @@ export default function CreateProjectScreen() {
             <View style={s.geoInfoBox}>
               <Text style={s.geoInfoIcon}>ℹ️</Text>
               <Text style={s.geoInfoText}>
-                Your current location is pinned by default. Drag the pin to set the exact meeting point if different.
+                {isEdit && form.latitude
+                  ? 'Saved location is shown on the map. Drag the pin to adjust if needed.'
+                  : 'Current location is pinned by default. Drag the pin to set the exact meeting point.'}
               </Text>
             </View>
           )}
@@ -1108,7 +1180,7 @@ export default function CreateProjectScreen() {
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => step === 1 ? nav.goBack() : back()} style={s.backBtn}>
-          <Text style={s.backBtnText}>{'<'} {step === 1 ? 'Back' : 'Prev'}</Text>
+          <Text style={s.backBtnText}>{'←'} {step === 1 ? 'Back' : 'Prev'}</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>{isEdit ? 'Edit Project' : 'New Project'}</Text>
         <Text style={s.stepCounter}>{step}/5</Text>

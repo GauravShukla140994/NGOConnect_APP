@@ -1226,7 +1226,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06, shadowRadius: 4,
   },
   backBtn:        { paddingVertical: 4, paddingRight: 8 },
-  backText:       { fontSize: 14, color: C.PRIMARY, fontWeight: '600' },
+  backText:       { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   topBarTitle:    { fontSize: 16, fontWeight: '700', color: C.TEXT },
 
   // Step bar
@@ -1362,7 +1362,7 @@ const styles = StyleSheet.create({
     borderRadius: 12, paddingHorizontal: 18, paddingVertical: 13,
     alignItems: 'center', justifyContent: 'center',
   },
-  prevText:       { fontSize: 14, color: C.TEXT2, fontWeight: '600' },
+  prevText:       { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   nextBtn:        {
     flex: 1, backgroundColor: C.PRIMARY,
     borderRadius: 12, paddingVertical: 14,

@@ -536,7 +536,7 @@ const ui = StyleSheet.create({
   // ── Button ──
   btn:          { backgroundColor: C.PRIMARY, borderRadius: R.BTN, paddingVertical: 13, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', ...S.BTN },
   btnText:      { color: '#fff', fontSize: 13, fontWeight: '600', letterSpacing: 0.2 },
-  btnDisabled:  { backgroundColor: C.BG, ...{ elevation: 0, shadowOpacity: 0 } },
+  btnDisabled:  { opacity: 0.45 },
   btnPressed:   { opacity: 0.92 },
   btnOutline:   { backgroundColor: 'transparent', borderRadius: R.BTN, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.PRIMARY },
   btnOutlineText:{ fontSize: 13, fontWeight: '600', color: C.PRIMARY },
@@ -553,9 +553,9 @@ const ui = StyleSheet.create({
   topbar:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.CARD, paddingHorizontal: 12, paddingVertical: 12, ...S.TOPBAR },
   topbarTitle:  { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '700', color: C.TEXT },
   topbarRight:  { alignItems: 'flex-end' },
-  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, width: 60 },
-  backArrow:    { fontSize: 18, color: C.TEXT2, lineHeight: 22 },
-  backText:     { fontSize: 12, color: C.TEXT2, fontWeight: '500' },
+  backBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, width: 70 },
+  backArrow:    { fontSize: 20, color: C.PRIMARY, lineHeight: 22 },
+  backText:     { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
 
   // ── Avatar ──
   avatar:     { alignItems: 'center', justifyContent: 'center' },

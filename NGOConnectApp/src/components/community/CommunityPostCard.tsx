@@ -8,18 +8,41 @@
 import React, { useState } from 'react';
 import {
   Alert,
-  Linking,
+  ActivityIndicator,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import AppConfig from '../../config/AppConfig';
 import type { CommunityPost } from '../../types/api.types';
 import { UserAvatar } from '../ui';
 
 const C = AppConfig.COLORS;
+
+// ── Download icon (no icon library needed) ────────────────────────────────────
+function DownloadIcon({ color, size = 16 }: { color: string; size?: number }) {
+  return (
+    <View style={{ width: size, height: size + 4, alignItems: 'center', justifyContent: 'center', gap: 0 }}>
+      {/* Vertical shaft */}
+      <View style={{ width: 2, height: size * 0.42, backgroundColor: color, borderRadius: 1 }} />
+      {/* Arrowhead */}
+      <View style={{
+        width: 0, height: 0,
+        borderLeftWidth:  size * 0.32,
+        borderRightWidth: size * 0.32,
+        borderTopWidth:   size * 0.32,
+        borderLeftColor:  'transparent',
+        borderRightColor: 'transparent',
+        borderTopColor:   color,
+        marginTop: -1,
+      }} />
+      {/* Base line */}
+      <View style={{ width: size * 0.75, height: 2, backgroundColor: color, borderRadius: 1, marginTop: 3 }} />
+    </View>
+  );
+}
 
 // ── Type chip row ─────────────────────────────────────────────────────────────
 const TYPE_META: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
@@ -114,7 +137,14 @@ function AnnouncementCard({ item, onLike, onAck, onComment }: {
   const acked = item.isAcknowledgedByMe ?? item.isAcknowledged ?? false;
   return (
     <View style={css.card}>
-      <TypeChip typeCode="ANNOUNCEMENT" />
+      <View style={css.typeChipRow}>
+        <TypeChip typeCode="ANNOUNCEMENT" />
+        {item.isPinned ? (
+          <View style={css.pinBadge}>
+            <Text style={css.pinBadgeTxt}>📌 Pinned</Text>
+          </View>
+        ) : null}
+      </View>
       <View style={css.body}>
         <AuthorRow item={item} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
@@ -143,7 +173,6 @@ function QuestionCard({ item, onLike, onComment }: {
   onLike:    (id: number) => void;
   onComment: (id: number) => void;
 }) {
-  const [replyText, setReplyText] = useState('');
   return (
     <View style={css.card}>
       <TypeChip typeCode="QUESTION" />
@@ -174,35 +203,16 @@ function QuestionCard({ item, onLike, onComment }: {
           </View>
         ) : null}
 
-        {/* Reply input */}
-        <View style={css.replyInputRow}>
-          <TextInput
-            style={css.replyInput}
-            placeholder="Reply... @mention members"
-            placeholderTextColor={C.TEXT3}
-            value={replyText}
-            onChangeText={setReplyText}
-          />
-          <TouchableOpacity
-            style={css.replyBtn}
-            onPress={() => {
-              if (replyText.trim()) {
-                onComment(item.communityPostId);
-                setReplyText('');
-              }
-            }}
-            accessibilityLabel="Send reply"
-          >
-            <Text style={css.replyBtnTxt}>↑</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Tap the comment button in footer to answer */}
+        <TouchableOpacity
+          style={css.answerPrompt}
+          onPress={() => onComment(item.communityPostId)}
+          accessibilityLabel="Write an answer"
+        >
+          <Text style={css.answerPromptTxt}>💬 Write an answer...</Text>
+        </TouchableOpacity>
       </View>
-      <CardFooter
-        item={item}
-        onLike={onLike}
-        onComment={onComment}
-        rightSlot={null}
-      />
+      <CardFooter item={item} onLike={onLike} onComment={onComment} rightSlot={null} />
     </View>
   );
 }
@@ -326,13 +336,11 @@ function EventUpdateCard({ item, onLike, onComment }: {
 }) {
   const [rsvped, setRsvped] = useState(item.isRsvped ?? false);
 
-  const openMaps = () => {
-    if (item.mapsUrl) {
-      Linking.openURL(item.mapsUrl).catch(() =>
-        Alert.alert('Cannot open Maps', 'Please check your Maps app.')
-      );
-    }
-  };
+  // eventRef = whatChanged text (e.g. "Venue changed") — saved via p_EventRef
+  // title    = event reference name (e.g. "Food Drive - Jun 3")
+  // content  = update details / message
+  const changeLabel = item.eventRef;
+  const eventName   = item.title;
 
   return (
     <View style={css.card}>
@@ -340,23 +348,15 @@ function EventUpdateCard({ item, onLike, onComment }: {
       <View style={css.body}>
         <AuthorRow item={item} />
 
-        {/* Change badge */}
-        {item.changeType ? (
+        {/* Change badge — what changed + which event */}
+        {(changeLabel || eventName) ? (
           <View style={css.changeBox}>
-            <Text style={css.changeBadge}>{item.changeType}</Text>
-            <Text style={css.changeDetail}>{item.changeDetail ?? item.projectTitle}</Text>
+            {changeLabel ? <Text style={css.changeBadge}>{changeLabel.toUpperCase()}</Text> : null}
+            {eventName ? <Text style={css.changeDetail}>{eventName}</Text> : null}
           </View>
         ) : null}
 
         {item.content ? <Text style={css.content}>{item.content}</Text> : null}
-
-        {/* Maps link */}
-        {item.mapsUrl ? (
-          <TouchableOpacity style={css.mapsRow} onPress={openMaps} accessibilityLabel="Open in Google Maps">
-            <Text style={css.mapsIcon}>📍</Text>
-            <Text style={css.mapsTxt}>Open updated location in Google Maps</Text>
-          </TouchableOpacity>
-        ) : null}
       </View>
       <CardFooter
         item={item}
@@ -388,7 +388,10 @@ function VolRequestCard({ item, onLike, onComment }: {
 }) {
   const [volunteered, setVolunteered] = useState(item.isVolunteered ?? false);
   const filled = item.filledCount ?? 0;
-  const total  = item.totalNeeded ?? 0;
+  // SP returns VolunteersNeeded → volunteersNeeded; totalNeeded is a legacy alias
+  const total  = item.volunteersNeeded ?? item.totalNeeded ?? 0;
+  // eventRef holds the date/time text saved by the form (e.g. "Jun 14, 6:30 AM")
+  const dateTimeText = item.eventRef;
 
   return (
     <View style={css.card}>
@@ -396,34 +399,24 @@ function VolRequestCard({ item, onLike, onComment }: {
       <View style={css.body}>
         <AuthorRow item={item} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
+        {/* content = skills text entered in the form */}
         {item.content ? <Text style={css.content}>{item.content}</Text> : null}
 
         {/* Stats row */}
-        {(filled > 0 || total > 0 || item.startTime) ? (
+        {(total > 0 || dateTimeText) ? (
           <View style={css.statsRow}>
-            {(filled > 0 || total > 0) ? (
+            {total > 0 ? (
               <View style={[css.statBox, { backgroundColor: `${C.PRIMARY}12` }]}>
                 <Text style={[css.statVal, { color: C.PRIMARY }]}>{filled}/{total}</Text>
-                <Text style={css.statLbl}>Filled</Text>
+                <Text style={css.statLbl}>Volunteers</Text>
               </View>
             ) : null}
-            {item.startTime ? (
+            {dateTimeText ? (
               <View style={[css.statBox, { backgroundColor: C.BG }]}>
-                <Text style={css.statVal}>{item.startTime}</Text>
-                <Text style={css.statLbl}>Start time</Text>
+                <Text style={css.statVal}>{dateTimeText}</Text>
+                <Text style={css.statLbl}>Date / Time</Text>
               </View>
             ) : null}
-          </View>
-        ) : null}
-
-        {/* Skill chips */}
-        {item.requiredSkills && item.requiredSkills.length > 0 ? (
-          <View style={css.skillsRow}>
-            {item.requiredSkills.map((s) => (
-              <View key={s} style={css.skillChip}>
-                <Text style={css.skillChipTxt}>{s}</Text>
-              </View>
-            ))}
           </View>
         ) : null}
       </View>
@@ -490,26 +483,34 @@ function TaskCard({ item, onComment }: {
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
         {item.content ? <Text style={css.content}>{item.content}</Text> : null}
 
-        {/* Assignee / Due date row */}
-        {(item.assignedToName || item.dueBy) ? (
-          <View style={css.statsRow}>
-            {item.assignedToName ? (
-              <View style={[css.statBox, { backgroundColor: C.BG }]}>
-                <Text style={css.statSubLabel}>Assigned to</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
-                  <UserAvatar name={item.assignedToName} size={22} />
-                  <Text style={css.assignedName}>{item.assignedToName}</Text>
+        {/* Assignee / Due date row
+            assignedToName → from SP JOIN on AssignedToUserId (null until member-picker added)
+            eventRef       → free-text assignee name saved by the form (current fallback)
+            dueBy / dueDate → formatted due date */}
+        {(() => {
+          const assigneeName = item.assignedToName || item.eventRef || null;
+          const dueText      = item.dueBy || item.dueDate || null;
+          if (!assigneeName && !dueText) { return null; }
+          return (
+            <View style={css.statsRow}>
+              {assigneeName ? (
+                <View style={[css.statBox, { backgroundColor: C.BG }]}>
+                  <Text style={css.statSubLabel}>Assigned to</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                    <UserAvatar name={assigneeName} size={22} />
+                    <Text style={css.assignedName}>{assigneeName}</Text>
+                  </View>
                 </View>
-              </View>
-            ) : null}
-            {item.dueBy ? (
-              <View style={[css.statBox, { backgroundColor: C.BG }]}>
-                <Text style={css.statSubLabel}>Due by</Text>
-                <Text style={[css.dueByTxt]}>{item.dueBy}</Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+              ) : null}
+              {dueText ? (
+                <View style={[css.statBox, { backgroundColor: C.BG }]}>
+                  <Text style={css.statSubLabel}>Due by</Text>
+                  <Text style={css.dueByTxt}>{dueText}</Text>
+                </View>
+              ) : null}
+            </View>
+          );
+        })()}
 
         {/* Status toggle buttons */}
         <View style={css.taskBtnsRow}>
@@ -551,21 +552,55 @@ function fileIcon(type?: string) {
   return '📄';
 }
 
+type DlState = 'idle' | 'downloading' | 'done' | 'error';
+
+function getMimeType(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  if (ext === 'pdf')               { return 'application/pdf'; }
+  if (ext === 'jpg' || ext === 'jpeg') { return 'image/jpeg'; }
+  if (ext === 'png')               { return 'image/png'; }
+  return 'application/octet-stream';
+}
+
 function ResourceCard({ item, onLike, onComment }: {
   item: CommunityPost;
   onLike:    (id: number) => void;
   onComment: (id: number) => void;
 }) {
-  const urls   = item.mediaUrls ?? [];
-  const names  = item.fileNames ?? urls.map((_, i) => `File ${i + 1}`);
-  const sizes  = item.fileSizes ?? [];
-  const types  = item.fileTypes ?? [];
+  const [dlState, setDlState] = useState<Record<number, DlState>>({});
 
-  const openFile = (url: string) => {
-    if (url) {
-      Linking.openURL(url).catch(() => Alert.alert('Cannot open file'));
-    } else {
-      Alert.alert('File not available');
+  // SP returns a single ResourceFileUrl column; mediaUrls is reserved for future multi-file support
+  const urls  = item.mediaUrls?.length
+    ? item.mediaUrls
+    : item.resourceFileUrl ? [item.resourceFileUrl] : [];
+  const names = item.fileNames ?? urls.map((u) => u.split('/').pop() ?? 'File');
+  const sizes = item.fileSizes ?? [];
+  const types = item.fileTypes ?? [];
+
+  const downloadFile = async (url: string, fileName: string, index: number) => {
+    if (!url) { Alert.alert('File not available'); return; }
+    if (dlState[index] === 'downloading') { return; }
+
+    setDlState((prev) => ({ ...prev, [index]: 'downloading' }));
+    try {
+      const destPath = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${fileName}`;
+      await ReactNativeBlobUtil.config({
+        addAndroidDownloads: {
+          useDownloadManager: true,   // uses Android DownloadManager — shows progress in notification tray
+          notification: true,
+          title: fileName,
+          description: 'Downloading...',
+          path: destPath,
+          mime: getMimeType(fileName),
+        },
+      }).fetch('GET', url);
+      setDlState((prev) => ({ ...prev, [index]: 'done' }));
+      // Reset icon back to idle after 3 s
+      setTimeout(() => setDlState((prev) => ({ ...prev, [index]: 'idle' })), 3000);
+    } catch {
+      setDlState((prev) => ({ ...prev, [index]: 'error' }));
+      Alert.alert('Download failed', 'Please try again.');
+      setTimeout(() => setDlState((prev) => ({ ...prev, [index]: 'idle' })), 2000);
     }
   };
 
@@ -580,40 +615,39 @@ function ResourceCard({ item, onLike, onComment }: {
         {/* File list */}
         {names.length > 0 ? (
           <View style={css.fileList}>
-            {names.map((name, i) => (
-              <TouchableOpacity
-                key={i}
-                style={css.fileRow}
-                onPress={() => openFile(urls[i] ?? '')}
-                accessibilityLabel={`Download ${name}`}
-              >
-                <Text style={css.fileIcon}>{fileIcon(types[i])}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={css.fileName} numberOfLines={1}>{name}</Text>
-                  {sizes[i] ? <Text style={css.fileSize}>{sizes[i]}</Text> : null}
+            {names.map((name, i) => {
+              const state = dlState[i] ?? 'idle';
+              return (
+                <View key={i} style={css.fileRow}>
+                  <Text style={css.fileIcon}>{fileIcon(types[i])}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={css.fileName} numberOfLines={1}>{name}</Text>
+                    {sizes[i] ? <Text style={css.fileSize}>{sizes[i]}</Text> : null}
+                  </View>
+                  {/* Download button — URL never shown to user */}
+                  <TouchableOpacity
+                    style={[css.dlBtn, state === 'done' && css.dlBtnDone, state === 'error' && css.dlBtnErr]}
+                    onPress={() => downloadFile(urls[i] ?? '', name, i)}
+                    disabled={state === 'downloading'}
+                    accessibilityLabel={`Download ${name}`}
+                  >
+                    {state === 'downloading' ? (
+                      <ActivityIndicator size={14} color={C.PRIMARY} />
+                    ) : state === 'done' ? (
+                      <Text style={[css.dlBtnTxt, { color: '#15803D' }]}>✓</Text>
+                    ) : state === 'error' ? (
+                      <Text style={[css.dlBtnTxt, { color: '#DC2626' }]}>✕</Text>
+                    ) : (
+                      <DownloadIcon color={C.PRIMARY} size={15} />
+                    )}
+                  </TouchableOpacity>
                 </View>
-                <Text style={css.downloadIcon}>⬇</Text>
-              </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
         ) : null}
       </View>
-      <CardFooter
-        item={item}
-        onLike={onLike}
-        onComment={onComment}
-        rightSlot={
-          urls.length > 1 ? (
-            <TouchableOpacity
-              style={css.footerBtn}
-              onPress={() => Alert.alert('Download all', 'Downloading all files…')}
-              accessibilityLabel="Download all"
-            >
-              <Text style={css.footerTxt}>⬇ Download all</Text>
-            </TouchableOpacity>
-          ) : undefined
-        }
-      />
+      <CardFooter item={item} onLike={onLike} onComment={onComment} />
     </View>
   );
 }
@@ -718,9 +752,16 @@ const css = StyleSheet.create({
   body:           { padding: 12, paddingTop: 8 },
 
   // Type chip
+  typeChipRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 10 },
   typeChip:       { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7 },
   typeEmoji:      { fontSize: 13 },
   typeLabel:      { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  // Pin badge (ANNOUNCEMENT)
+  pinBadge:       { backgroundColor: '#FFF7ED', borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4, borderWidth: 1, borderColor: '#FED7AA' },
+  pinBadgeTxt:    { fontSize: 10, fontWeight: '700', color: '#C2410C' },
+  // Answer prompt (QUESTION)
+  answerPrompt:   { backgroundColor: C.BG, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, marginTop: 4, borderWidth: 1, borderColor: C.BORDER },
+  answerPromptTxt:{ fontSize: 12, color: C.TEXT3 },
 
   // Author row
   avatar:         { alignItems: 'center', justifyContent: 'center' },
@@ -823,7 +864,10 @@ const css = StyleSheet.create({
   fileIcon:       { fontSize: 22 },
   fileName:       { fontSize: 12, fontWeight: '600', color: C.TEXT },
   fileSize:       { fontSize: 10, color: C.TEXT3, marginTop: 2 },
-  downloadIcon:   { fontSize: 18, color: C.PRIMARY },
+  dlBtn:          { width: 34, height: 34, borderRadius: 17, backgroundColor: `${C.PRIMARY}15`, alignItems: 'center', justifyContent: 'center' },
+  dlBtnDone:      { backgroundColor: '#DCFCE7' },
+  dlBtnErr:       { backgroundColor: '#FEE2E2' },
+  dlBtnTxt:       { fontSize: 16, color: C.PRIMARY, fontWeight: '700' },
 
   // Discussion
   viewAllReplies: { fontSize: 12, color: C.PRIMARY, fontWeight: '600', marginTop: 5 },

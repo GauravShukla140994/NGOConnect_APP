@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   RefreshControl,
@@ -12,10 +11,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getMyOrgs, getMyDocuments } from '../../api/user.api';
-import { orgApi } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
 import type { Organisation } from '../../types/api.types';
 import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
@@ -90,56 +88,24 @@ function OrgCard({ org, isAdmin, onPress }: {
 function RejectedOrgCard({ org, onResubmitSuccess }: {
   org: Organisation; onResubmitSuccess: () => void;
 }) {
+  const nav     = useNavigation<any>();
   const name    = org.orgName ?? org.name ?? 'NGO';
   const color   = orgColor(name);
-  const reason  = org.lastRejectionReason
+  const reason  = (org as any).rejectionReason
     ?? 'No specific reason provided. Please review your organisation details and resubmit.';
-  const [submitting, setSubmitting] = useState(false);
 
   const handleResubmit = useCallback(() => {
-    Alert.alert(
-      'Resubmit Organisation',
-      'This will send your organisation back for review. Make sure your details are up to date.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Resubmit', style: 'default',
-          onPress: async () => {
-            setSubmitting(true);
-            try {
-              const res = await orgApi.resubmit(org.orgId, {
-                orgName:      org.orgName,
-                about:        org.about,
-                mission:      org.mission,
-                website:      org.website,
-                contactEmail: org.contactEmail,
-                contactPhone: org.contactPhone,
-              });
-              if (res.data?.isSuccess) {
-                Alert.alert('Resubmitted!', 'Your organisation is now pending review again.', [
-                  { text: 'OK', onPress: onResubmitSuccess },
-                ]);
-              } else {
-                Alert.alert('Error', res.data?.message ?? 'Resubmit failed. Please try again.');
-              }
-            } catch {
-              Alert.alert('Error', 'Could not connect. Please try again.');
-            } finally {
-              setSubmitting(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [org, onResubmitSuccess]);
+    nav.navigate('CreateOrg', { mode: 'resubmit', orgId: org.orgId, prefill: org });
+  }, [nav, org]);
 
   return (
     <View style={styles.alertCard}>
       {/* Header row */}
       <View style={styles.alertCardHeader}>
-        <View style={[styles.orgAvatar, { backgroundColor: color }]}>
-          <Text style={styles.orgAvatarText}>{initials(name)}</Text>
-        </View>
+        {org.logoUrl
+          ? <Image source={{ uri: org.logoUrl }} style={styles.orgAvatar} resizeMode="cover" />
+          : <View style={[styles.orgAvatar, { backgroundColor: color }]}><Text style={styles.orgAvatarText}>{initials(name)}</Text></View>
+        }
         <View style={{ flex: 1 }}>
           <Text style={styles.orgName} numberOfLines={1}>{name}</Text>
           <View style={[styles.statusPill, { backgroundColor: '#FEF2F2', alignSelf: 'flex-start', marginTop: 4 }]}>
@@ -156,15 +122,11 @@ function RejectedOrgCard({ org, onResubmitSuccess }: {
 
       {/* Resubmit CTA */}
       <TouchableOpacity
-        style={[styles.resubmitBtn, submitting && { opacity: 0.6 }]}
+        style={styles.resubmitBtn}
         onPress={handleResubmit}
-        disabled={submitting}
         activeOpacity={0.8}
       >
-        {submitting
-          ? <ActivityIndicator size="small" color="#fff" />
-          : <Text style={styles.resubmitBtnText}>Fix & Resubmit</Text>
-        }
+        <Text style={styles.resubmitBtnText}>Fix & Resubmit</Text>
       </TouchableOpacity>
     </View>
   );
@@ -252,7 +214,7 @@ export default function MyOrgsScreen() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
   const onRefresh = useCallback(() => { setRefreshing(true); load(); }, [load]);
 
   const handleCreateOrg = useCallback(async () => {
@@ -462,7 +424,7 @@ const styles = StyleSheet.create({
   // Header
   header:             { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
   backBtn:            { paddingVertical: 4 },
-  backText:           { fontSize: 15, color: C.TEXT, fontWeight: '500' },
+  backText:           { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerAvatar:       { width: 34, height: 34, borderRadius: 17, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center' },
   headerAvatarText:   { color: '#fff', fontSize: 13, fontWeight: '700' },
 

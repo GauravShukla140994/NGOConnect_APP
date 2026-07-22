@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fmtDate } from '../../utils/dateUtils';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
@@ -43,6 +43,8 @@ function notifMeta(type: string): { emoji: string; color: string } {
     case 'SKILL_RATING':            return { emoji: '⭐', color: '#F59E0B' };
     case 'PROFILE_VERIFIED':        return { emoji: '✅', color: '#2ECC71' };
     case 'ACCOUNT_SUSPENDED':       return { emoji: '⚠️', color: C.YELLOW };
+    case 'INVITE_ACCEPTED':         return { emoji: '✅', color: '#2ECC71' };
+    case 'INVITE_DECLINED':         return { emoji: '❌', color: C.RED };
     default:                        return { emoji: '🔔', color: C.PRIMARY };
   }
 }
@@ -71,6 +73,8 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
       return refId ? { screen: 'SosActive', params: { sosIncidentId: refId } } : null;
     case 'DONATION_CONFIRMED':
       return { screen: 'MyDonations' };
+    case 'DONATION_RECEIVED_ADMIN':
+      return refId ? { screen: 'NgoProfile', params: { orgId: refId } } : { screen: 'MyOrgs' };
     case 'COMMUNITY_POST':
     case 'NEW_POLL':
       return { screen: 'Community' };
@@ -78,6 +82,17 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
     case 'SKILL_RATING':
     case 'PROFILE_VERIFIED':
       return { screen: 'Impact' };
+    case 'MEMBER_INVITE':
+      return refId
+        ? { screen: 'InviteAccept', params: { orgId: refId } }
+        : { screen: 'MyOrgs' };
+    // Admin-facing: user accepted/declined their invitation
+    case 'INVITE_ACCEPTED':
+      return refId
+        ? { screen: 'AdminVolunteers', params: { orgId: refId } }
+        : { screen: 'MyOrgs' };
+    case 'INVITE_DECLINED':
+      return { screen: 'MyOrgs' };
     default:
       return null;
   }
@@ -87,12 +102,15 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
 // Timestamp helper
 // ─────────────────────────────────────────────────────────────────────────────
 function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60)        return 'Just now';
-  if (diff < 3600)      return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400)     return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800)    return `${Math.floor(diff / 86400)}d ago`;
-  return fmtDate(iso);
+  // MySQL DATETIME has no timezone suffix — JavaScript would parse it as LOCAL time.
+  // Normalise to UTC by replacing the space separator and appending 'Z'.
+  const utc  = iso.endsWith('Z') || iso.includes('+') ? iso : iso.replace(' ', 'T') + 'Z';
+  const diff = Math.floor((Date.now() - new Date(utc).getTime()) / 1000);
+  if (diff < 60)     return 'Just now';
+  if (diff < 3600)   return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400)  return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return fmtDate(utc);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,7 +123,9 @@ type RowProps = {
 
 const NotifRow = React.memo(({ item, onPress }: RowProps) => {
   const { emoji, color } = notifMeta(item.notifType);
-  const unread = item.isRead !== 1;
+  // Pomelo returns TINYINT(1) as boolean true/false, not number 1/0.
+  // !item.isRead handles false, 0, null, undefined all correctly.
+  const unread = !item.isRead;
 
   return (
     <TouchableOpacity
@@ -144,7 +164,8 @@ const NotifRow = React.memo(({ item, onPress }: RowProps) => {
 // Main screen
 // ─────────────────────────────────────────────────────────────────────────────
 const NotificationsScreen = () => {
-  const nav = useNavigation<any>();
+  const nav    = useNavigation<any>();
+  const insets = useSafeAreaInsets();
 
   const [items, setItems]           = useState<Notification[]>([]);
   const [page, setPage]             = useState(1);
@@ -205,13 +226,22 @@ const NotificationsScreen = () => {
   }, []);
 
   const onPressNotif = useCallback(async (item: Notification) => {
-    // Mark as read immediately (fire-and-forget)
-    if (item.isRead !== 1 && !readIds.current.has(item.notificationId)) {
+    // Optimistic mark-as-read; revert if the API call fails
+    const wasUnread = !item.isRead && !readIds.current.has(item.notificationId);
+    if (wasUnread) {
       readIds.current.add(item.notificationId);
       setItems(prev =>
         prev.map(n => n.notificationId === item.notificationId ? { ...n, isRead: 1 } : n)
       );
-      notificationApi.markRead(item.notificationId).catch(() => {});
+      try {
+        await notificationApi.markRead(item.notificationId);
+      } catch {
+        // API failed — revert so the server state stays consistent
+        readIds.current.delete(item.notificationId);
+        setItems(prev =>
+          prev.map(n => n.notificationId === item.notificationId ? { ...n, isRead: 0 } : n)
+        );
+      }
     }
 
     // Navigate to relevant screen
@@ -222,7 +252,7 @@ const NotificationsScreen = () => {
   }, [nav]);
 
   // ── Derived ──────────────────────────────────────────────────────────────
-  const hasUnread = items.some(n => n.isRead !== 1);
+  const hasUnread = items.some(n => !n.isRead);
 
   // ─────────────────────────────────────────────────────────────────────────
   if (loading) {
@@ -230,7 +260,7 @@ const NotificationsScreen = () => {
       <SafeAreaView style={s.container} edges={['top']}>
         <View style={s.header}>
           <TouchableOpacity style={s.backBtn} onPress={() => nav.goBack()}>
-            <Text style={s.backIcon}>←</Text>
+            <Text style={s.backIcon}>← Back</Text>
           </TouchableOpacity>
           <Text style={s.headerTitle}>Notifications</Text>
           <View style={s.headerRight} />
@@ -247,7 +277,7 @@ const NotificationsScreen = () => {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <View style={s.header}>
         <TouchableOpacity style={s.backBtn} onPress={() => nav.goBack()}>
-          <Text style={s.backIcon}>←</Text>
+          <Text style={s.backIcon}>← Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Notifications</Text>
         {hasUnread ? (
@@ -289,7 +319,11 @@ const NotificationsScreen = () => {
             </View>
           ) : null
         }
-        contentContainerStyle={items.length === 0 ? s.emptyContainer : undefined}
+        contentContainerStyle={
+          items.length === 0
+            ? s.emptyContainer
+            : { paddingBottom: insets.bottom + 24 }
+        }
       />
     </SafeAreaView>
   );
@@ -303,8 +337,8 @@ const s = StyleSheet.create({
   header:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
                   paddingVertical: 12, backgroundColor: C.CARD, borderBottomWidth: 1,
                   borderBottomColor: C.BORDER },
-  backBtn:      { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: 4 },
-  backIcon:     { fontSize: 22, color: C.TEXT, fontWeight: '600' },
+  backBtn:      { minWidth: 70, height: 36, justifyContent: 'center', marginRight: 4 },
+  backIcon:     { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle:  { flex: 1, fontSize: 18, fontWeight: '700', color: C.TEXT },
   headerRight:  { width: 80 },
   markAllBtn:   { paddingHorizontal: 10, paddingVertical: 6 },

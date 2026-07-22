@@ -449,7 +449,7 @@ const styles = StyleSheet.create({
     padding: 11, backgroundColor: C.CARD,
     borderBottomWidth: 1, borderBottomColor: C.BORDER,
   },
-  backText:     { color: C.TEXT2, fontSize: 14 },
+  backText:     { color: C.PRIMARY, fontSize: 16, fontWeight: '600' },
 
   stepBar:      {
     flexDirection: 'row', alignItems: 'center',
@@ -518,7 +518,7 @@ const styles = StyleSheet.create({
 
   navFooter:    { flexDirection: 'row', gap: 10, marginTop: 20 },
   prevBtn:      { borderWidth: 1, borderColor: C.BORDER, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12 },
-  prevBtnText:  { color: C.TEXT2, fontWeight: '600' },
+  prevBtnText:  { color: C.PRIMARY, fontSize: 16, fontWeight: '600' },
   nextBtn:      { flex: 1, backgroundColor: C.PRIMARY, borderRadius: 10, padding: 13, alignItems: 'center' },
   nextBtnText:  { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

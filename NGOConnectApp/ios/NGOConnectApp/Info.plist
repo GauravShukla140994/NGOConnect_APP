@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>NGOConnectApp</string>
+	<string>RippleHub</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -35,7 +35,7 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>NGO Connect uses your location to show nearby NGOs and volunteer opportunities.</string>
+	<string>RippleHub uses your location to show nearby NGOs and volunteer opportunities.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -54,8 +54,20 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>NGO Connect needs camera access to scan QR codes for session attendance check-in.</string>
+	<string>RippleHub needs camera access to scan QR codes for session attendance check-in.</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Custom URI scheme: ngoconnect://invite/{token} -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ngoconnect</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>app.ripplehub</string>
+		</dict>
+	</array>
 </dict>
 </plist>

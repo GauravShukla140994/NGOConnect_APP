@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,10 +16,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import { authApi } from '../../api/auth.api';
 import AppConfig from '../../config/AppConfig';
+import { storage } from '../../api/apiClient';
 import { COUNTRIES, DEFAULT_COUNTRY, EMAIL_REGEX } from '../../constants/countries';
 
 const C = AppConfig.COLORS;
@@ -41,6 +43,22 @@ export default function LoginScreen({ navigation }: Props) {
   const [country,         setCountry]         = useState(DEFAULT_COUNTRY);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countrySearch,   setCountrySearch]   = useState('');
+  const [termsAccepted,   setTermsAccepted]   = useState(false);
+  const [showCheckbox,    setShowCheckbox]    = useState(false);
+  const [legalUrl,        setLegalUrl]        = useState('');
+  const [showLegal,       setShowLegal]       = useState(false);
+
+  // Show checkbox only for new users (terms not yet accepted)
+  useEffect(() => {
+    const accepted = storage.getBoolean('terms_accepted');
+    if (!accepted) setShowCheckbox(true);
+  }, []);
+
+  const handleCheckboxToggle = () => {
+    const next = !termsAccepted;
+    setTermsAccepted(next);
+    if (next) storage.set('terms_accepted', true);
+  };
 
   // Filter country list by search
   const filteredCountries = useMemo(() => {
@@ -76,10 +94,13 @@ export default function LoginScreen({ navigation }: Props) {
         if (res.data.isSuccess === 1) {
           navigation.navigate('Otp', { recipient: digits, countryCode: country.dial });
         } else {
-          Alert.alert('Error', res.data.message);
+          Alert.alert('Error', res.data.message || 'Unable to send OTP. Please try again.');
         }
-      } catch {
-        Alert.alert('Error', 'Unable to send OTP. Please try again.');
+      } catch (e: any) {
+        const msg = e?.response
+          ? `Server error (${e.response.status}): ${e.response.data?.message || 'Unable to send OTP.'}`
+          : 'Network error — cannot reach the server. Check your connection.';
+        Alert.alert('Error', msg);
       } finally {
         setLoading(false);
       }
@@ -93,7 +114,24 @@ export default function LoginScreen({ navigation }: Props) {
         Alert.alert('Invalid Email', 'Please enter a valid email address (e.g. you@example.com).');
         return;
       }
-      Alert.alert('Coming Soon', 'Email login will be available soon.');
+      setLoading(true);
+      try {
+        // countryCode is [Required] on the backend model — pass '+91' as placeholder
+        // (the SP does not store CountryCode for email OTPs)
+        const res = await authApi.sendOtp({ recipient: email.trim(), countryCode: '+91', purposeLkpId: 1 });
+        if (res.data.isSuccess === 1) {
+          navigation.navigate('Otp', { recipient: email.trim(), countryCode: '' });
+        } else {
+          Alert.alert('Error', res.data.message || 'Unable to send OTP. Please try again.');
+        }
+      } catch (e: any) {
+        const msg = e?.response
+          ? `Server error (${e.response.status}): ${e.response.data?.message || 'Unable to send OTP.'}`
+          : 'Network error — cannot reach the server. Check your connection.';
+        Alert.alert('Error', msg);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -116,7 +154,7 @@ export default function LoginScreen({ navigation }: Props) {
               <View style={styles.logoCircle}>
                 <Text style={styles.logoIcon}>{'♡'}</Text>
               </View>
-              <Text style={styles.brandName}>NGO Connect</Text>
+              <Text style={styles.brandName}>RippleHub</Text>
               <Text style={styles.brandTagline}>Building communities, sharing impact</Text>
             </View>
 
@@ -207,7 +245,7 @@ export default function LoginScreen({ navigation }: Props) {
                 style={({ pressed }) => [styles.btn, pressed && { opacity: 0.88 }]}
                 android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: false }}
                 onPress={handleSendOtp}
-                disabled={loading}
+                disabled={loading || (showCheckbox && !termsAccepted)}
                 accessibilityLabel="Send OTP"
               >
                 {loading
@@ -216,13 +254,32 @@ export default function LoginScreen({ navigation }: Props) {
                 }
               </Pressable>
 
-              {/* Terms */}
-              <Text style={styles.terms}>
-                {'By continuing, you agree to our '}
-                <Text style={styles.link}>Terms of Service</Text>
-                {' and '}
-                <Text style={styles.link}>Privacy Policy</Text>
-              </Text>
+              {/* Terms — checkbox for new users, plain text for returning */}
+              {showCheckbox ? (
+                <View style={styles.checkRow}>
+                  <TouchableOpacity
+                    onPress={handleCheckboxToggle}
+                    style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}
+                    activeOpacity={0.7}
+                    accessibilityLabel="Accept terms and privacy policy"
+                  >
+                    {termsAccepted && <Text style={styles.checkmark}>✓</Text>}
+                  </TouchableOpacity>
+                  <Text style={styles.checkLabel}>
+                    {'By continuing, you agree to our '}
+                    <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/terms'); setShowLegal(true); }}>Terms of Service</Text>
+                    {' and '}
+                    <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/privacy'); setShowLegal(true); }}>Privacy Policy</Text>
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.terms}>
+                  {'By continuing, you agree to our '}
+                  <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/terms'); setShowLegal(true); }}>Terms of Service</Text>
+                  {' and '}
+                  <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/privacy'); setShowLegal(true); }}>Privacy Policy</Text>
+                </Text>
+              )}
             </View>
 
             {/* Feature strip */}
@@ -239,6 +296,26 @@ export default function LoginScreen({ navigation }: Props) {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* ── Legal WebView Modal ───────────────────────────────────────── */}
+      <Modal
+        visible={showLegal}
+        animationType="slide"
+        onRequestClose={() => setShowLegal(false)}
+      >
+        <SafeAreaView style={styles.legalRoot} edges={['top']}>
+          <View style={styles.legalHeader}>
+            <TouchableOpacity onPress={() => setShowLegal(false)} style={styles.legalBack}>
+              <Text style={styles.legalBackText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.legalTitle} numberOfLines={1}>
+              {legalUrl.includes('terms') ? 'Terms of Service' : 'Privacy Policy'}
+            </Text>
+            <View style={{ width: 70 }} />
+          </View>
+          <WebView source={{ uri: legalUrl }} style={{ flex: 1 }} />
+        </SafeAreaView>
+      </Modal>
 
       {/* ── Country Picker Modal ──────────────────────────────────────── */}
       <Modal
@@ -342,10 +419,24 @@ const styles = StyleSheet.create({
   emailInput:    { backgroundColor: C.INPUT_BG, borderRadius: 12, borderWidth: 1, borderColor: C.BORDER, fontSize: 16, color: C.TEXT, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 16 },
 
   // Button
-  btn:           { backgroundColor: C.PRIMARY, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginBottom: 12 },
-  btnText:       { color: '#fff', fontSize: 16, fontWeight: '700' },
-  terms:         { fontSize: 12, color: C.TEXT2, textAlign: 'center', lineHeight: 18 },
-  link:          { color: C.PRIMARY, fontWeight: '600' },
+  btn:            { backgroundColor: C.PRIMARY, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginBottom: 12 },
+  btnText:        { color: '#fff', fontSize: 16, fontWeight: '700' },
+  terms:          { fontSize: 12, color: C.TEXT2, textAlign: 'center', lineHeight: 18 },
+  link:           { color: C.PRIMARY, fontWeight: '600' },
+
+  // Terms checkbox (new users)
+  checkRow:       { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  checkbox:       { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: C.TEXT3, alignItems: 'center', justifyContent: 'center', marginTop: 1, flexShrink: 0 },
+  checkboxChecked:{ backgroundColor: C.PRIMARY, borderColor: C.PRIMARY },
+  checkmark:      { color: '#fff', fontSize: 11, fontWeight: '800' },
+  checkLabel:     { flex: 1, fontSize: 12, color: C.TEXT2, lineHeight: 18 },
+
+  // Legal WebView modal
+  legalRoot:      { flex: 1, backgroundColor: '#fff' },
+  legalHeader:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  legalBack:      { width: 70 },
+  legalBackText:  { fontSize: 15, color: C.PRIMARY, fontWeight: '600' },
+  legalTitle:     { flex: 1, fontSize: 16, fontWeight: '700', color: C.TEXT, textAlign: 'center' },
 
   // Features
   featureLabel:  { fontSize: 13, fontWeight: '700', color: C.TEXT2, marginHorizontal: 16, marginTop: 8, marginBottom: 8 },

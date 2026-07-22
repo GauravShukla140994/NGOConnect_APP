@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Modal,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,9 +14,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { list as listOrgs, getRecommended, orgApi } from '../../api/org.api';
+import { getMyOrgs } from '../../api/user.api';
+import { notificationApi } from '../../api/notification.api';
+import { useAuthStore } from '../../store/authStore';
+import { useAdminStore } from '../../store/adminStore';
 import type { Organisation } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
@@ -165,6 +171,74 @@ function TrendingCard({ campaign, onPress }: { campaign: any; onPress: () => voi
 export default function ExploreScreen() {
   const nav    = useNavigation<any>();
   const insets = useSafeAreaInsets();
+
+  // ── Auth / Admin store ────────────────────────────────────────────────────────
+  const user                                              = useAuthStore((s) => s.user);
+  const { selectedOrg, activeOrg: storeActiveOrg, setActiveOrg } = useAdminStore();
+
+  // ── Org switcher state (mirrors CommunityScreen pattern) ──────────────────────
+  const [userOrgs,        setUserOrgs]        = useState<any[]>([]);
+  const [activeOrgId,     setActiveOrgId]     = useState<number | null>(
+    selectedOrg?.orgId ?? storeActiveOrg?.orgId ?? null,
+  );
+  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
+
+  // Derived
+  const activeOrg    = userOrgs.find((o) => o.orgId === activeOrgId)
+                    ?? userOrgs.find((o) => o.memberStatusCode === 'APPROVED')
+                    ?? selectedOrg ?? storeActiveOrg;
+  const exploreOrgName = activeOrg?.orgName ?? activeOrg?.name ?? 'Explore';
+  const orgInitials  = exploreOrgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+  const approvedOrgs = userOrgs.filter((o) => o.memberStatusCode === 'APPROVED');
+
+  // Deterministic color for org avatar
+  const ORG_COLORS   = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A', '#7C3AED'];
+  const orgAvatarColor = (name: string) => {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) { h = (h * 31 + name.charCodeAt(i)) % ORG_COLORS.length; }
+    return ORG_COLORS[Math.abs(h)];
+  };
+
+  // User initials for avatar
+  const userInitials = ((user?.firstName?.[0] ?? '') + (user?.lastName?.[0] ?? '')).toUpperCase() || '?';
+
+  // ── Fetch user orgs once ──────────────────────────────────────────────────────
+  useEffect(() => {
+    getMyOrgs().then((r) => {
+      if (r.data?.isSuccess) {
+        const orgs = r.data.data ?? [];
+        setUserOrgs(orgs);
+        setActiveOrgId((prev) => {
+          if (prev) { return prev; }
+          const first = orgs.find((o: any) => o.memberStatusCode === 'APPROVED');
+          return first?.orgId ?? orgs[0]?.orgId ?? null;
+        });
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Keep store in sync when local org changes
+  useEffect(() => {
+    if (activeOrg) { setActiveOrg(activeOrg); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrgId]);
+
+  // Sync FROM store when another tab (e.g. HomeScreen) switches the active org
+  useEffect(() => {
+    if (storeActiveOrg?.orgId && storeActiveOrg.orgId !== activeOrgId) {
+      setActiveOrgId(storeActiveOrg.orgId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeActiveOrg?.orgId]);
+
+  // ── Notification unread count ─────────────────────────────────────────────────
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useFocusEffect(useCallback(() => {
+    notificationApi.getUnreadCount()
+      .then(r => { if (r.data?.isSuccess) { setUnreadCount(r.data.data?.count ?? 0); } })
+      .catch(() => {});
+  }, []));
 
   const [tab,         setTab]         = useState<TabKey>('recommended');
   const [categoryCode,setCategoryCode]= useState<string>('ALL');   // stores DB code
@@ -325,10 +399,133 @@ export default function ExploreScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
 
-      {/* Header */}
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Explore</Text>
+        <View style={styles.headerRow}>
+          {/* Left: org selector */}
+          <TouchableOpacity
+            style={styles.orgSelector}
+            onPress={() => setShowOrgSwitcher(true)}
+            accessibilityLabel="Switch organization"
+          >
+            {activeOrg?.logoUrl || activeOrg?.orgLogoUrl ? (
+              <Image
+                source={{ uri: (activeOrg.logoUrl ?? activeOrg.orgLogoUrl)! }}
+                style={styles.orgAvatarImg}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.orgAvatar, { backgroundColor: orgAvatarColor(exploreOrgName) }]}>
+                <Text style={styles.orgAvatarText}>{orgInitials}</Text>
+              </View>
+            )}
+            <Text style={styles.orgName} numberOfLines={1}>{exploreOrgName}</Text>
+            <Text style={styles.orgChevron}>▾</Text>
+          </TouchableOpacity>
+
+          {/* Right: bell + user avatar */}
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={() => {
+                setUnreadCount(0);
+                nav.navigate('Notifications');
+              }}
+              style={styles.headerIconBtn}
+              accessibilityLabel="Notifications"
+            >
+              <Text style={styles.headerIcon}>🔔</Text>
+              {unreadCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadCount > 99 ? '99+' : String(unreadCount)}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => nav.navigate('Profile')}
+              accessibilityLabel="My profile"
+            >
+              {user?.profilePhoto
+                ? <Image source={{ uri: user.profilePhoto }} style={styles.userAvatarImg} />
+                : (
+                  <View style={styles.userAvatar}>
+                    <Text style={styles.userAvatarText}>{userInitials}</Text>
+                  </View>
+                )
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
+
+      {/* ── Org Switcher Modal ──────────────────────────────────────────── */}
+      <Modal
+        visible={showOrgSwitcher}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowOrgSwitcher(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowOrgSwitcher(false)}>
+          <Pressable style={styles.orgSwitcherSheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            <View style={styles.orgSwitcherHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.orgSwitcherTitle}>Switch Organisation</Text>
+                <Text style={styles.orgSwitcherSubtitle}>Select an active organisation</Text>
+              </View>
+              <Pressable onPress={() => setShowOrgSwitcher(false)} hitSlop={10}>
+                <Text style={styles.orgSwitcherClose}>✕</Text>
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
+              {approvedOrgs.map((org) => {
+                const oName    = org.orgName ?? org.name ?? 'NGO';
+                const isActive = org.orgId === activeOrgId;
+                const oInitials = oName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+                const role     = org.myRole ?? org.role ?? 'Member';
+                const members  = org.memberCount ? `${org.memberCount.toLocaleString()} members` : '';
+                const subtitle = [role, members].filter(Boolean).join(' · ');
+                return (
+                  <Pressable
+                    key={org.orgId}
+                    style={[styles.orgSwitcherItem, isActive && styles.orgSwitcherItemActive]}
+                    onPress={() => {
+                      setActiveOrgId(org.orgId);
+                      setActiveOrg(org);
+                      setShowOrgSwitcher(false);
+                    }}
+                    accessibilityLabel={`Switch to ${oName}`}
+                  >
+                    {org.logoUrl || org.orgLogoUrl ? (
+                      <Image
+                        source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }}
+                        style={styles.orgSwitcherAvatar}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.orgSwitcherAvatar, { backgroundColor: orgAvatarColor(oName) }]}>
+                        <Text style={styles.orgSwitcherAvatarText}>{oInitials}</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.orgSwitcherName, isActive && { color: C.PRIMARY }]} numberOfLines={1}>
+                        {oName}
+                      </Text>
+                      {subtitle ? <Text style={styles.orgSwitcherMeta} numberOfLines={1}>{subtitle}</Text> : null}
+                    </View>
+                    {isActive
+                      ? <View style={styles.orgSwitcherCheck}><Text style={styles.orgSwitcherCheckText}>✓</Text></View>
+                      : <Text style={styles.orgSwitcherChevron}>›</Text>
+                    }
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <View style={{ height: insets.bottom + 8 }} />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Search — All NGOs tab only */}
       {tab === 'all' && (
@@ -514,9 +711,52 @@ export default function ExploreScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: C.BG },
-  header:        { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  headerTitle:   { fontSize: 20, fontWeight: '800', color: C.TEXT },
+  container:          { flex: 1, backgroundColor: C.BG },
+  // ── Header ──────────────────────────────────────────────────────────────────
+  header:             { backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER,
+                        paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10 },
+  headerRow:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  orgSelector:        { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  orgAvatar:          { width: 36, height: 36, borderRadius: 10, alignItems: 'center',
+                        justifyContent: 'center', overflow: 'hidden' },
+  orgAvatarImg:       { width: 36, height: 36, borderRadius: 10, overflow: 'hidden' },
+  orgAvatarText:      { fontSize: 12, fontWeight: '800', color: '#fff' },
+  orgName:            { fontSize: 15, fontWeight: '700', color: C.TEXT, maxWidth: 160 },
+  orgChevron:         { fontSize: 12, color: C.TEXT2 },
+  headerActions:      { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerIconBtn:      { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerIcon:         { fontSize: 20 },
+  notifBadge:         { position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16,
+                        borderRadius: 8, backgroundColor: C.RED, alignItems: 'center',
+                        justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1.5,
+                        borderColor: C.CARD },
+  notifBadgeText:     { fontSize: 9, color: '#FFF', fontWeight: '700', lineHeight: 12 },
+  userAvatar:         { width: 36, height: 36, borderRadius: 18, backgroundColor: C.PRIMARY_LIGHT,
+                        alignItems: 'center', justifyContent: 'center' },
+  userAvatarImg:      { width: 36, height: 36, borderRadius: 18 },
+  userAvatarText:     { fontSize: 13, fontWeight: '700', color: C.PRIMARY },
+  // ── Org Switcher Modal ───────────────────────────────────────────────────────
+  modalOverlay:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalHandle:        { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER,
+                        alignSelf: 'center', marginTop: 10, marginBottom: 4 },
+  orgSwitcherSheet:   { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '70%' },
+  orgSwitcherHeader:  { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16,
+                        paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  orgSwitcherTitle:   { fontSize: 16, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  orgSwitcherSubtitle:{ fontSize: 12, color: C.TEXT2 },
+  orgSwitcherClose:   { fontSize: 18, color: C.TEXT2, paddingLeft: 12 },
+  orgSwitcherItem:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
+                        paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  orgSwitcherItemActive:{ backgroundColor: C.PRIMARY + '08' },
+  orgSwitcherAvatar:  { width: 40, height: 40, borderRadius: 10, alignItems: 'center',
+                        justifyContent: 'center', overflow: 'hidden' },
+  orgSwitcherAvatarText:{ fontSize: 13, fontWeight: '800', color: '#fff' },
+  orgSwitcherName:    { fontSize: 14, fontWeight: '600', color: C.TEXT },
+  orgSwitcherMeta:    { fontSize: 12, color: C.TEXT2, marginTop: 1 },
+  orgSwitcherCheck:   { width: 22, height: 22, borderRadius: 11, backgroundColor: C.PRIMARY,
+                        alignItems: 'center', justifyContent: 'center' },
+  orgSwitcherCheckText:{ color: '#fff', fontSize: 11, fontWeight: '700' },
+  orgSwitcherChevron: { fontSize: 16, color: C.TEXT3 },
   searchBox:     { flexDirection: 'row', alignItems: 'center', margin: 12, paddingHorizontal: 12, backgroundColor: C.INPUT_BG, borderRadius: 12, borderWidth: 1.5, borderColor: C.BORDER, gap: 8 },
   searchIcon:    { fontSize: 16 },
   searchInput:   { flex: 1, paddingVertical: 10, fontSize: 14, color: C.TEXT },

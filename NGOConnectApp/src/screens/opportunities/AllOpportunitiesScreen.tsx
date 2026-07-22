@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
   centered:             { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   loadingText:          { fontSize: 13, color: C.TEXT2, marginTop: 10 },
   topBar:               { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backText:             { color: C.PRIMARY, fontSize: 15, width: 40 },
+  backText:             { color: C.PRIMARY, fontSize: 16, fontWeight: '600', minWidth: 70 },
   topBarTitle:          { fontSize: 16, fontWeight: '700', color: C.TEXT },
   topBarSub:            { fontSize: 11, color: C.TEXT3, marginTop: 1 },
   filterContainer:      { backgroundColor: C.CARD, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: C.BORDER },

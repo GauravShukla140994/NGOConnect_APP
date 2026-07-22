@@ -1,10 +1,14 @@
 import React, { useEffect, useRef } from 'react';
-import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
+import { Alert, Linking, NavigationContainerRef } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import messaging from '@react-native-firebase/messaging';
 import { useAuthStore } from '../store/authStore';
 import { navigationIntegration } from '../config/sentry';
 import { notificationApi } from '../api/notification.api';
+import { pendingInviteStore } from '../store/pendingInviteStore';
+import { pendingDeepLinkStore } from '../store/pendingDeepLinkStore';
+import { shareApi } from '../api/share.api';
 import AuthNavigator from './AuthNavigator';
 import AppNavigator from './AppNavigator';
 
@@ -49,6 +53,53 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Deep-link parsers
+// Handles both custom scheme and universal link, e.g.:
+//   ngoconnect://invite/TOKEN           → InviteAccept  (invite token, always random string)
+//   ngoconnect://ngo/42                 → NgoProfile    (legacy numeric ID — backward compat)
+//   ngoconnect://ngo/abc123...          → NgoProfile    (encrypted share token — v4.9+)
+//   ngoconnect://opportunity/7          → ProjectDetail (legacy numeric ID)
+//   ngoconnect://opportunity/abc123...  → ProjectDetail (encrypted share token)
+//   https://ripplehub.app/invite/TOKEN
+//   https://ripplehub.app/ngo/42
+//   https://ripplehub.app/ngo/abc123...
+//   https://ripplehub.app/opportunity/7
+//   https://ripplehub.app/opportunity/abc123...
+//
+// v4.9: Shared URLs now use AES-256-GCM encrypted tokens instead of raw numeric IDs.
+//       Legacy numeric-ID links are still handled for backward compatibility.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type OrgLinkResult     = { orgId: number } | { token: string } | null;
+type ProjectLinkResult = { projectId: number } | { token: string } | null;
+
+function extractInviteToken(url: string): string | null {
+  const m = url.match(/\/invite\/([A-Za-z0-9_-]{20,})/);
+  return m ? m[1] : null;
+}
+
+function extractOrgLink(url: string): OrgLinkResult {
+  // Matches /ngo/ followed by digits (legacy) OR URL-safe Base64 chars (encrypted token)
+  const m = url.match(/\/ngo\/([A-Za-z0-9_-]+)/);
+  if (!m) return null;
+  const part = m[1];
+  // Pure digits = legacy numeric orgId
+  if (/^\d+$/.test(part)) return { orgId: parseInt(part, 10) };
+  // Otherwise it's an encrypted share token (must be ≥ 20 chars to avoid false positives)
+  if (part.length >= 20) return { token: part };
+  return null;
+}
+
+function extractProjectLink(url: string): ProjectLinkResult {
+  const m = url.match(/\/opportunity\/([A-Za-z0-9_-]+)/);
+  if (!m) return null;
+  const part = m[1];
+  if (/^\d+$/.test(part)) return { projectId: parseInt(part, 10) };
+  if (part.length >= 20) return { token: part };
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 const RootNavigator = () => {
   const isAuthenticated = useAuthStore(state => state.isAuthenticated);
   const loadProfile     = useAuthStore(state => state.loadProfile);
@@ -57,6 +108,137 @@ const RootNavigator = () => {
   // Load profile on auth state change
   useEffect(() => {
     if (isAuthenticated) { loadProfile(); }
+  }, [isAuthenticated]);
+
+  // ── Deep link router — handles invite, ngo profile, project ──────────
+  const handleDeepLink = (url: string) => {
+    // 1. Invite link (always a random opaque token — no change needed)
+    const inviteToken = extractInviteToken(url);
+    if (inviteToken) {
+      if (isAuthenticated) {
+        setTimeout(() => {
+          navRef.current?.navigate('InviteAccept' as never, { token: inviteToken } as never);
+        }, 400);
+      } else {
+        pendingInviteStore.set(inviteToken);
+      }
+      return;
+    }
+
+    // 2. NGO profile link: /ngo/{orgId|token}
+    const orgLink = extractOrgLink(url);
+    if (orgLink) {
+      if (isAuthenticated) {
+        if ('orgId' in orgLink) {
+          // Legacy numeric ID — navigate directly
+          setTimeout(() => {
+            navRef.current?.navigate('NgoProfile' as never, { orgId: orgLink.orgId } as never);
+          }, 400);
+        } else {
+          // Encrypted token — resolve via public API then navigate
+          shareApi.resolveToken(orgLink.token).then(res => {
+            const data = res.data?.data;
+            if (data?.entityType === 'ORG' && data.entityId > 0) {
+              setTimeout(() => {
+                navRef.current?.navigate('NgoProfile' as never, { orgId: data.entityId } as never);
+              }, 400);
+            }
+          }).catch(() => { /* silent — invalid token, ignore */ });
+        }
+      } else {
+        // Store for post-login resolution
+        if ('orgId' in orgLink) {
+          pendingDeepLinkStore.set({ type: 'ngo', id: orgLink.orgId });
+        } else {
+          pendingDeepLinkStore.set({ type: 'ngo', token: orgLink.token });
+        }
+      }
+      return;
+    }
+
+    // 3. Project / opportunity link: /opportunity/{projectId|token}
+    const projectLink = extractProjectLink(url);
+    if (projectLink) {
+      if (isAuthenticated) {
+        if ('projectId' in projectLink) {
+          setTimeout(() => {
+            navRef.current?.navigate('ProjectDetail' as never, { projectId: projectLink.projectId } as never);
+          }, 400);
+        } else {
+          shareApi.resolveToken(projectLink.token).then(res => {
+            const data = res.data?.data;
+            if (data?.entityType === 'OPP' && data.entityId > 0) {
+              setTimeout(() => {
+                navRef.current?.navigate('ProjectDetail' as never, { projectId: data.entityId } as never);
+              }, 400);
+            }
+          }).catch(() => { /* silent */ });
+        }
+      } else {
+        if ('projectId' in projectLink) {
+          pendingDeepLinkStore.set({ type: 'project', id: projectLink.projectId });
+        } else {
+          pendingDeepLinkStore.set({ type: 'project', token: projectLink.token });
+        }
+      }
+    }
+  };
+
+  // Cold start: app launched directly from a deep link
+  useEffect(() => {
+    Linking.getInitialURL().then(url => {
+      if (url) { handleDeepLink(url); }
+    });
+  }, []);
+
+  // Warm start: link tapped while app is running
+  useEffect(() => {
+    const sub = Linking.addEventListener('url', ({ url }) => handleDeepLink(url));
+    return () => sub.remove();
+  }, [isAuthenticated]);
+
+  // After login: flush any pending deep link stored before login
+  useEffect(() => {
+    if (!isAuthenticated) { return; }
+
+    // Pending invite
+    const token = pendingInviteStore.get();
+    if (token) {
+      pendingInviteStore.clear();
+      setTimeout(() => {
+        navRef.current?.navigate('InviteAccept' as never, { token } as never);
+      }, 600);
+      return;
+    }
+
+    // Pending NGO / Project — may be a legacy numeric ID or an encrypted token (v4.9+)
+    const pending = pendingDeepLinkStore.get();
+    if (!pending) { return; }
+    pendingDeepLinkStore.clear();
+
+    if ('id' in pending) {
+      // Legacy numeric ID path — navigate directly
+      setTimeout(() => {
+        if (pending.type === 'ngo') {
+          navRef.current?.navigate('NgoProfile' as never, { orgId: pending.id } as never);
+        } else if (pending.type === 'project') {
+          navRef.current?.navigate('ProjectDetail' as never, { projectId: pending.id } as never);
+        }
+      }, 600);
+    } else {
+      // Encrypted token path — resolve via public API then navigate
+      shareApi.resolveToken(pending.token).then(res => {
+        const data = res.data?.data;
+        if (!data) return;
+        setTimeout(() => {
+          if (data.entityType === 'ORG' && data.entityId > 0) {
+            navRef.current?.navigate('NgoProfile' as never, { orgId: data.entityId } as never);
+          } else if (data.entityType === 'OPP' && data.entityId > 0) {
+            navRef.current?.navigate('ProjectDetail' as never, { projectId: data.entityId } as never);
+          }
+        }, 600);
+      }).catch(() => { /* invalid token — drop silently */ });
+    }
   }, [isAuthenticated]);
 
   // ── FCM: request permission + register token ────────────────────────────
@@ -85,11 +267,26 @@ const RootNavigator = () => {
     return () => { tokenRefreshUnsub?.(); };
   }, [isAuthenticated]);
 
-  // ── FCM: foreground messages (silent — let notification bell refresh) ───
+  // ── FCM: foreground messages → in-app banner ──────────────────────────
+  // When the app is in the foreground FCM does NOT auto-show a system banner.
+  // We show a non-blocking Alert so the user still sees the notification.
   useEffect(() => {
     if (!isAuthenticated) { return; }
-    const unsub = messaging().onMessage(async () => {
-      // foreground: no-op for now; bell badge auto-refreshes on screen focus
+    const unsub = messaging().onMessage(async (remoteMessage) => {
+      const title = remoteMessage.notification?.title ?? 'RippleHub';
+      const body  = remoteMessage.notification?.body  ?? '';
+      if (!body) { return; } // data-only message — ignore visually
+
+      // Navigate on tap (same logic as background tap)
+      const data   = (remoteMessage.data ?? {}) as NotifData;
+      const target = resolveScreen(data);
+
+      Alert.alert(title, body, [
+        { text: 'Dismiss', style: 'cancel' },
+        ...(target ? [{ text: 'View', onPress: () => {
+          navRef.current?.navigate(target.screen as never, (target.params ?? {}) as never);
+        }}] : []),
+      ]);
     });
     return unsub;
   }, [isAuthenticated]);

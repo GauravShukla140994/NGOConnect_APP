@@ -20,6 +20,7 @@ import { getCommunityFeed, acknowledgePost, voteOnPoll, likePost } from '../../a
 import { feedApi } from '../../api/feed.api';
 import { sosApi } from '../../api/sos.api';
 import { getMyOrgs } from '../../api/user.api';
+import { notificationApi } from '../../api/notification.api';
 import { useAuthStore }  from '../../store/authStore';
 import { useAdminStore } from '../../store/adminStore';
 import NewPostModal             from '../../components/community/NewPostModal';
@@ -258,6 +259,18 @@ export default function CommunityScreen() {
   const orgInitials = orgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const approvedOrgs = userOrgs.filter((o) => o.memberStatusCode === 'APPROVED');
 
+  // ── Notification unread count ─────────────────────────────────────────────────
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useFocusEffect(useCallback(() => {
+    notificationApi.getUnreadCount()
+      .then(r => { if (r.data?.isSuccess) { setUnreadCount(r.data.data?.count ?? 0); } })
+      .catch(() => {});
+  }, []));
+
+  // Derived user initials for avatar
+  const userInitials = ((user?.firstName?.[0] ?? '') + (user?.lastName?.[0] ?? '')).toUpperCase() || '?';
+
   // ── Search state ──────────────────────────────────────────────────────────────
   const [showSearch,  setShowSearch]  = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -293,11 +306,23 @@ export default function CommunityScreen() {
     }).catch(() => {});
   }, []);
 
-  // Keep the shared store in sync whenever active org changes
+  // Keep the shared store in sync whenever local org changes
   useEffect(() => {
     if (activeOrg) { setActiveOrg(activeOrg); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
+
+  // Sync FROM store when another tab (e.g. HomeScreen) switches the active org
+  useEffect(() => {
+    if (storeActiveOrg?.orgId && storeActiveOrg.orgId !== activeOrgId) {
+      setActiveOrgId(storeActiveOrg.orgId);
+      // Clear stale posts — feed reloads automatically via fetchFeed dep chain
+      setPosts([]);
+      setPage(1);
+      setTotalCount(0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeActiveOrg?.orgId]);
 
   // ── Community FAB: check CanCommunityPost before opening modal ───────────────
   const handleComposeFabPress = useCallback(async () => {
@@ -558,6 +583,7 @@ export default function CommunityScreen() {
             <Text style={styles.orgChevron}>▾</Text>
           </TouchableOpacity>
           <View style={styles.headerActions}>
+            {/* Search toggle */}
             <TouchableOpacity
               onPress={() => {
                 setShowSearch((v) => {
@@ -571,8 +597,39 @@ export default function CommunityScreen() {
             >
               <Text style={styles.headerIcon}>{showSearch ? '✕' : '🔍'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity accessibilityLabel="Menu" style={styles.headerIconBtn}>
-              <Text style={styles.headerIcon}>☰</Text>
+
+            {/* Notification bell */}
+            <TouchableOpacity
+              onPress={() => {
+                setUnreadCount(0);
+                nav.navigate('Notifications' as never);
+              }}
+              style={styles.headerIconBtn}
+              accessibilityLabel="Notifications"
+            >
+              <Text style={styles.headerIcon}>🔔</Text>
+              {unreadCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadCount > 99 ? '99+' : String(unreadCount)}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* User avatar */}
+            <TouchableOpacity
+              onPress={() => nav.navigate('Profile' as never)}
+              accessibilityLabel="My profile"
+            >
+              {user?.profilePhoto
+                ? <Image source={{ uri: user.profilePhoto }} style={styles.userAvatarImg} />
+                : (
+                  <View style={styles.userAvatar}>
+                    <Text style={styles.userAvatarText}>{userInitials}</Text>
+                  </View>
+                )
+              }
             </TouchableOpacity>
           </View>
         </View>
@@ -814,6 +871,15 @@ const styles = StyleSheet.create({
   headerActions:        { flexDirection: 'row', alignItems: 'center', gap: 4 },
   headerIconBtn:        { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerIcon:           { fontSize: 18, color: C.TEXT2 },
+  notifBadge:           { position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16,
+                          borderRadius: 8, backgroundColor: C.RED, alignItems: 'center',
+                          justifyContent: 'center', paddingHorizontal: 3, borderWidth: 1.5,
+                          borderColor: C.CARD },
+  notifBadgeText:       { fontSize: 9, color: '#FFF', fontWeight: '700', lineHeight: 12 },
+  userAvatar:           { width: 32, height: 32, borderRadius: 16, backgroundColor: C.PRIMARY_LIGHT,
+                          alignItems: 'center', justifyContent: 'center' },
+  userAvatarImg:        { width: 32, height: 32, borderRadius: 16 },
+  userAvatarText:       { fontSize: 12, fontWeight: '700', color: C.PRIMARY },
   searchBar:            { flexDirection: 'row', alignItems: 'center', backgroundColor: C.BG, borderRadius: 10, borderWidth: 1, borderColor: C.BORDER, paddingHorizontal: 10, paddingVertical: 6, marginTop: 8, gap: 6 },
   searchIcon:           { fontSize: 14 },
   searchInput:          { flex: 1, fontSize: 14, color: C.TEXT, padding: 0 },

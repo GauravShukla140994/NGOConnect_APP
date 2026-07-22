@@ -45,6 +45,10 @@ import AdminWithdrawalScreen   from '../screens/admin/AdminWithdrawalScreen';
 import AdminOrgScreen          from '../screens/admin/AdminOrgScreen';
 import VolunteerProfileScreen  from '../screens/admin/VolunteerProfileScreen';
 import MemberImpactScreen      from '../screens/admin/MemberImpactScreen';
+import InviteMembersScreen     from '../screens/admin/InviteMembersScreen';
+import InviteAcceptScreen     from '../screens/invite/InviteAcceptScreen';
+import WebViewScreen          from '../screens/common/WebViewScreen';
+import HelpSupportScreen      from '../screens/profile/HelpSupportScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -172,6 +176,16 @@ const AppNavigator = () => (
     <Stack.Screen name="AdminOrg"          component={AdminOrgScreen}          />
     <Stack.Screen name="VolunteerProfile"  component={VolunteerProfileScreen}  />
     <Stack.Screen name="MemberImpact"      component={MemberImpactScreen}      />
+    <Stack.Screen name="InviteMembers"     component={InviteMembersScreen}     />
+
+    {/* Invite deep link — accessible from any part of the app */}
+    <Stack.Screen name="InviteAccept"     component={InviteAcceptScreen}      />
+
+    {/* In-app browser — for T&C, Privacy Policy, and other web content */}
+    <Stack.Screen name="WebView"          component={WebViewScreen}           />
+
+    {/* Help & Support */}
+    <Stack.Screen name="HelpSupport"      component={HelpSupportScreen}       />
   </Stack.Navigator>
 );
 

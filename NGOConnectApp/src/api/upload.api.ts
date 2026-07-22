@@ -6,8 +6,11 @@ import apiClient from './apiClient';
 import { ApiResponse } from '../types/api.types';
 
 export interface UploadResult {
-  fileUrl: string;
-  fileName: string;
+  fileUrl:    string | null;
+  fileKey:    string | null;
+  fileName:   string;
+  fileSizeKb?: number;
+  isPrivate?: boolean;
 }
 
 export const uploadFile = async (
@@ -33,8 +36,26 @@ export const uploadFile = async (
     { headers: { 'Content-Type': undefined } },
   );
 
-  if (res.data?.isSuccess && res.data.data?.fileUrl) {
-    return res.data.data.fileUrl;
+  // Private modules (user-documents, org-documents, certificates) return fileKey.
+  // Public modules (user-photos, org-logos, etc.) return fileUrl.
+  const storageRef = res.data?.data?.fileUrl ?? res.data?.data?.fileKey;
+  if (res.data?.isSuccess && storageRef) {
+    return storageRef;
   }
   throw new Error(res.data?.message ?? 'Upload failed');
+};
+
+/**
+ * Get a temporary signed URL for a private document.
+ * fileKey is what's stored in DB for private modules (user-documents, org-documents, etc.)
+ * Returns a short-lived HTTPS URL valid for 15 minutes.
+ */
+export const getSignedUrl = async (fileKey: string): Promise<string> => {
+  const res = await apiClient.get<ApiResponse<{ signedUrl: string; expiresInMinutes: number }>>(
+    `/media/signed-url?key=${encodeURIComponent(fileKey)}`,
+  );
+  if (res.data?.isSuccess && res.data.data?.signedUrl) {
+    return res.data.data.signedUrl;
+  }
+  throw new Error(res.data?.message ?? 'Could not generate download link');
 };

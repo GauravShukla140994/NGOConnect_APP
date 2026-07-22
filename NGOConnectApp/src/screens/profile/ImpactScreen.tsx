@@ -17,7 +17,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { getMyImpact, getMyBadges, getMyApplications } from '../../api/user.api';
+import { getMyImpact, getMyBadges, getMyApplications, withdrawApplication } from '../../api/user.api';
 import type { UserImpact, UserBadge, UserApplication } from '../../types/api.types';
 import QRScannerModal    from './QRScannerModal';
 import ProjectDetailModal from './ProjectDetailModal';
@@ -106,6 +106,24 @@ function appliedDateLine(app: UserApplication) {
   return `Applied ${date}`;
 }
 
+/**
+ * Returns true if the user is allowed to withdraw this application.
+ * - PENDING: always allowed (admin hasn't reviewed yet)
+ * - APPROVED: only allowed if project start is more than 24 hours away
+ */
+function canWithdraw(app: UserApplication): boolean {
+  if (app.statusCode === 'PENDING') return true;
+  // APPROVED — enforce 24-hour gate
+  if (app.scheduleTypeCode === 'FLEXIBLE' || !app.recurStart) return true;
+  const startDate = new Date(app.recurStart);
+  if (app.sessionStartTime) {
+    const [h, m, s] = app.sessionStartTime.split(':').map(Number);
+    startDate.setHours(h, m, s ?? 0, 0);
+  }
+  const hoursLeft = (startDate.getTime() - Date.now()) / (1000 * 60 * 60);
+  return hoursLeft > 24;
+}
+
 // ─── Status chip ──────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<string, { color: string; bg: string; label: string; icon?: string }> = {
@@ -131,11 +149,13 @@ function StatusChip({ code }: { code: string }) {
 // ─── Applied Card ─────────────────────────────────────────────────────────────
 
 function AppliedCard({
-  app, onPress,
-}: { app: UserApplication; onPress: () => void }) {
+  app, onPress, onWithdraw,
+}: { app: UserApplication; onPress: () => void; onWithdraw: (app: UserApplication) => void }) {
   const borderColor = app.statusCode === 'PENDING' ? '#F59E0B'
     : app.statusCode === 'APPROVED'  ? '#059669'
     : C.BORDER;
+
+  const allowed = canWithdraw(app);
 
   return (
     <TouchableOpacity style={[s.projectCard, { borderLeftColor: borderColor }]} onPress={onPress} activeOpacity={0.8}>
@@ -154,15 +174,19 @@ function AppliedCard({
         <Text style={s.appliedLine}>{appliedDateLine(app)}</Text>
         {app.statusCode === 'PENDING' && (
           <TouchableOpacity
-            style={s.withdrawBtn}
-            onPress={() =>
-              Alert.alert('Withdraw Application', `Withdraw from "${app.projectName}"?`, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Withdraw', style: 'destructive', onPress: () => { /* TODO: withdraw API */ } },
-              ])
-            }
+            style={[s.withdrawBtn, !allowed && s.withdrawBtnDisabled]}
+            onPress={() => {
+              if (!allowed) {
+                Alert.alert(
+                  'Cannot Withdraw',
+                  'Withdrawal is not allowed within 24 hours of the project start.',
+                );
+                return;
+              }
+              onWithdraw(app);
+            }}
           >
-            <Text style={s.withdrawBtnText}>Withdraw</Text>
+            <Text style={[s.withdrawBtnText, !allowed && { color: '#9CA3AF' }]}>Withdraw</Text>
           </TouchableOpacity>
         )}
         {app.statusCode === 'APPROVED' && (
@@ -437,6 +461,40 @@ export default function ImpactScreen() {
   const fullName  = [impact?.firstName, impact?.lastName].filter(Boolean).join(' ') || 'Volunteer';
 
   const openDetail = (app: UserApplication) => { setDetailApp(app); setDetailVisible(true); };
+
+  const handleWithdraw = (app: UserApplication) => {
+    Alert.alert(
+      'Withdraw Application',
+      `Withdraw from "${app.projectName}"?\n\nThis action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Withdraw',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await withdrawApplication(app.applicationId);
+              if (res.data?.isSuccess === 1) {
+                // Update local state immediately — mark as WITHDRAWN
+                setApplications(prev =>
+                  prev.map(a =>
+                    a.applicationId === app.applicationId
+                      ? { ...a, statusCode: 'WITHDRAWN', status: 'Withdrawn' }
+                      : a,
+                  ),
+                );
+                Alert.alert('Withdrawn', 'Your application has been withdrawn.');
+              } else {
+                Alert.alert('Could not withdraw', res.data?.message ?? 'Please try again.');
+              }
+            } catch (err: any) {
+              Alert.alert('Could not withdraw', err?.response?.data?.message ?? 'Please check your connection.');
+            }
+          },
+        },
+      ],
+    );
+  };
   const openQR     = (app: UserApplication) => {
     setQrProjectId(app.projectId);
     setQrProjectName(app.projectName);
@@ -446,7 +504,7 @@ export default function ImpactScreen() {
   const onShare = useCallback(async () => {
     try {
       await Share.share({
-        message: `I'm a ${rankName} on NGO Connect with an impact score of ${score.toLocaleString()}! 🌍 Join me at ngoconnect.app`,
+        message: `I'm a ${rankName} on RippleHub with an impact score of ${score.toLocaleString()}! 🌍 Join me at ripplehub.app`,
       });
     } catch { /* ignore */ }
   }, [rankName, score]);
@@ -567,7 +625,7 @@ export default function ImpactScreen() {
                 {tabApps.Applied.length === 0
                   ? <EmptyState icon="📝" text="No applications yet. Explore projects to apply!" />
                   : tabApps.Applied.map((app, i) => (
-                      <AppliedCard key={i} app={app} onPress={() => openDetail(app)} />
+                      <AppliedCard key={i} app={app} onPress={() => openDetail(app)} onWithdraw={handleWithdraw} />
                     ))
                 }
               </>
@@ -816,8 +874,9 @@ const s = StyleSheet.create({
 
   // Applied-specific
   appliedLine:    { flex: 1, fontSize: 11, color: C.TEXT2 },
-  withdrawBtn:    { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10, borderWidth: 1.5, borderColor: C.ORANGE },
-  withdrawBtnText: { color: C.ORANGE, fontSize: 12, fontWeight: '700' },
+  withdrawBtn:         { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10, borderWidth: 1.5, borderColor: C.ORANGE },
+  withdrawBtnDisabled: { borderColor: '#D1D5DB', backgroundColor: '#F9FAFB' },
+  withdrawBtnText:     { color: C.ORANGE, fontSize: 12, fontWeight: '700' },
 
   // Upcoming-specific
   hintBox:        { backgroundColor: '#FFFBEB', borderRadius: 8, padding: 10, marginVertical: 10 },

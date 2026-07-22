@@ -1,4 +1,4 @@
-package com.ngoconnectapp
+package app.ripplehub
 
 import android.app.Application
 import android.app.NotificationChannel
@@ -17,8 +17,7 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          // Packages that cannot be autolinked yet can be added manually here
         },
     )
   }
@@ -30,16 +29,15 @@ class MainApplication : Application(), ReactApplication {
   }
 
   // Android 8+ requires notification channels to be registered before any
-  // FCM notification can be displayed. The channelId must match what the
-  // backend sends in AndroidConfig.Notification.ChannelId ("ngoconnect_default").
+  // FCM notification can be displayed. ChannelId must match what the backend
+  // sends in AndroidConfig.Notification.ChannelId.
   private fun createNotificationChannels() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-      // Default channel — used for all general NGO Connect push notifications
       NotificationChannel(
-        "ngoconnect_default",
-        "NGO Connect Notifications",
+        "ripplehub_default",
+        "RippleHub Notifications",
         NotificationManager.IMPORTANCE_HIGH
       ).apply {
         description = "Volunteer applications, org approvals, badges, community updates"

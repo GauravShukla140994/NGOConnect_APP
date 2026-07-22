@@ -35,7 +35,6 @@ const ACTIVITY_ITEMS = [
   { icon: '🏢', label: 'Admin Dashboard',     screen: 'AdminTabs' },
   { icon: '🏛', label: 'My Organizations',   screen: 'MyOrgs' },
   { icon: '💛', label: 'My Donations',        screen: 'MyDonations' },
-  { icon: '↗', label: 'Share Profile',       screen: 'ShareProfile' },
 ];
 
 // Returns true if the org is one the user administers (ADMIN or FOUNDER role).
@@ -48,9 +47,11 @@ function isAdminOrg(o: Organisation): boolean {
 }
 
 const SETTINGS_ITEMS = [
-  { icon: '🔔', label: 'Notifications',       screen: 'Notifications' },
-  { icon: '🔐', label: 'Privacy',             screen: 'Privacy' },
-  { icon: '⚙', label: 'Account Settings',   screen: 'AccountSettings' },
+  { icon: '🔔', label: 'Notifications',    screen: 'Notifications',  params: undefined },
+  { icon: '📋', label: 'Terms of Service', screen: 'WebView',         params: { url: 'https://www.ripplehub.app/terms',   title: 'Terms of Service' } },
+  { icon: '🔐', label: 'Privacy Policy',   screen: 'WebView',         params: { url: 'https://www.ripplehub.app/privacy', title: 'Privacy Policy'   } },
+  { icon: '🆘', label: 'Help & Support',   screen: 'HelpSupport',     params: undefined },
+  { icon: '⚙',  label: 'Account Settings', screen: 'AccountSettings', params: undefined },
 ];
 
 export default function ProfileScreen() {
@@ -240,7 +241,9 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats row */}
+        {/* Stats row — all four values come from User_GetProfile SP (v4.9).
+            Hours/Projects/NGOs use the same logic as User_GetImpact so they
+            always match the Impact screen. */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{profile?.totalHours ?? 0}</Text>
@@ -258,7 +261,7 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{orgs.length}</Text>
+            <Text style={styles.statValue}>{profile?.ngosJoined ?? 0}</Text>
             <Text style={styles.statLabel}>NGOs</Text>
           </View>
         </View>
@@ -288,9 +291,9 @@ export default function ProfileScreen() {
           <View style={styles.menuCard}>
             {SETTINGS_ITEMS.map((item, index) => (
               <TouchableOpacity
-                key={item.screen}
+                key={item.label}
                 style={[styles.menuItem, index < SETTINGS_ITEMS.length - 1 && styles.menuItemBorder]}
-                onPress={() => nav.navigate(item.screen)}
+                onPress={() => nav.navigate(item.screen as any, item.params)}
                 accessibilityLabel={item.label}
               >
                 <Text style={styles.menuIcon}>{item.icon}</Text>

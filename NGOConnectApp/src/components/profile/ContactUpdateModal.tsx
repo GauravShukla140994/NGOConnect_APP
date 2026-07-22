@@ -137,14 +137,16 @@ export default function ContactUpdateModal({ visible, type, onClose, onVerified 
   }, [value, type, isPhone, country, startCountdown]);
 
   // ── Step 2: Verify OTP ────────────────────────────────────────────────────
-  const handleVerify = useCallback(async () => {
-    if (otp.length !== 6) {
+  // Accepts an explicit code so it can be called from onChangeText (auto-fill)
+  // without hitting stale-closure on the otp state variable.
+  const verifyCode = useCallback(async (code: string) => {
+    if (code.length !== 6) {
       Alert.alert('Required', 'Please enter the 6-digit OTP.');
       return;
     }
     setVerifying(true);
     try {
-      const res = await verifyContactOtp(type, value.trim(), otp.trim());
+      const res = await verifyContactOtp(type, value.trim(), code.trim());
       if (res.data?.isSuccess) {
         onVerified(value.trim());
         resetModal();
@@ -157,7 +159,9 @@ export default function ContactUpdateModal({ visible, type, onClose, onVerified 
     } finally {
       setVerifying(false);
     }
-  }, [otp, type, value, onVerified, resetModal, onClose]);
+  }, [type, value, onVerified, resetModal, onClose]);
+
+  const handleVerify = useCallback(() => verifyCode(otp), [otp, verifyCode]);
 
   const handleResend = useCallback(() => {
     setOtp('');
@@ -335,11 +339,18 @@ export default function ContactUpdateModal({ visible, type, onClose, onVerified 
                   <TextInput
                     style={s.input}
                     value={otp}
-                    onChangeText={t => setOtp(t.replace(/\D/g, '').slice(0, 6))}
+                    onChangeText={t => {
+                      const cleaned = t.replace(/\D/g, '').slice(0, 6);
+                      setOtp(cleaned);
+                      // Auto-verify on 6 digits — pass cleaned directly to avoid stale-closure on otp state
+                      if (cleaned.length === 6) verifyCode(cleaned);
+                    }}
                     placeholder="Enter 6-digit code"
                     placeholderTextColor={C.TEXT3}
                     keyboardType="number-pad"
                     maxLength={6}
+                    textContentType="oneTimeCode"
+                    autoComplete="sms-otp"
                     autoFocus
                     accessibilityLabel="OTP code"
                   />

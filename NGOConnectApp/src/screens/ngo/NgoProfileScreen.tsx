@@ -7,6 +7,7 @@ import {
   Modal,
   PanResponder,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,6 +20,7 @@ import apiClient from '../../api/apiClient';
 import { getProfile, orgApi } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
 import { list as listProjects, projectApi, apply } from '../../api/project.api';
+import { shareApi } from '../../api/share.api';
 import type { ApiResponse, Organisation, Post, Project, PagedResult } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
@@ -428,6 +430,7 @@ export default function NgoProfileScreen() {
   const [modalProjectId,    setModalProjectId]    = useState<number | null>(null);
   const [isFollowing,       setIsFollowing]       = useState(false);
   const [followLoading,     setFollowLoading]     = useState(false);
+  const [sharing,           setSharing]           = useState(false);
 
   // ── Swipe gesture refs ──────────────────────────────────────────────────────
   const tabBarRef   = useRef<ScrollView>(null);
@@ -616,6 +619,30 @@ export default function NgoProfileScreen() {
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => nav.goBack()} style={styles.backBtn} accessibilityLabel="Go back">
           <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.shareTopBtn, sharing && { opacity: 0.55 }]}
+          accessibilityLabel="Share NGO profile"
+          disabled={sharing}
+          onPress={async () => {
+            setSharing(true);
+            try {
+              const res = await shareApi.getToken('ORG', orgId);
+              const url = res.data?.data?.url;
+              const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
+              await Share.share({ message: url ?? `https://ripplehub.app/ngo/${orgId}`, title });
+            } catch {
+              // Fallback to legacy URL if API call fails
+              const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
+              Share.share({ message: `https://ripplehub.app/ngo/${orgId}`, title }).catch(() => {});
+            } finally {
+              setSharing(false);
+            }
+          }}>
+          {sharing
+            ? <ActivityIndicator size="small" color="#fff" style={{ width: 40 }} />
+            : <Text style={styles.shareTopBtnText}>↗ Share</Text>
+          }
         </TouchableOpacity>
         {authUser?.profilePhoto
           ? <Image source={{ uri: authUser.profilePhoto }} style={[styles.userAvatar, { overflow: 'hidden' }]} />
@@ -916,9 +943,11 @@ const styles = StyleSheet.create({
   // Top bar
   topBar:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
   backBtn:           { paddingVertical: 4 },
-  backText:          { fontSize: 14, color: C.TEXT, fontWeight: '500' },
+  backText:          { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   userAvatar:        { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   userAvatarText:    { color: '#fff', fontSize: 12, fontWeight: '700' },
+  shareTopBtn:       { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: C.PRIMARY + '18', borderWidth: 1, borderColor: C.PRIMARY + '40' },
+  shareTopBtnText:   { fontSize: 13, fontWeight: '600', color: C.PRIMARY },
 
   // Hero
   hero:              { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16, backgroundColor: C.CARD },
@@ -1013,7 +1042,7 @@ const mdStyles = StyleSheet.create({
 
   topBar:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
   backBtn:      { paddingVertical: 4 },
-  backText:     { fontSize: 14, color: C.TEXT, fontWeight: '500' },
+  backText:     { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   topTitle:     { fontSize: 16, fontWeight: '700', color: C.TEXT },
   topAvatar:    { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   topAvatarText:{ color: '#fff', fontSize: 12, fontWeight: '700' },

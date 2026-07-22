@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- File download: write to Downloads folder on Android 9 and below (API 28-) -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- Push notifications: required on Android 13+ (API 33+) for FCM banners to appear -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Image picker: read media from gallery -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -28,6 +32,24 @@
         <intent-filter>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+
+        <!-- Custom URI scheme: ngoconnect://invite/{token} -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="ngoconnect" />
+        </intent-filter>
+
+        <!-- App Links (HTTPS): all supported deep link paths -->
+        <intent-filter android:autoVerify="true">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="ripplehub.app" android:pathPrefix="/invite/" />
+            <data android:scheme="https" android:host="ripplehub.app" android:pathPrefix="/ngo/" />
+            <data android:scheme="https" android:host="ripplehub.app" android:pathPrefix="/opportunity/" />
         </intent-filter>
       </activity>
     </application>

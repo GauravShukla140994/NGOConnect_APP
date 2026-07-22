@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
   container:       { flex: 1, backgroundColor: C.BG },
   centered:        { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   topBar:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backText:        { color: C.PRIMARY, fontSize: 15 },
+  backText:        { color: C.PRIMARY, fontSize: 16, fontWeight: '600' },
   topBarTitle:     { fontSize: 16, fontWeight: '700', color: C.TEXT },
   tabBar:          { flexDirection: 'row', backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
   tab:             { flex: 1, paddingVertical: 12, alignItems: 'center' },

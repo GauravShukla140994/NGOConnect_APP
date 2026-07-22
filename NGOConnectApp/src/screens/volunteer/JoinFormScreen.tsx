@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   container:          { flex: 1, backgroundColor: C.BG },
   centered:           { flex: 1, alignItems: 'center', justifyContent: 'center' },
   backRow:            { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 11, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backText:           { color: C.TEXT2, fontSize: 14 },
+  backText:           { color: C.PRIMARY, fontSize: 16, fontWeight: '600' },
   stepBar:            { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, backgroundColor: C.CARD },
   stepDot:            { width: 26, height: 26, borderRadius: 13, backgroundColor: C.BORDER, alignItems: 'center', justifyContent: 'center' },
   stepDotActive:      { backgroundColor: C.PRIMARY },
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
   warningText:        { fontSize: 12, color: '#92400E', lineHeight: 16 },
   navFooter:          { flexDirection: 'row', gap: 10, marginTop: 20 },
   prevBtn:            { borderWidth: 1, borderColor: C.BORDER, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12 },
-  prevBtnText:        { color: C.TEXT2, fontWeight: '600' },
+  prevBtnText:        { color: C.PRIMARY, fontSize: 16, fontWeight: '600' },
   nextBtn:            { flex: 1, backgroundColor: C.PRIMARY, borderRadius: 10, padding: 13, alignItems: 'center' },
   nextBtnText:        { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

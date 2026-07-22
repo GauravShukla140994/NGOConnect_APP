@@ -528,7 +528,7 @@ const s = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: C.BORDER,
   },
   backBtn:       { minWidth: 60, justifyContent: 'center' },
-  backText:      { fontSize: 14, color: C.PRIMARY, fontWeight: '600' },
+  backText:      { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle:   { fontSize: 16, fontWeight: '700', color: C.TEXT },
   adminChip:     {
     backgroundColor: '#EDE9FE', borderRadius: 10,

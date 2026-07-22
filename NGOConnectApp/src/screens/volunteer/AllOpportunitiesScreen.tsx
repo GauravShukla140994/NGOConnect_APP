@@ -19,6 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { list as listProjects } from '../../api/project.api';
+import { shareApi } from '../../api/share.api';
 import ApplyModal from '../../components/project/ApplyModal';
 import type { Project } from '../../types/api.types';
 
@@ -93,21 +94,28 @@ function buildTimeLine(item: Project): string | null {
 }
 
 
-// ── Share URL helper ─────────────────────────────────────────────────────────
-function buildShareUrl(projectId: number): string {
-  return `https://ngoconnect.app/opportunity/${projectId}`;
-}
-
 // ── Share sheet ──────────────────────────────────────────────────────────────
 function ShareSheet({ project, onClose }: { project: Project | null; onClose: () => void }) {
   const slideAnim = useRef(new Animated.Value(500)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
-  const [copied, setCopied] = useState(false);
+  const [copied,   setCopied]   = useState(false);
+  // Encrypted share URL — falls back to legacy URL while token is loading
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (project) {
       setCopied(false);
+      // Fetch encrypted share URL (non-blocking — UI shows legacy fallback meanwhile)
+      const fallback = `https://ripplehub.app/opportunity/${project.projectId}`;
+      setShareUrl(fallback);   // show immediately so the URL row isn't empty
+      shareApi.getToken('OPP', project.projectId)
+        .then(res => {
+          const encrypted = res.data?.data?.url;
+          if (encrypted) setShareUrl(encrypted);
+        })
+        .catch(() => { /* keep fallback URL */ });
+
       Animated.parallel([
         Animated.timing(fadeAnim,  { toValue: 1, duration: 220, useNativeDriver: true }),
         Animated.timing(slideAnim, { toValue: 0, duration: 320, useNativeDriver: true }),
@@ -124,7 +132,7 @@ function ShareSheet({ project, onClose }: { project: Project | null; onClose: ()
 
   if (!project) return null;
 
-  const url   = buildShareUrl(project.projectId);
+  const url   = shareUrl ?? `https://ripplehub.app/opportunity/${project.projectId}`;
   const title = project.title ?? project.projectName ?? 'Volunteer Opportunity';
   const org   = project.orgName ?? '';
   const schedType = deriveScheduleType(project);
@@ -513,7 +521,7 @@ const styles = StyleSheet.create({
   container:         { flex: 1, backgroundColor: C.BG },
   centered:          { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   topBar:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backText:          { color: C.PRIMARY, fontSize: 15 },
+  backText:          { color: C.PRIMARY, fontSize: 16, fontWeight: '600' },
   topBarTitle:       { fontSize: 16, fontWeight: '700', color: C.TEXT },
   filterText:        { color: C.PRIMARY, fontSize: 13 },
   filterContainer:   { backgroundColor: C.CARD, paddingHorizontal: 10, paddingTop: 8, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: C.BORDER },

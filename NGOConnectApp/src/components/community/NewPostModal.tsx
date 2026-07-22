@@ -26,8 +26,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppConfig from '../../config/AppConfig';
 import { lookupApi } from '../../api/lookup.api';
 import { createCommunityPost, createCommunityPoll } from '../../api/community.api';
+import { uploadFile } from '../../api/upload.api';
+import { launchImageLibrary } from 'react-native-image-picker';
 import type { LookupValue } from '../../types/api.types';
 import { UserAvatar } from '../ui';
+
+interface ResourceFileItem {
+  uri: string;
+  name: string;
+  mimeType: string;
+}
 
 const C = AppConfig.COLORS;
 
@@ -120,6 +128,7 @@ export default function NewPostModal({
   // Resource
   const [resourceTitle, setResourceTitle]   = useState('');
   const [resourceDesc, setResourceDesc]     = useState('');
+  const [resourceFile, setResourceFile]     = useState<ResourceFileItem | null>(null);
 
   const [submitting, setSubmitting]         = useState(false);
 
@@ -150,7 +159,7 @@ export default function NewPostModal({
     setEventReference(''); setWhatChanged(EVENT_CHANGES[0]); setUpdateDetails('');
     setHelpNeeded(''); setVolunteersCount(''); setEventDateTime(''); setSkills('');
     setTaskTitle(''); setTaskDesc(''); setAssignedTo(''); setDueDate('');
-    setResourceTitle(''); setResourceDesc('');
+    setResourceTitle(''); setResourceDesc(''); setResourceFile(null);
   };
 
   const handleClose = () => { resetForm(); onClose(); };
@@ -209,22 +218,35 @@ export default function NewPostModal({
           return;
         }
 
+        // Upload resource file first (RESOURCE type only)
+        let uploadedResourceUrl: string | undefined;
+        if (selectedType === 'RESOURCE' && resourceFile) {
+          uploadedResourceUrl = await uploadFile(
+            resourceFile.uri,
+            resourceFile.name,
+            resourceFile.mimeType,
+            AppConfig.UPLOAD_MODULES.POST_MEDIA,
+          );
+        }
+
+        // p_EventRef: multipurpose — whatChanged for EVENT_UPDATE,
+        //             date/time text for VOL_REQUEST, assignee name for TASK
+        const eventRefValue =
+          selectedType === 'EVENT_UPDATE' ? (whatChanged || undefined)
+          : selectedType === 'VOL_REQUEST' ? (eventDateTime.trim() || undefined)
+          : selectedType === 'TASK'        ? (assignedTo.trim()   || undefined)
+          : undefined;
+
         const res = await createCommunityPost({
           orgId,
           title: postTitle,
           content: postContent,
           postTypeLkpId,
           audienceLkpId,
-          isPinned: selectedType === 'ANNOUNCEMENT' ? isPinned : false,
-          notifyAll: selectedType === 'ANNOUNCEMENT' ? notifyAll : false,
-          allowBestAnswer: selectedType === 'QUESTION' ? allowBestAnswer : false,
-          eventReference: selectedType === 'EVENT_UPDATE' ? eventReference.trim() : undefined,
-          whatChanged:    selectedType === 'EVENT_UPDATE' ? whatChanged : undefined,
-          volunteersNeeded: selectedType === 'VOL_REQUEST' ? Number(volunteersCount) || undefined : undefined,
-          dateTime:   selectedType === 'VOL_REQUEST' ? eventDateTime || undefined : undefined,
-          skills:     selectedType === 'VOL_REQUEST' ? skills || undefined : undefined,
-          assignedTo: selectedType === 'TASK' ? assignedTo || undefined : undefined,
-          dueDate:    selectedType === 'TASK' ? dueDate || undefined : undefined,
+          isPinned:         selectedType === 'ANNOUNCEMENT' ? isPinned : false,
+          volunteersNeeded: selectedType === 'VOL_REQUEST'  ? (Number(volunteersCount) || undefined) : undefined,
+          eventRef:         eventRefValue,
+          resourceFileUrl:  uploadedResourceUrl,
         });
         if (res.data?.isSuccess !== 1) {
           Alert.alert('Error', res.data?.message || 'Could not create post.');
@@ -239,6 +261,18 @@ export default function NewPostModal({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // ── resource file picker ─────────────────────────────────────────────────
+  const handlePickResourceFile = async () => {
+    const result = await launchImageLibrary({ mediaType: 'mixed', quality: 0.9, selectionLimit: 1 });
+    const asset = result.assets?.[0];
+    if (!asset?.uri) { return; }
+    setResourceFile({
+      uri:      asset.uri,
+      name:     asset.fileName ?? `resource_${Date.now()}`,
+      mimeType: asset.type ?? 'application/octet-stream',
+    });
   };
 
   // ── poll option helpers ───────────────────────────────────────────────────
@@ -278,7 +312,7 @@ export default function NewPostModal({
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerLeft}>
-                <Text style={styles.lockIcon}>{'[P]'}</Text>
+                <Text style={styles.lockIcon}>🔒</Text>
                 <Text style={styles.headerTitle}>New Community Post</Text>
               </View>
               <TouchableOpacity onPress={handleClose} style={styles.closeBtn} accessibilityLabel="Close">
@@ -627,11 +661,25 @@ export default function NewPostModal({
                     value={resourceDesc}
                     onChangeText={setResourceDesc}
                   />
-                  <View style={styles.uploadBox}>
-                    <Text style={styles.uploadIcon}>{'[^]'}</Text>
-                    <Text style={styles.uploadTitle}>Upload files</Text>
-                    <Text style={styles.uploadSub}>PDF, Image, Video or Document - Max 20MB</Text>
-                  </View>
+                  {resourceFile ? (
+                    <View style={styles.uploadedFileRow}>
+                      <Text style={styles.uploadedFileIcon}>📎</Text>
+                      <Text style={styles.uploadedFileName} numberOfLines={1}>{resourceFile.name}</Text>
+                      <TouchableOpacity
+                        onPress={() => setResourceFile(null)}
+                        style={styles.uploadedFileRemove}
+                        accessibilityLabel="Remove file"
+                      >
+                        <Text style={styles.uploadedFileRemoveText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={styles.uploadBox} onPress={handlePickResourceFile} activeOpacity={0.7}>
+                      <Text style={styles.uploadIcon}>{'📁'}</Text>
+                      <Text style={styles.uploadTitle}>Tap to upload a file</Text>
+                      <Text style={styles.uploadSub}>PDF, Image, Video or Document</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -662,7 +710,7 @@ export default function NewPostModal({
                 </View>
                 <View>
                   <Text style={[styles.audienceTitle, audience === 'ADMINS_ONLY' && { color: C.PRIMARY }]}>
-                    Moderators {'&'} Admins
+                    Only Admins
                   </Text>
                   <Text style={styles.audienceSub}>Internal moderation only</Text>
                 </View>
@@ -723,7 +771,7 @@ const styles = StyleSheet.create({
 
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
   headerLeft:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  lockIcon:     { fontSize: 11, color: C2.PRIMARY },
+  lockIcon:     { fontSize: 15 },
   headerTitle:  { fontSize: 15, fontWeight: '700', color: C2.TEXT },
   closeBtn:     { width: 28, height: 28, borderRadius: 14, backgroundColor: C2.BG, alignItems: 'center', justifyContent: 'center' },
   closeText:    { fontSize: 13, color: C2.TEXT2, fontWeight: '700' },
@@ -768,6 +816,12 @@ const styles = StyleSheet.create({
   uploadIcon:   { fontSize: 20, color: C2.TEXT2, marginBottom: 6 },
   uploadTitle:  { fontSize: 13, fontWeight: '600', color: C2.TEXT2, marginBottom: 2 },
   uploadSub:    { fontSize: 11, color: C2.TEXT3 },
+
+  uploadedFileRow:        { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: C2.PRIMARY + '60', borderRadius: 10, padding: 12, marginBottom: 12, backgroundColor: C2.PRIMARY + '08' },
+  uploadedFileIcon:       { fontSize: 16, marginRight: 8 },
+  uploadedFileName:       { flex: 1, fontSize: 13, color: C2.TEXT, fontWeight: '500' },
+  uploadedFileRemove:     { padding: 4 },
+  uploadedFileRemoveText: { fontSize: 13, color: C2.TEXT2, fontWeight: '700' },
 
   audienceOption: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: C2.BORDER, borderRadius: 12, padding: 13, marginBottom: 8 },
   audienceOptionActive: { borderColor: C2.PRIMARY, backgroundColor: `${C2.PRIMARY}08` },

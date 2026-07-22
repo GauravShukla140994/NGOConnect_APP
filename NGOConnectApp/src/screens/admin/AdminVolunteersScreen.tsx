@@ -718,7 +718,7 @@ export default function AdminVolunteersScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => nav.goBack()} accessibilityLabel="Back" style={styles.backBtn}>
-            <Text style={styles.backIcon}>←</Text>
+            <Text style={styles.backIcon}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Volunteers</Text>
           <View style={{ width: 36 }} />
@@ -734,10 +734,19 @@ export default function AdminVolunteersScreen() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => nav.goBack()} accessibilityLabel="Back" style={styles.backBtn}>
-          <Text style={styles.backIcon}>←</Text>
+          <Text style={styles.backIcon}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Volunteers</Text>
-        <View style={{ width: 36 }} />
+        {/* Invite button — navigates to the invite members screen */}
+        <TouchableOpacity
+          style={styles.inviteBtn}
+          onPress={() => nav.navigate('InviteMembers', {
+            orgId:   orgId,
+            orgName: selectedOrg?.orgName ?? '',
+          })}
+          accessibilityLabel="Invite members">
+          <Text style={styles.inviteBtnText}>+ Invite</Text>
+        </TouchableOpacity>
       </View>
 
       {/* ── Stats row ──────────────────────────────────────────────────────── */}
@@ -933,9 +942,11 @@ const styles = StyleSheet.create({
 
   // Header
   header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backBtn:      { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  backIcon:     { fontSize: 20, color: C.TEXT, fontWeight: '300' },
+  backBtn:      { minWidth: 70, height: 36, justifyContent: 'center' },
+  backIcon:     { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle:  { fontSize: 17, fontWeight: '700', color: C.TEXT },
+  inviteBtn:     { paddingHorizontal: 10, paddingVertical: 6, backgroundColor: C.PRIMARY, borderRadius: 8 },
+  inviteBtnText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
 
   // Stats
   statsRow:     { flexDirection: 'row', backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },

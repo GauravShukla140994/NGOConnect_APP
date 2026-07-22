@@ -2,11 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -14,11 +11,41 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import AppConfig from '../../config/AppConfig';
 import { orgApi } from '../../api/org.api';
+import { getSignedUrl } from '../../api/upload.api';
 import { getMyOrgs } from '../../api/user.api';
 import { useAdminStore } from '../../store/adminStore';
 import type { Organisation } from '../../types/api.types';
+
+// ── Download icon ─────────────────────────────────────────────────────────────
+function DownloadIcon({ color, size = 15 }: { color: string; size?: number }) {
+  return (
+    <View style={{ width: size, height: size + 4, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 2, height: size * 0.42, backgroundColor: color, borderRadius: 1 }} />
+      <View style={{
+        width: 0, height: 0,
+        borderLeftWidth: size * 0.32, borderRightWidth: size * 0.32, borderTopWidth: size * 0.32,
+        borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: color,
+        marginTop: -1,
+      }} />
+      <View style={{ width: size * 0.75, height: 2, backgroundColor: color, borderRadius: 1, marginTop: 3 }} />
+    </View>
+  );
+}
+
+type DlState = 'idle' | 'downloading' | 'done' | 'error';
+
+function getMimeType(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const map: Record<string, string> = {
+    pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    png: 'image/png', doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  };
+  return map[ext] ?? 'application/octet-stream';
+}
 
 const C = AppConfig.COLORS;
 
@@ -33,51 +60,44 @@ function initials(name: string) {
   return (name || 'NG').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
 }
 
-// ── Field row (label + input) ─────────────────────────────────────────────────
+// ── Read-only field ───────────────────────────────────────────────────────────
 function FieldRow({
-  label, value, onChangeText, placeholder, multiline, keyboardType, editable = true,
+  label, value, placeholder, multiline,
 }: {
   label: string;
   value: string;
-  onChangeText?: (t: string) => void;
   placeholder?: string;
   multiline?: boolean;
-  keyboardType?: 'default' | 'email-address' | 'phone-pad' | 'url' | 'numeric';
-  editable?: boolean;
 }) {
   return (
     <View style={styles.fieldGroup}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
-        style={[styles.fieldInput, multiline && styles.fieldInputMulti, !editable && styles.fieldInputDisabled]}
+        style={[styles.fieldInput, multiline && styles.fieldInputMulti, styles.fieldInputDisabled]}
         value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder ?? label}
+        placeholder={placeholder ?? '—'}
         placeholderTextColor={C.TEXT3}
         multiline={multiline}
         numberOfLines={multiline ? 4 : 1}
-        keyboardType={keyboardType ?? 'default'}
-        editable={editable}
-        autoCapitalize="sentences"
-        accessibilityLabel={label}
+        editable={false}
+        selectTextOnFocus={false}
         textAlignVertical={multiline ? 'top' : 'center'}
+        accessibilityLabel={label}
       />
     </View>
   );
 }
 
-// ── Toggle row ────────────────────────────────────────────────────────────────
-function ToggleRow({ label, value, onValueChange }: { label: string; value: boolean; onValueChange: (v: boolean) => void }) {
+// ── Read-only toggle badge ────────────────────────────────────────────────────
+function BadgeRow({ label, value }: { label: string; value: boolean }) {
   return (
     <View style={styles.toggleRow}>
       <Text style={styles.toggleLabel}>{label}</Text>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: C.BORDER, true: C.PRIMARY }}
-        thumbColor="#fff"
-        accessibilityLabel={label}
-      />
+      <View style={[styles.badge, value ? styles.badgeOn : styles.badgeOff]}>
+        <Text style={[styles.badgeText, value ? styles.badgeTextOn : styles.badgeTextOff]}>
+          {value ? '✓ Yes' : '✗ No'}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -99,7 +119,8 @@ export default function AdminOrgScreen() {
   const orgId           = selectedOrg?.orgId ?? 0;
 
   const [loading,  setLoading]  = useState(true);
-  const [saving,   setSaving]   = useState(false);
+  const [orgDocs,  setOrgDocs]  = useState<any[]>([]);
+  const [dlState,  setDlState]  = useState<Record<number, DlState>>({});
 
   // ── Ensure org is loaded if navigated directly to this tab ───────────────
   const ensureOrg = useCallback(async (): Promise<number> => {
@@ -118,7 +139,7 @@ export default function AdminOrgScreen() {
     return 0;
   }, [orgId, setAdminOrgs, setSelectedOrg]);
 
-  // Form state — mirrors Organisation fields
+  // Form state
   const [orgName,    setOrgName]    = useState('');
   const [about,      setAbout]      = useState('');
   const [mission,    setMission]    = useState('');
@@ -135,6 +156,8 @@ export default function AdminOrgScreen() {
   const [is80G,      setIs80G]      = useState(false);
   const [is12A,      setIs12A]      = useState(false);
   const [memberCount,setMemberCount]= useState('');
+  const [regNumber,  setRegNumber]  = useState('');
+  const [orgStatus,  setOrgStatus]  = useState('');
 
   // ── Load profile ─────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -158,53 +181,60 @@ export default function AdminOrgScreen() {
         setCity(o.city ?? '');
         setState(o.state ?? '');
         setCountry(o.country ?? '');
-        setIs80G(o.is80G ?? false);
-        setIs12A(o.is12A ?? false);
+        setIs80G((o as any).is80GEligible ?? (o as any).is80G ?? false);
+        setIs12A((o as any).is12AEligible ?? (o as any).is12A ?? false);
         setMemberCount(String(o.memberCount ?? ''));
+        setRegNumber((o as any).regNumber ?? (o as any).registrationNumber ?? '');
+        setOrgStatus((o as any).statusCode ?? (o as any).orgStatusCode ?? (o as any).status ?? '');
       }
-    } catch { /* silent */ } finally { setLoading(false); }
+    } catch { /* silent */ }
+
+    // Fetch org documents (separate call — non-blocking)
+    try {
+      const docsRes = await orgApi.getDocuments(oid);
+      if (docsRes.data?.isSuccess) {
+        setOrgDocs(docsRes.data.data ?? []);
+      }
+    } catch { /* silent */ }
+
+    setLoading(false);
   }, [orgId]);
 
-  // Re-run when selectedOrg changes (user switches org from Dashboard)
   useEffect(() => { load(); }, [orgId]); // eslint-disable-line
 
-  // ── Save ─────────────────────────────────────────────────────────────────
-  const save = useCallback(async () => {
-    if (!orgName.trim()) {
-      Alert.alert('Validation', 'Organisation name is required.');
+  const downloadOrgDoc = async (doc: any) => {
+    const id    = doc.orgDocumentId as number;
+    const fUrl  = doc.fileUrl as string | undefined;
+    const fName = doc.fileName as string;
+    if (dlState[id] === 'downloading') { return; }
+    if (!fUrl) {
+      Alert.alert('Not available', 'No file found for this document.');
       return;
     }
-    const oid = selectedOrg?.orgId ?? orgId;
-    if (!oid) { Alert.alert('Error', 'No organisation selected.'); return; }
-    setSaving(true);
+    setDlState(prev => ({ ...prev, [id]: 'downloading' }));
     try {
-      const res = await orgApi.update(oid, {
-        orgName:      orgName.trim(),
-        about:        about.trim() || undefined,
-        mission:      mission.trim() || undefined,
-        vision:       vision.trim() || undefined,
-        contactEmail: email.trim() || undefined,
-        contactPhone: phone.trim() || undefined,
-        website:      website.trim() || undefined,
-        addressLine1: address1.trim() || undefined,
-        addressLine2: address2.trim() || undefined,
-        pincode:      pincode.trim() || undefined,
-        city:         city.trim() || undefined,
-        state:        state.trim() || undefined,
-        country:      country.trim() || undefined,
-        is80G,
-        is12A,
-      });
-      if (res.data?.isSuccess) {
-        Alert.alert('Saved', 'Organisation profile updated successfully.');
-      } else {
-        Alert.alert('Error', res.data?.message ?? 'Could not save changes.');
+      // Full URL → download directly. Bare S3 key → fetch presigned URL first.
+      let downloadUrl = fUrl;
+      if (!downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
+        downloadUrl = await getSignedUrl(fUrl);
       }
-    } catch {
-      Alert.alert('Error', 'Network error. Please try again.');
-    } finally { setSaving(false); }
-  }, [orgId, orgName, about, mission, vision, email, phone, website,
-      address1, address2, pincode, city, state, country, is80G, is12A]);
+      const dest = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${fName}`;
+      await ReactNativeBlobUtil.config({
+        addAndroidDownloads: {
+          useDownloadManager: true,
+          notification: true,
+          title: fName,
+          description: 'Downloading document...',
+          path: dest,
+          mime: getMimeType(fName),
+        },
+      }).fetch('GET', downloadUrl);
+      setDlState(prev => ({ ...prev, [id]: 'done' }));
+    } catch (err: any) {
+      setDlState(prev => ({ ...prev, [id]: 'error' }));
+      Alert.alert('Download Failed', err?.message ?? 'Could not download document.');
+    }
+  };
 
   const avatarBg   = avatarColor(orgName || 'NG');
   const avatarText = initials(orgName || 'NG');
@@ -214,7 +244,7 @@ export default function AdminOrgScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => nav.goBack()} style={styles.headerBtn} accessibilityLabel="Back">
-            <Text style={styles.backIcon}>←</Text>
+            <Text style={styles.backIcon}>← Back</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Organisation Profile</Text>
           <View style={{ width: 80 }} />
@@ -230,10 +260,9 @@ export default function AdminOrgScreen() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => nav.goBack()} style={styles.headerBtn} accessibilityLabel="Back">
-          <Text style={styles.backIcon}>←</Text>
+          <Text style={styles.backIcon}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Organisation Profile</Text>
-        {/* Preview button */}
         <TouchableOpacity
           style={styles.previewBtn}
           onPress={() => nav.navigate('NgoProfile', { orgId })}
@@ -243,105 +272,123 @@ export default function AdminOrgScreen() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {/* ── Read-only notice ────────────────────────────────────────────────── */}
+      <View style={styles.readOnlyBanner}>
+        <Text style={styles.readOnlyIcon}>ℹ️</Text>
+        <Text style={styles.readOnlyText}>
+          Profile editing is coming soon. Tap <Text style={{ fontWeight: '700' }}>Preview</Text> to see how your public page looks.
+        </Text>
+      </View>
 
-          {/* ── Organisation Details ──────────────────────────────────────── */}
-          <Section
-            title="Organisation Details"
-            subtitle="Changes appear instantly on the public Explore page."
-          />
+      <ScrollView showsVerticalScrollIndicator={false}>
 
-          <View style={styles.formCard}>
-            <FieldRow label="Organisation Name" value={orgName} onChangeText={setOrgName} placeholder="Enter organisation name" />
+        {/* ── Organisation Details ──────────────────────────────────────── */}
+        <Section title="Organisation Details" />
+        <View style={styles.formCard}>
 
-            <FieldRow
-              label="Total Members"
-              value={memberCount}
-              editable={false}
-              placeholder="Computed automatically"
-            />
+          {/* Logo */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Logo</Text>
+            <View style={styles.logoRow}>
+              <View style={[styles.logoAvatar, { backgroundColor: avatarBg }]}>
+                <Text style={styles.logoAvatarText}>{avatarText}</Text>
+              </View>
+              <View>
+                <Text style={styles.orgNameDisplay}>{orgName || '—'}</Text>
+                {!!orgStatus && (
+                  <View style={[styles.statusBadge, orgStatus === 'APPROVED' ? styles.statusApproved : styles.statusPending]}>
+                    <Text style={[styles.statusText, orgStatus === 'APPROVED' ? styles.statusTextApproved : styles.statusTextPending]}>
+                      {orgStatus}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
 
-            {/* Logo */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Logo</Text>
-              <View style={styles.logoRow}>
-                <View style={[styles.logoAvatar, { backgroundColor: avatarBg }]}>
-                  <Text style={styles.logoAvatarText}>{avatarText}</Text>
+          <FieldRow label="Registration Number"  value={regNumber}   placeholder="Not provided" />
+          <FieldRow label="Total Members"         value={memberCount} placeholder="—" />
+          <FieldRow label="About Organisation"    value={about}       placeholder="Not provided" multiline />
+          <FieldRow label="Mission"               value={mission}     placeholder="Not provided" />
+          <FieldRow label="Vision"                value={vision}      placeholder="Not provided" />
+        </View>
+
+        {/* ── Contact Information ───────────────────────────────────────── */}
+        <Section title="Contact Information" />
+        <View style={styles.formCard}>
+          <FieldRow label="Email"   value={email}   placeholder="Not provided" />
+          <FieldRow label="Phone"   value={phone}   placeholder="Not provided" />
+          <FieldRow label="Website" value={website} placeholder="Not provided" />
+        </View>
+
+        {/* ── Address ───────────────────────────────────────────────────── */}
+        <Section title="Address" />
+        <View style={styles.formCard}>
+          <FieldRow label="Address Line 1" value={address1} placeholder="Not provided" />
+          {!!address2 && <FieldRow label="Address Line 2" value={address2} />}
+          <View style={styles.twoCol}>
+            <View style={{ flex: 1 }}><FieldRow label="Pincode" value={pincode} placeholder="—" /></View>
+            <View style={{ flex: 1 }}><FieldRow label="City"    value={city}    placeholder="—" /></View>
+          </View>
+          <View style={styles.twoCol}>
+            <View style={{ flex: 1 }}><FieldRow label="State"   value={state}   placeholder="—" /></View>
+            <View style={{ flex: 1 }}><FieldRow label="Country" value={country} placeholder="—" /></View>
+          </View>
+        </View>
+
+        {/* ── Certifications ────────────────────────────────────────────── */}
+        <Section title="Certifications" subtitle="Tax certificates registered with this organisation." />
+        <View style={styles.formCard}>
+          <BadgeRow label="80G Certified — donors get tax exemption" value={is80G} />
+          <View style={styles.toggleDivider} />
+          <BadgeRow label="12A Registered — organisation tax exemption" value={is12A} />
+        </View>
+
+        {/* ── Documents ─────────────────────────────────────────────────── */}
+        <Section title="Organisation Documents" subtitle="Uploaded registration certificates and other documents." />
+        <View style={styles.formCard}>
+          {orgDocs.length === 0 ? (
+            <View style={styles.emptyDocs}>
+              <Text style={styles.emptyDocsText}>No documents uploaded yet.</Text>
+            </View>
+          ) : orgDocs.map((doc: any) => {
+            const id = doc.orgDocumentId as number;
+            const ds = dlState[id] ?? 'idle';
+            return (
+              <View key={id} style={styles.docRow}>
+                <Text style={styles.docIcon}>📄</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.docName} numberOfLines={1}>{doc.fileName}</Text>
+                  <Text style={styles.docMeta}>
+                    {doc.documentType ?? 'Document'}{doc.isVerified ? '  ✓ Verified' : ''}
+                  </Text>
                 </View>
                 <TouchableOpacity
-                  style={styles.changeLogoBtn}
-                  onPress={() => Alert.alert('Coming soon', 'Logo upload will be available soon.')}
-                  accessibilityLabel="Change logo"
+                  style={[styles.dlBtn,
+                    ds === 'done'  && styles.dlBtnDone,
+                    ds === 'error' && styles.dlBtnErr,
+                  ]}
+                  onPress={() => downloadOrgDoc(doc)}
+                  disabled={ds === 'downloading'}
+                  accessibilityLabel={`Download ${doc.fileName}`}
                 >
-                  <Text style={styles.changeLogoBtnText}>Change Logo</Text>
+                  {ds === 'downloading' ? (
+                    <ActivityIndicator size={13} color={C.PRIMARY} />
+                  ) : ds === 'done' ? (
+                    <Text style={[styles.dlBtnTxt, { color: '#15803D' }]}>✓</Text>
+                  ) : ds === 'error' ? (
+                    <Text style={[styles.dlBtnTxt, { color: '#DC2626' }]}>✕</Text>
+                  ) : (
+                    <DownloadIcon color={C.PRIMARY} size={14} />
+                  )}
                 </TouchableOpacity>
               </View>
-            </View>
+            );
+          })}
+        </View>
 
-            <FieldRow label="About Organisation"     value={about}    onChangeText={setAbout}    placeholder="Tell your story…"        multiline />
-            <FieldRow label="Mission"                value={mission}  onChangeText={setMission}  placeholder="Your mission statement"   />
-            <FieldRow label="Vision"                 value={vision}   onChangeText={setVision}   placeholder="Your vision statement"    />
-          </View>
-
-          {/* ── Contact Information ───────────────────────────────────────── */}
-          <Section title="Contact Information" />
-          <View style={styles.formCard}>
-            <FieldRow label="Email"   value={email}   onChangeText={setEmail}   placeholder="contact@ngo.org"   keyboardType="email-address" />
-            <FieldRow label="Phone"   value={phone}   onChangeText={setPhone}   placeholder="+91 XXXXX XXXXX"   keyboardType="phone-pad"     />
-            <FieldRow label="Website" value={website} onChangeText={setWebsite} placeholder="https://your-ngo.org" keyboardType="url"          />
-          </View>
-
-          {/* ── Address ───────────────────────────────────────────────────── */}
-          <Section title="Address" />
-          <View style={styles.formCard}>
-            <FieldRow label="Address Line 1" value={address1} onChangeText={setAddress1} placeholder="Street / Building" />
-            <FieldRow label="Address Line 2" value={address2} onChangeText={setAddress2} placeholder="Area / Landmark (optional)" />
-            <View style={styles.twoCol}>
-              <View style={{ flex: 1 }}>
-                <FieldRow label="Pincode" value={pincode} onChangeText={setPincode} placeholder="400001" keyboardType="numeric" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <FieldRow label="City" value={city} onChangeText={setCity} placeholder="Mumbai" />
-              </View>
-            </View>
-            <View style={styles.twoCol}>
-              <View style={{ flex: 1 }}>
-                <FieldRow label="State" value={state} onChangeText={setState} placeholder="Maharashtra" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <FieldRow label="Country" value={country} onChangeText={setCountry} placeholder="India" />
-              </View>
-            </View>
-          </View>
-
-          {/* ── Certifications ────────────────────────────────────────────── */}
-          <Section title="Certifications" subtitle="Enables donor trust indicators on your profile." />
-          <View style={styles.formCard}>
-            <ToggleRow label="80G Certified (Tax exemption for donors)" value={is80G} onValueChange={setIs80G} />
-            <View style={styles.toggleDivider} />
-            <ToggleRow label="12A Registered (Tax exemption for NGO)" value={is12A} onValueChange={setIs12A} />
-          </View>
-
-          {/* ── Save button ───────────────────────────────────────────────── */}
-          <View style={styles.saveSection}>
-            <TouchableOpacity
-              style={[styles.saveBtn, saving && { opacity: 0.7 }]}
-              onPress={save}
-              disabled={saving}
-              accessibilityLabel="Save changes"
-            >
-              {saving
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={styles.saveBtnText}>Save Changes</Text>}
-            </TouchableOpacity>
-          </View>
-
-        </ScrollView>
-      </KeyboardAvoidingView>
+        <View style={{ height: 32 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -352,12 +399,21 @@ const styles = StyleSheet.create({
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   // Header
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  headerBtn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  backIcon:    { fontSize: 20, color: C.TEXT, fontWeight: '300' },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                 paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.CARD,
+                 borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  headerBtn:   { minWidth: 70, height: 36, justifyContent: 'center' },
+  backIcon:    { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle: { fontSize: 16, fontWeight: '700', color: C.TEXT, flex: 1, textAlign: 'center' },
-  previewBtn:  { backgroundColor: C.PRIMARY + '15', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1.5, borderColor: C.PRIMARY + '40' },
+  previewBtn:  { backgroundColor: C.PRIMARY + '15', borderRadius: 20, paddingHorizontal: 12,
+                 paddingVertical: 6, borderWidth: 1.5, borderColor: C.PRIMARY + '40' },
   previewBtnText:{ fontSize: 12, fontWeight: '700', color: C.PRIMARY },
+
+  // Read-only banner
+  readOnlyBanner:{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#EFF6FF',
+                   borderBottomWidth: 1, borderBottomColor: '#BFDBFE', paddingHorizontal: 14, paddingVertical: 10 },
+  readOnlyIcon:  { fontSize: 14 },
+  readOnlyText:  { flex: 1, fontSize: 12, color: '#1D4ED8', lineHeight: 18 },
 
   // Sections
   sectionHead: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 6 },
@@ -365,9 +421,13 @@ const styles = StyleSheet.create({
   sectionSub:  { fontSize: 11, color: C.TEXT2, marginTop: 2 },
 
   // Form card
-  formCard:    { backgroundColor: C.CARD, marginHorizontal: 12, borderRadius: 14, paddingHorizontal: 14, paddingTop: 4, paddingBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  formCard:    { backgroundColor: C.CARD, marginHorizontal: 12, borderRadius: 14,
+                 paddingHorizontal: 14, paddingTop: 4, paddingBottom: 8,
+                 shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+                 shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   fieldGroup:  { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  fieldLabel:  { fontSize: 11, fontWeight: '600', color: C.TEXT2, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 },
+  fieldLabel:  { fontSize: 11, fontWeight: '600', color: C.TEXT2, textTransform: 'uppercase',
+                 letterSpacing: 0.4, marginBottom: 5 },
   fieldInput:  { fontSize: 14, color: C.TEXT, paddingVertical: 0 },
   fieldInputMulti:{ minHeight: 80, paddingTop: 4 },
   fieldInputDisabled:{ color: C.TEXT2 },
@@ -376,19 +436,41 @@ const styles = StyleSheet.create({
   logoRow:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingTop: 4 },
   logoAvatar:  { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   logoAvatarText:{ color: '#fff', fontSize: 16, fontWeight: '800' },
-  changeLogoBtn:{ backgroundColor: C.BG, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 9, borderWidth: 1.5, borderColor: C.BORDER },
-  changeLogoBtnText:{ fontSize: 13, fontWeight: '600', color: C.TEXT },
+  orgNameDisplay:{ fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
 
-  // Toggle row
-  toggleRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
-  toggleLabel: { fontSize: 13, color: C.TEXT, flex: 1, lineHeight: 19 },
+  // Status badge
+  statusBadge:        { alignSelf: 'flex-start', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  statusApproved:     { backgroundColor: '#D1FAE5' },
+  statusPending:      { backgroundColor: '#FEF3C7' },
+  statusText:         { fontSize: 11, fontWeight: '700' },
+  statusTextApproved: { color: '#065F46' },
+  statusTextPending:  { color: '#92400E' },
+
+  // Toggle (read-only badge)
+  toggleRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
+  toggleLabel:  { fontSize: 13, color: C.TEXT, flex: 1, lineHeight: 19 },
+  badge:        { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1 },
+  badgeOn:      { backgroundColor: '#D1FAE5', borderColor: '#6EE7B7' },
+  badgeOff:     { backgroundColor: C.BG, borderColor: C.BORDER },
+  badgeText:    { fontSize: 12, fontWeight: '700' },
+  badgeTextOn:  { color: '#065F46' },
+  badgeTextOff: { color: C.TEXT3 },
   toggleDivider:{ height: 1, backgroundColor: C.BORDER },
 
   // Two-column layout
   twoCol:      { flexDirection: 'row', gap: 10 },
 
-  // Save
-  saveSection: { padding: 16, paddingBottom: 32 },
-  saveBtn:     { backgroundColor: C.PRIMARY, paddingVertical: 15, borderRadius: 14, alignItems: 'center', shadowColor: C.PRIMARY, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 6 },
-  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  // Documents section
+  emptyDocs:     { paddingVertical: 18, alignItems: 'center' },
+  emptyDocsText: { fontSize: 13, color: C.TEXT3 },
+  docRow:        { flexDirection: 'row', alignItems: 'center', gap: 10,
+                   paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  docIcon:       { fontSize: 22 },
+  docName:       { fontSize: 13, fontWeight: '600', color: C.TEXT },
+  docMeta:       { fontSize: 11, color: C.TEXT3, marginTop: 2 },
+  dlBtn:         { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: C.PRIMARY,
+                   alignItems: 'center', justifyContent: 'center', backgroundColor: `${C.PRIMARY}08` },
+  dlBtnDone:     { borderColor: '#16A34A', backgroundColor: '#F0FDF4' },
+  dlBtnErr:      { borderColor: '#DC2626', backgroundColor: '#FEF2F2' },
+  dlBtnTxt:      { fontSize: 12, fontWeight: '700' },
 });

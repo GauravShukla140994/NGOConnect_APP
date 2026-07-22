@@ -18,6 +18,10 @@ export interface CreatePostPayload {
   skills?: string;
   assignedTo?: string;
   dueDate?: string;
+  resourceFileUrl?: string;
+  // p_EventRef: multipurpose extra text (whatChanged for EVENT_UPDATE,
+  //             dateTime text for VOL_REQUEST, assignee name for TASK)
+  eventRef?: string;
 }
 
 export interface CreatePollPayload {
