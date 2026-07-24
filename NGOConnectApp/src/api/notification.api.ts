@@ -18,6 +18,17 @@ export const notificationApi = {
   registerDeviceToken: (token: string) =>
     apiClient.post<ApiResponse<null>>('/notifications/device-token', {token, platform: Platform.OS}),
 
-  sendTest: (payload: {token: string; title: string; body: string; notifType?: string; refId?: number; refType?: string}) =>
+  sendTest: (payload: {
+    token:        string;
+    title:        string;
+    body:         string;
+    notifType?:   string;
+    refId?:       number;
+    refType?:     string;
+    // CAMPAIGN extras
+    deepLink?:    string;
+    actionLabel?: string;
+    imageUrl?:    string;
+  }) =>
     apiClient.post<ApiResponse<null>>('/notifications/send-test', payload),
 };

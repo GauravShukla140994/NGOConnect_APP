@@ -47,8 +47,9 @@ import VolunteerProfileScreen  from '../screens/admin/VolunteerProfileScreen';
 import MemberImpactScreen      from '../screens/admin/MemberImpactScreen';
 import InviteMembersScreen     from '../screens/admin/InviteMembersScreen';
 import InviteAcceptScreen     from '../screens/invite/InviteAcceptScreen';
-import WebViewScreen          from '../screens/common/WebViewScreen';
-import HelpSupportScreen      from '../screens/profile/HelpSupportScreen';
+import WebViewScreen                   from '../screens/common/WebViewScreen';
+import HelpSupportScreen               from '../screens/profile/HelpSupportScreen';
+import CommunicationPreferencesScreen  from '../screens/profile/CommunicationPreferencesScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -185,7 +186,10 @@ const AppNavigator = () => (
     <Stack.Screen name="WebView"          component={WebViewScreen}           />
 
     {/* Help & Support */}
-    <Stack.Screen name="HelpSupport"      component={HelpSupportScreen}       />
+    <Stack.Screen name="HelpSupport"              component={HelpSupportScreen}              />
+
+    {/* Communication & Notification Preferences */}
+    <Stack.Screen name="CommunicationPreferences" component={CommunicationPreferencesScreen} />
   </Stack.Navigator>
 );
 

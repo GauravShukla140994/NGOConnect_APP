@@ -309,7 +309,8 @@ const PostCard = React.memo(function PostCard({
   globalMuted:   boolean;
   onToggleMute:  () => void;
 }) {
-  const nav  = useNavigation<any>();
+  const nav    = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const meta = TYPE_META[post.postTypeLkpCode ?? 'GENERAL'] ?? TYPE_META.GENERAL;
   const [bookmarked,       setBookmarked]       = useState(!!post.isSaved);
@@ -475,7 +476,7 @@ const PostCard = React.memo(function PostCard({
       {/* ── Post options sheet ─────────────────────────────────────── */}
       <Modal visible={showMenu} transparent animationType="slide" onRequestClose={() => setShowMenu(false)}>
         <Pressable style={styles.menuOverlay} onPress={() => setShowMenu(false)}>
-          <View style={styles.menuSheet}>
+          <View style={[styles.menuSheet, { paddingBottom: insets.bottom + 8 }]}>
             <View style={styles.menuHandle} />
             {[
               ...(post.orgId ? [{

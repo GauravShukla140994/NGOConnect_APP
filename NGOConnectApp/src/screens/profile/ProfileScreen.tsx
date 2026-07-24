@@ -47,11 +47,14 @@ function isAdminOrg(o: Organisation): boolean {
 }
 
 const SETTINGS_ITEMS = [
-  { icon: '🔔', label: 'Notifications',    screen: 'Notifications',  params: undefined },
-  { icon: '📋', label: 'Terms of Service', screen: 'WebView',         params: { url: 'https://www.ripplehub.app/terms',   title: 'Terms of Service' } },
-  { icon: '🔐', label: 'Privacy Policy',   screen: 'WebView',         params: { url: 'https://www.ripplehub.app/privacy', title: 'Privacy Policy'   } },
-  { icon: '🆘', label: 'Help & Support',   screen: 'HelpSupport',     params: undefined },
-  { icon: '⚙',  label: 'Account Settings', screen: 'AccountSettings', params: undefined },
+  { icon: '🔔', label: 'Notifications',           screen: 'Notifications',              params: undefined },
+  { icon: '📣', label: 'Communication Preferences', screen: 'CommunicationPreferences', params: undefined },
+  { icon: '📋', label: 'Terms of Service',         screen: 'WebView',                   params: { url: 'https://www.ripplehub.app/terms',   title: 'Terms of Service' } },
+  { icon: '🔐', label: 'Privacy Policy',           screen: 'WebView',                   params: { url: 'https://www.ripplehub.app/privacy', title: 'Privacy Policy'   } },
+  { icon: '🆘', label: 'Help & Support',           screen: 'HelpSupport',               params: undefined },
+  { icon: '⚙',  label: 'Account Settings',         screen: 'AccountSettings',           params: undefined },
+  // DEV ONLY — remove before Play Store release
+  { icon: '🔔', label: '🧪 Test Push Notification', screen: 'FCMTest',                  params: undefined },
 ];
 
 export default function ProfileScreen() {

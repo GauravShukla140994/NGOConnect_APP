@@ -14,6 +14,7 @@ import {
   StyleSheet, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
+import notifee, { AndroidImportance } from '@notifee/react-native';
 import { notificationApi } from '../../api/notification.api';
 import AppConfig from '../../config/AppConfig';
 
@@ -37,6 +38,10 @@ const NOTIF_TYPES = [
   // Donations
   { type: 'DONATION_CONFIRMED',       label: '💰 Donation Confirmed (→ donor)',  refType: 'CAMPAIGN' },
   { type: 'DONATION_RECEIVED_ADMIN',  label: '💰 Donation Received (→ admin)',   refType: 'CAMPAIGN' },
+  // Feed
+  { type: 'NEW_FEED_POST',  label: '📝 New Feed Post (→ home)',    refType: 'POST' },
+  // Marketing campaigns
+  { type: 'CAMPAIGN',       label: '📣 Campaign (deepLink / fallback → notifs)', refType: 'CAMPAIGN' },
   // Community
   { type: 'COMMUNITY_POST', label: '📢 Community Post (→ members)', refType: 'COMMUNITY_POST' },
   { type: 'NEW_POLL',        label: '📊 New Poll (→ members)',       refType: 'POLL' },
@@ -55,16 +60,38 @@ const NOTIF_TYPES = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FCMTestScreen() {
-  const [token,     setToken]     = useState('');
-  const [selected,  setSelected]  = useState(NOTIF_TYPES[0]);
-  const [refId,     setRefId]     = useState('1');
-  const [loading,   setLoading]   = useState(false);
-  const [lastResult,setLastResult]= useState<string | null>(null);
+  const [token,      setToken]      = useState('');
+  const [selected,   setSelected]   = useState(NOTIF_TYPES[0]);
+  const [refId,      setRefId]      = useState('1');
+  const [deepLink,   setDeepLink]   = useState('ngoconnect://ngo/1');
+  const [actionLabel,setActionLabel]= useState('Donate Now');
+  const [loading,    setLoading]    = useState(false);
+  const [lastResult, setLastResult] = useState<string | null>(null);
 
   // Auto-fill device token
   useEffect(() => {
     messaging().getToken().then(t => { if (t) { setToken(t); } }).catch(() => {});
   }, []);
+
+  // ── Local test: bypasses FCM entirely, calls notifee directly ─────────────
+  // If this shows a notification → notifee is installed and the native module works.
+  // If this crashes / nothing appears → app needs to be rebuilt with notifee.
+  const handleLocalTest = async () => {
+    try {
+      await notifee.displayNotification({
+        title: '🧪 Local Notifee Test',
+        body:  'If you can see this → notifee is working correctly on this device.',
+        android: {
+          channelId:   'ripplehub_default',
+          importance:  AndroidImportance.HIGH,
+          pressAction: { id: 'default' },
+        },
+      });
+      setLastResult('✅ Local notifee test fired — check notification panel');
+    } catch (e: any) {
+      setLastResult(`❌ Notifee error: ${e?.message ?? 'Unknown — rebuild the APK'}`);
+    }
+  };
 
   const handleSend = async () => {
     if (!token.trim()) {
@@ -74,13 +101,17 @@ export default function FCMTestScreen() {
     setLoading(true);
     setLastResult(null);
     try {
+      const isCampaign = selected.type === 'CAMPAIGN';
       const res = await notificationApi.sendTest({
-        token:     token.trim(),
-        title:     selected.label.replace(/^[^\s]+\s/, '').split('(')[0].trim(),
-        body:      `Test: ${selected.type} — sent from FCMTestScreen`,
-        notifType: selected.type,
-        refId:     refId ? parseInt(refId, 10) : undefined,
-        refType:   selected.refType,
+        token:       token.trim(),
+        title:       selected.label.replace(/^[^\s]+\s/, '').split('(')[0].trim(),
+        body:        `Test: ${selected.type} — sent from FCMTestScreen`,
+        notifType:   selected.type,
+        refId:       refId ? parseInt(refId, 10) : undefined,
+        refType:     selected.refType,
+        // CAMPAIGN extras — only included when testing CAMPAIGN type
+        ...(isCampaign && deepLink    ? { deepLink    } : {}),
+        ...(isCampaign && actionLabel ? { actionLabel } : {}),
       });
       setLastResult(res.data?.isSuccess === 1 ? '✅ Sent!' : `❌ ${res.data?.message}`);
     } catch (e: any) {
@@ -118,6 +149,38 @@ export default function FCMTestScreen() {
         keyboardType="number-pad"
       />
 
+      {/* CAMPAIGN extras — shown only when CAMPAIGN type is selected */}
+      {selected.type === 'CAMPAIGN' && (
+        <>
+          <Text style={s.label}>Deep Link (CAMPAIGN)</Text>
+          <TextInput
+            style={s.input}
+            value={deepLink}
+            onChangeText={setDeepLink}
+            placeholder="e.g. ngoconnect://ngo/1"
+            placeholderTextColor="#aaa"
+            autoCapitalize="none"
+          />
+          <Text style={s.label}>Action Label (CAMPAIGN)</Text>
+          <TextInput
+            style={s.input}
+            value={actionLabel}
+            onChangeText={setActionLabel}
+            placeholder="e.g. Donate Now"
+            placeholderTextColor="#aaa"
+          />
+          <View style={s.campaignHint}>
+            <Text style={s.campaignHintText}>
+              💡 Deep link options:{'\n'}
+              {'  '}ngoconnect://ngo/1  → NgoProfile{'\n'}
+              {'  '}ngoconnect://opportunity/1  → ProjectDetail{'\n'}
+              {'  '}https://ripplehub.app/ngo/1  → (same){'\n'}
+              {'  '}Leave blank  → falls back to Notifications tab
+            </Text>
+          </View>
+        </>
+      )}
+
       {/* Notif type picker */}
       <Text style={s.label}>Notification Type</Text>
       <ScrollView style={s.picker} showsVerticalScrollIndicator={false}>
@@ -141,7 +204,12 @@ export default function FCMTestScreen() {
         </Text>
       </View>
 
-      {/* Send */}
+      {/* Local notifee test — does NOT hit the backend or FCM */}
+      <TouchableOpacity style={[s.btn, s.btnSecondary]} onPress={handleLocalTest}>
+        <Text style={s.btnText}>🔔 Test Notifee Locally (no FCM)</Text>
+      </TouchableOpacity>
+
+      {/* Send via FCM */}
       <TouchableOpacity style={s.btn} onPress={handleSend} disabled={loading}>
         {loading
           ? <ActivityIndicator color="#fff" />
@@ -180,10 +248,13 @@ const s = StyleSheet.create({
   summaryText:     { fontSize: 12, color: '#555' },
   bold:            { fontWeight: '700', color: '#222' },
   btn:             { backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
+  btnSecondary:    { backgroundColor: '#555' },
   btnText:         { color: '#fff', fontWeight: '700', fontSize: 15 },
   result:          { borderRadius: 8, padding: 10, marginBottom: 10 },
   resultOk:        { backgroundColor: '#e6f9ee' },
   resultErr:       { backgroundColor: '#ffe9e9' },
   resultText:      { fontSize: 13, fontWeight: '600' },
   hint:            { fontSize: 11, color: '#aaa', textAlign: 'center', marginTop: 8 },
+  campaignHint:    { backgroundColor: '#f0f4ff', borderRadius: 6, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: '#c7d7f5' },
+  campaignHintText:{ fontSize: 11, color: '#444', lineHeight: 18 },
 });

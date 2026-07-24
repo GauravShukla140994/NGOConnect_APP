@@ -1,14 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import { Alert, Linking, NavigationContainerRef } from 'react-native';
+import { Linking, NavigationContainerRef, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import messaging from '@react-native-firebase/messaging';
+import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
 import { useAuthStore } from '../store/authStore';
 import { navigationIntegration } from '../config/sentry';
-import { notificationApi } from '../api/notification.api';
 import { pendingInviteStore } from '../store/pendingInviteStore';
 import { pendingDeepLinkStore } from '../store/pendingDeepLinkStore';
 import { shareApi } from '../api/share.api';
+import { useNotificationPermission } from '../hooks/useNotificationPermission';
+import NotificationPermissionModal from '../components/NotificationPermissionModal';
 import AuthNavigator from './AuthNavigator';
 import AppNavigator from './AppNavigator';
 
@@ -17,7 +19,14 @@ const Stack = createNativeStackNavigator();
 // ─────────────────────────────────────────────────────────────────────────────
 // Deep-link routing: notifType → { screen, params }
 // ─────────────────────────────────────────────────────────────────────────────
-type NotifData = { notifType?: string; refId?: string; refType?: string };
+type NotifData = {
+  notifType?:   string;
+  refId?:       string;
+  refType?:     string;
+  // CAMPAIGN extras — set by backend's Marketing & Communication Center
+  deepLink?:    string;   // ngoconnect:// or https:// URL to open on tap
+  actionLabel?: string;   // CTA label ("Donate Now" etc.) passed as nav param
+};
 
 function resolveScreen(data: NotifData): { screen: string; params?: object } | null {
   const refId = data.refId ? parseInt(data.refId, 10) : undefined;
@@ -40,6 +49,12 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
       return refId ? { screen: 'SosActive', params: { sosIncidentId: refId } } : null;
     case 'DONATION_CONFIRMED':
       return { screen: 'MyDonations' };
+    case 'NEW_FEED_POST':
+      return { screen: 'Home' };
+    // CAMPAIGN: if deepLink is present the caller handles it before resolveScreen.
+    // This fallback fires only when there is no deepLink.
+    case 'CAMPAIGN':
+      return { screen: 'Notifications' };
     case 'COMMUNITY_POST':
     case 'NEW_POLL':
       return { screen: 'Community' };
@@ -104,6 +119,14 @@ const RootNavigator = () => {
   const isAuthenticated = useAuthStore(state => state.isAuthenticated);
   const loadProfile     = useAuthStore(state => state.loadProfile);
   const navRef          = useRef<NavigationContainerRef<any>>(null);
+
+  const {
+    permState,
+    requestPermission,
+    dismissRationale,
+    openSettings,
+    dismissNudge,
+  } = useNotificationPermission(isAuthenticated);
 
   // Load profile on auth state change
   useEffect(() => {
@@ -241,35 +264,17 @@ const RootNavigator = () => {
     }
   }, [isAuthenticated]);
 
-  // ── FCM: request permission + register token ────────────────────────────
-  useEffect(() => {
-    if (!isAuthenticated) { return; }
-    let tokenRefreshUnsub: (() => void) | undefined;
+  // Always-current ref so the FCM/notifee tap effects ([] dep array) can call
+  // handleDeepLink without stale-closure issues.
+  const handleDeepLinkRef = useRef(handleDeepLink);
+  handleDeepLinkRef.current = handleDeepLink;
 
-    const setup = async () => {
-      try {
-        const status = await messaging().requestPermission();
-        const enabled =
-          status === messaging.AuthorizationStatus.AUTHORIZED ||
-          status === messaging.AuthorizationStatus.PROVISIONAL;
-        if (!enabled) { return; }
+  // ── FCM: permission + token registration handled by useNotificationPermission ─
 
-        const token = await messaging().getToken();
-        if (token) { await notificationApi.registerDeviceToken(token); }
-
-        tokenRefreshUnsub = messaging().onTokenRefresh(async (newToken) => {
-          try { await notificationApi.registerDeviceToken(newToken); } catch { /* best effort */ }
-        });
-      } catch { /* non-fatal */ }
-    };
-
-    setup();
-    return () => { tokenRefreshUnsub?.(); };
-  }, [isAuthenticated]);
-
-  // ── FCM: foreground messages → in-app banner ──────────────────────────
-  // When the app is in the foreground FCM does NOT auto-show a system banner.
-  // We show a non-blocking Alert so the user still sees the notification.
+  // ── FCM: foreground messages → real system notification via notifee ────
+  // FCM does NOT auto-show a system banner when app is in the foreground.
+  // notifee.displayNotification() sends it to the notification panel exactly
+  // like WhatsApp / Instagram foreground notifications.
   useEffect(() => {
     if (!isAuthenticated) { return; }
     const unsub = messaging().onMessage(async (remoteMessage) => {
@@ -277,25 +282,58 @@ const RootNavigator = () => {
       const body  = remoteMessage.notification?.body  ?? '';
       if (!body) { return; } // data-only message — ignore visually
 
-      // Navigate on tap (same logic as background tap)
-      const data   = (remoteMessage.data ?? {}) as NotifData;
-      const target = resolveScreen(data);
+      const data = (remoteMessage.data ?? {}) as NotifData;
+      // CAMPAIGN: use image from FCM notification payload as large icon
+      const imageUrl = (remoteMessage.notification as any)?.android?.imageUrl as string | undefined;
 
-      Alert.alert(title, body, [
-        { text: 'Dismiss', style: 'cancel' },
-        ...(target ? [{ text: 'View', onPress: () => {
-          navRef.current?.navigate(target.screen as never, (target.params ?? {}) as never);
-        }}] : []),
-      ]);
+      await notifee.displayNotification({
+        title,
+        body,
+        data: data as Record<string, string>,   // passed through to press handler
+        android: {
+          channelId:     'ripplehub_default',     // channel created in MainApplication.kt
+          importance:    AndroidImportance.HIGH,
+          pressAction:   { id: 'default' },       // tapping opens the app
+          showTimestamp: true,
+          when:          Date.now(),              // precise time, not "today" date
+          ...(imageUrl ? { largeIcon: imageUrl } : {}),
+        },
+      });
     });
     return unsub;
   }, [isAuthenticated]);
+
+  // ── Notifee: notification tapped while app is in foreground ────────────
+  // When the user taps a notifee-displayed notification, navigate to the
+  // right screen using the same resolveScreen logic as background taps.
+  useEffect(() => {
+    const unsub = notifee.onForegroundEvent(({ type, detail }) => {
+      if (type === EventType.PRESS) {
+        const data = (detail.notification?.data ?? {}) as NotifData;
+        // CAMPAIGN with deepLink: route through the deep-link handler
+        if (data.notifType === 'CAMPAIGN' && data.deepLink) {
+          handleDeepLinkRef.current(data.deepLink);
+          return;
+        }
+        const target = resolveScreen(data);
+        if (target && navRef.current) {
+          navRef.current.navigate(target.screen as never, (target.params ?? {}) as never);
+        }
+      }
+    });
+    return unsub;
+  }, []);
 
   // ── FCM: background/quit tap → deep link ───────────────────────────────
   useEffect(() => {
     // App was in background
     const unsubBg = messaging().onNotificationOpenedApp((msg) => {
-      const target = resolveScreen((msg.data ?? {}) as NotifData);
+      const data = (msg.data ?? {}) as NotifData;
+      if (data.notifType === 'CAMPAIGN' && data.deepLink) {
+        handleDeepLinkRef.current(data.deepLink);
+        return;
+      }
+      const target = resolveScreen(data);
       if (target && navRef.current) {
         navRef.current.navigate(target.screen as never, (target.params ?? {}) as never);
       }
@@ -304,7 +342,12 @@ const RootNavigator = () => {
     // App was quit (cold start)
     messaging().getInitialNotification().then((msg) => {
       if (!msg) { return; }
-      const target = resolveScreen((msg.data ?? {}) as NotifData);
+      const data = (msg.data ?? {}) as NotifData;
+      if (data.notifType === 'CAMPAIGN' && data.deepLink) {
+        setTimeout(() => handleDeepLinkRef.current(data.deepLink!), 600);
+        return;
+      }
+      const target = resolveScreen(data);
       if (target && navRef.current) {
         setTimeout(() => {
           navRef.current?.navigate(target.screen as never, (target.params ?? {}) as never);
@@ -327,6 +370,15 @@ const RootNavigator = () => {
           <Stack.Screen name="Auth" component={AuthNavigator} />
         )}
       </Stack.Navigator>
+
+      {/* Notification permission rationale modal + denied nudge banner */}
+      <NotificationPermissionModal
+        permState={permState}
+        onAllow={requestPermission}
+        onNotNow={dismissRationale}
+        onOpenSettings={openSettings}
+        onDismissNudge={dismissNudge}
+      />
     </NavigationContainer>
   );
 };

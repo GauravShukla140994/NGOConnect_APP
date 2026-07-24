@@ -664,4 +664,7 @@ export interface Notification {
   orgId?: number;
   orgName?: string;
   orgLogoUrl?: string;
+  // Marketing & Communication Center — CAMPAIGN notifications
+  deepLink?:    string;   // ngoconnect:// or https:// URL to navigate on tap
+  actionLabel?: string;   // CTA button label (e.g. "Donate Now", "Learn More")
 }

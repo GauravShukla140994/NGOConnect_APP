@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Linking,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -37,6 +38,8 @@ function notifMeta(type: string): { emoji: string; color: string } {
     case 'SOS_RESOLVED':            return { emoji: '✅', color: '#2ECC71' };
     case 'DONATION_CONFIRMED':      return { emoji: '💚', color: '#16A34A' };
     case 'DONATION_RECEIVED_ADMIN': return { emoji: '💰', color: '#16A34A' };
+    case 'NEW_FEED_POST':           return { emoji: '📝', color: C.PRIMARY };
+    case 'CAMPAIGN':                return { emoji: '📣', color: '#7C3AED' };
     case 'COMMUNITY_POST':          return { emoji: '📢', color: C.PRIMARY };
     case 'NEW_POLL':                return { emoji: '📊', color: C.TEAL };
     case 'BADGE_AWARDED':           return { emoji: '🏅', color: '#D97706' };
@@ -75,6 +78,10 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
       return { screen: 'MyDonations' };
     case 'DONATION_RECEIVED_ADMIN':
       return refId ? { screen: 'NgoProfile', params: { orgId: refId } } : { screen: 'MyOrgs' };
+    case 'NEW_FEED_POST':
+      return { screen: 'Home' };
+    // CAMPAIGN: deep link handled separately in onPressNotif; no screen fallback needed here
+    // because tapping a CAMPAIGN row with no deepLink is a no-op (unusual but safe).
     case 'COMMUNITY_POST':
     case 'NEW_POLL':
       return { screen: 'Community' };
@@ -242,6 +249,12 @@ const NotificationsScreen = () => {
           prev.map(n => n.notificationId === item.notificationId ? { ...n, isRead: 0 } : n)
         );
       }
+    }
+
+    // CAMPAIGN: open deepLink (ngoconnect:// or https://) if present
+    if (item.notifType === 'CAMPAIGN' && item.deepLink) {
+      Linking.openURL(item.deepLink).catch(() => {});
+      return;
     }
 
     // Navigate to relevant screen
