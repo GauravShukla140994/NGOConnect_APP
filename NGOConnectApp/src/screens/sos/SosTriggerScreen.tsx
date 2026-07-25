@@ -127,21 +127,42 @@ export default function SosTriggerScreen() {
   }, []);
 
   // ── Fetch GPS + reverse geocode ─────────────────────────────────────────────
+  // Two-stage strategy:
+  //   Stage 1 — high-accuracy GPS (satellite). Fast on devices with a warm GPS
+  //             chip or clear sky view. Timeout: 8s to keep UX snappy.
+  //   Stage 2 — network location (cell towers + WiFi). Works indoors, in power-
+  //             saving mode, and on devices with slow GPS hardware. This is why
+  //             the Home screen works on all devices — it uses this mode only.
+  // Fallback ensures users in genuine emergencies are never stuck on the error
+  // screen simply because GPS satellite lock took too long.
   const fetchLocation = () => {
     setLocLoading(true);
     setLocError('');
+
+    const onSuccess = async (pos: { coords: { latitude: number; longitude: number } }) => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      const areaName = await reverseGeocode(lat, lng);
+      setLocation({ lat, lng, areaName: areaName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`, updatedAt: new Date() });
+      setLocLoading(false);
+    };
+
+    const onFinalError = () => {
+      setLocError('Could not get GPS location. Please enable location permissions.');
+      setLocLoading(false);
+    };
+
+    // Stage 1: try GPS (high accuracy), 8-second window
     Geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude: lat, longitude: lng } = pos.coords;
-        const areaName = await reverseGeocode(lat, lng);
-        setLocation({ lat, lng, areaName: areaName || `${lat.toFixed(4)}, ${lng.toFixed(4)}`, updatedAt: new Date() });
-        setLocLoading(false);
-      },
+      onSuccess,
       () => {
-        setLocError('Could not get GPS location. Please enable location permissions.');
-        setLocLoading(false);
+        // Stage 2: GPS timed out → fall back to network location (cell + WiFi)
+        Geolocation.getCurrentPosition(
+          onSuccess,
+          onFinalError,
+          { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 },
+        );
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 },
     );
   };
 

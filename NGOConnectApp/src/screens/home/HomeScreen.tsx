@@ -711,15 +711,6 @@ const PostCard = React.memo(function PostCard({
         >
           <Text style={styles.igActionIcon}>💬</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.igActionBtn, { marginLeft: 'auto' }]}
-          onPress={() => setBookmarked(b => !b)}
-          accessibilityLabel="Bookmark post"
-        >
-          <Text style={[styles.igActionIcon, bookmarked && { color: C.PRIMARY }]}>
-            {bookmarked ? '🔖' : '🏷️'}
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {/* ── Likes count ────────────────────────────────────────────── */}

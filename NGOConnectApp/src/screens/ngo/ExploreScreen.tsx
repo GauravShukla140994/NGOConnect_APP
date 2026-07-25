@@ -184,12 +184,13 @@ export default function ExploreScreen() {
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
 
   // Derived
-  const activeOrg    = userOrgs.find((o) => o.orgId === activeOrgId)
-                    ?? userOrgs.find((o) => o.memberStatusCode === 'APPROVED')
+  // Only consider orgs where both membership AND org status are APPROVED (suspended orgs excluded)
+  const activeOrg    = userOrgs.find((o) => o.orgId === activeOrgId && o.orgStatusCode === 'APPROVED')
+                    ?? userOrgs.find((o) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED')
                     ?? selectedOrg ?? storeActiveOrg;
   const exploreOrgName = activeOrg?.orgName ?? activeOrg?.name ?? 'Explore';
   const orgInitials  = exploreOrgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-  const approvedOrgs = userOrgs.filter((o) => o.memberStatusCode === 'APPROVED');
+  const approvedOrgs = userOrgs.filter((o) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED');
 
   // Deterministic color for org avatar
   const ORG_COLORS   = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A', '#7C3AED'];
@@ -210,8 +211,8 @@ export default function ExploreScreen() {
         setUserOrgs(orgs);
         setActiveOrgId((prev) => {
           if (prev) { return prev; }
-          const first = orgs.find((o: any) => o.memberStatusCode === 'APPROVED');
-          return first?.orgId ?? orgs[0]?.orgId ?? null;
+          const first = orgs.find((o: any) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED');
+          return first?.orgId ?? null;
         });
       }
     }).catch(() => {});

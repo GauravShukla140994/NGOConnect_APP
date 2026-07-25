@@ -251,13 +251,14 @@ export default function CommunityScreen() {
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
 
   // Derived from local state (mirrors HomeScreen pattern)
-  const activeOrg   = userOrgs.find((o) => o.orgId === activeOrgId)
-                   ?? userOrgs.find((o) => o.memberStatusCode === 'APPROVED')
+  // Only consider orgs where both membership AND org status are APPROVED (suspended orgs excluded)
+  const activeOrg   = userOrgs.find((o) => o.orgId === activeOrgId && o.orgStatusCode === 'APPROVED')
+                   ?? userOrgs.find((o) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED')
                    ?? selectedOrg ?? storeActiveOrg;
   const orgId       = (route.params?.orgId as number | undefined) ?? activeOrg?.orgId ?? 0;
   const orgName     = activeOrg?.orgName ?? activeOrg?.name ?? 'Community';
   const orgInitials = orgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-  const approvedOrgs = userOrgs.filter((o) => o.memberStatusCode === 'APPROVED');
+  const approvedOrgs = userOrgs.filter((o) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED');
 
   // ── Notification unread count ─────────────────────────────────────────────────
   const [unreadCount, setUnreadCount] = useState(0);
@@ -299,8 +300,8 @@ export default function CommunityScreen() {
         setUserOrgs(orgs);
         setActiveOrgId((prev) => {
           if (prev) { return prev; }
-          const first = orgs.find((o: any) => o.memberStatusCode === 'APPROVED');
-          return first?.orgId ?? orgs[0]?.orgId ?? null;
+          const first = orgs.find((o: any) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED');
+          return first?.orgId ?? null;
         });
       }
     }).catch(() => {});
