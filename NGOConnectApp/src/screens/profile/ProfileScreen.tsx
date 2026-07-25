@@ -35,6 +35,7 @@ const ACTIVITY_ITEMS = [
   { icon: '🏢', label: 'Admin Dashboard',     screen: 'AdminTabs' },
   { icon: '🏛', label: 'My Organizations',   screen: 'MyOrgs' },
   { icon: '💛', label: 'My Donations',        screen: 'MyDonations' },
+  { icon: '🔖', label: 'Saved Posts',         screen: 'SavedPosts' },
 ];
 
 // Returns true if the org is one the user administers (ADMIN or FOUNDER role).
@@ -53,8 +54,8 @@ const SETTINGS_ITEMS = [
   { icon: '🔐', label: 'Privacy Policy',           screen: 'WebView',                   params: { url: 'https://www.ripplehub.app/privacy', title: 'Privacy Policy'   } },
   { icon: '🆘', label: 'Help & Support',           screen: 'HelpSupport',               params: undefined },
   { icon: '⚙',  label: 'Account Settings',         screen: 'AccountSettings',           params: undefined },
-  // DEV ONLY — remove before Play Store release
-  { icon: '🔔', label: '🧪 Test Push Notification', screen: 'FCMTest',                  params: undefined },
+  // DEV ONLY — uncomment to test push notifications, remove before Play Store release
+  // { icon: '🔔', label: '🧪 Test Push Notification', screen: 'FCMTest', params: undefined },
 ];
 
 export default function ProfileScreen() {

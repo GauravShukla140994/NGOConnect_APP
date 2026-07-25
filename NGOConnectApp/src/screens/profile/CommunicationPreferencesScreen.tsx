@@ -104,11 +104,21 @@ export default function CommunicationPreferencesScreen() {
       try {
         const res = await communicationApi.get();
         if (res.data?.isSuccess && res.data.data) {
-          setPrefs(res.data.data);
+          // DynamicRow returns TINYINT(1) as number 1/0, not boolean true/false.
+          // !! forces to proper boolean so Switch renders correctly on Android.
+          const r = res.data.data as any;
+          setPrefs({
+            receivePushNotifications:      !!r.receivePushNotifications,
+            receivePromotionalEmails:      !!r.receivePromotionalEmails,
+            receivePromotionalSms:         !!r.receivePromotionalSms,
+            receiveNgoUpdates:             !!r.receiveNgoUpdates,
+            receiveDonationAlerts:         !!r.receiveDonationAlerts,
+            receiveVolunteerOpportunities: !!r.receiveVolunteerOpportunities,
+          });
         }
-        // else keep defaults — API may not be deployed yet
+        // else keep DEFAULT_PREFS (all true) — API not deployed or no data yet
       } catch {
-        // Network error — keep defaults silently
+        // Network error — keep DEFAULT_PREFS silently
       } finally {
         setLoading(false);
       }

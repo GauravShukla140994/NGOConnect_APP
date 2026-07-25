@@ -472,6 +472,7 @@ export interface Post {
   // Phase 1 personalised feed additions
   isSaved?:      number | boolean; // 0|1 — whether current user has saved this post
   saveCount?:    number;
+  savedAt?:      string;           // ISO datetime when the user saved this post (Post_GetSaved only)
   shareCount?:   number;
   isEmergency?:  number | boolean;
   isEvergreen?:  number | boolean;

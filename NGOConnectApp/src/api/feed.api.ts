@@ -56,6 +56,9 @@ export const feedApi = {
   unsavePost: (postId: number) =>
     apiClient.delete<ApiResponse<null>>(`/feed/post/${postId}/save`),
 
+  getSavedPosts: (params?: { pageNumber?: number; pageSize?: number }) =>
+    apiClient.get<ApiResponse<PagedResult<Post>>>('/feed/saved', { params }),
+
   trackInteraction: (data: { postId: number; interactionType: string; durationMs?: number }) =>
     apiClient.post<ApiResponse<null>>('/feed/interaction', data),
 };
@@ -68,6 +71,7 @@ export const likePost            = (postId: number) => feedApi.likePost(postId);
 export const unlikePost          = (postId: number) => feedApi.unlikePost(postId);
 export const savePost            = (postId: number) => feedApi.savePost(postId);
 export const unsavePost          = (postId: number) => feedApi.unsavePost(postId);
+export const getSavedPosts       = (params?: { pageNumber?: number; pageSize?: number }) => feedApi.getSavedPosts(params);
 export const trackInteraction    = (data: Parameters<typeof feedApi.trackInteraction>[0]) => feedApi.trackInteraction(data);
 export const addComment          = (postId: number, content: string, parentCommentId?: number) => feedApi.addComment(postId, content, parentCommentId);
 export const getComments         = (postId: number, params: {pageNumber?: number; pageSize?: number}) => feedApi.getComments(postId, params);

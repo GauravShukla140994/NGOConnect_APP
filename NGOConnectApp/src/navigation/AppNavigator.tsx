@@ -50,6 +50,7 @@ import InviteAcceptScreen     from '../screens/invite/InviteAcceptScreen';
 import WebViewScreen                   from '../screens/common/WebViewScreen';
 import HelpSupportScreen               from '../screens/profile/HelpSupportScreen';
 import CommunicationPreferencesScreen  from '../screens/profile/CommunicationPreferencesScreen';
+import SavedPostsScreen                from '../screens/profile/SavedPostsScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -190,6 +191,9 @@ const AppNavigator = () => (
 
     {/* Communication & Notification Preferences */}
     <Stack.Screen name="CommunicationPreferences" component={CommunicationPreferencesScreen} />
+
+    {/* Saved Posts */}
+    <Stack.Screen name="SavedPosts" component={SavedPostsScreen} />
   </Stack.Navigator>
 );
 

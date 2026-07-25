@@ -388,6 +388,22 @@ const PostCard = React.memo(function PostCard({
     finally { setFollowingOrgLoad(false); }
   };
 
+  // ── Save / unsave toggle (optimistic, reverts on error) ───────────────────
+  const handleSaveToggle = useCallback(async () => {
+    setShowMenu(false);
+    const wasSaved = bookmarked;
+    setBookmarked(!wasSaved);  // optimistic update
+    try {
+      if (wasSaved) {
+        await feedApi.unsavePost(post.postId!);
+      } else {
+        await feedApi.savePost(post.postId!);
+      }
+    } catch {
+      setBookmarked(wasSaved);  // revert on network error
+    }
+  }, [bookmarked, post.postId]);
+
   const openReport = () => {
     setShowMenu(false);
     setSelectedReason(null);
@@ -484,8 +500,8 @@ const PostCard = React.memo(function PostCard({
                 label: isFollowingOrg ? 'Unfollow NGO' : 'Follow NGO',
                 onPress: handleFollowNGO,
               }] : []),
-              { icon: '↗️', label: 'Share',        onPress: () => setShowMenu(false) },
-              { icon: '🔖', label: 'Save',         onPress: () => { setBookmarked(b => !b); setShowMenu(false); } },
+              { icon: '↗️', label: 'Share',                                    onPress: () => setShowMenu(false) },
+              { icon: '🔖', label: bookmarked ? 'Unsave' : 'Save',           onPress: handleSaveToggle },
             ].map(item => (
               <TouchableOpacity key={item.label} style={styles.menuRow} onPress={item.onPress}>
                 <Text style={styles.menuIcon}>{item.icon}</Text>
