@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Video from 'react-native-video';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
@@ -380,6 +381,17 @@ function GalleryPostCard({ post }: { post: Post }) {
       ? (rawMedia as string).split(',').map((u: string) => u.trim()).filter(Boolean)
       : [];
 
+  // Parallel media types ('IMAGE' | 'VIDEO') — defaults to 'IMAGE' if missing
+  const rawTypes = post.mediaTypes as unknown;
+  const mediaTypes: string[] = typeof rawTypes === 'string' && rawTypes
+    ? rawTypes.split(',').map((t: string) => t.trim())
+    : [];
+  const firstIsVideo = (mediaTypes[0] ?? 'IMAGE') === 'VIDEO';
+
+  // Play / mute state for the first media item when it is a video
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [muted,     setMuted]     = useState(true);
+
   return (
     <View style={styles.galleryPostCard}>
       <View style={styles.galleryPostHeader}>
@@ -398,9 +410,48 @@ function GalleryPostCard({ post }: { post: Post }) {
         <Text style={styles.galleryPostTime}>{post.timeAgo ?? ''}</Text>
       </View>
       <Text style={styles.galleryPostContent} numberOfLines={5}>{post.content}</Text>
+
       {mediaUrls.length > 0 && (
-        <Image source={{ uri: mediaUrls[0] }} style={styles.galleryPostImage} resizeMode="cover" />
+        firstIsVideo ? (
+          /* ── Video: tap to play/pause, mute toggle while playing ── */
+          <TouchableOpacity
+            style={styles.galleryVideoWrap}
+            onPress={() => setIsPlaying(p => !p)}
+            activeOpacity={1}
+            accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
+          >
+            <Video
+              source={{ uri: mediaUrls[0] }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              paused={!isPlaying}
+              muted={muted}
+              repeat={true}
+              controls={false}
+            />
+            {/* Play button — centered by galleryVideoWrap flex (Video is absoluteFill → out of flow) */}
+            {!isPlaying && (
+              <View style={styles.galleryVideoCircle}>
+                <Text style={styles.galleryVideoIcon}>▶</Text>
+              </View>
+            )}
+            {isPlaying && (
+              <TouchableOpacity
+                style={styles.galleryMuteBtn}
+                onPress={e => { e.stopPropagation(); setMuted(m => !m); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
+              >
+                <Text style={styles.galleryMuteBtnText}>{muted ? '🔇' : '🔊'}</Text>
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+        ) : (
+          /* ── Image ─────────────────────────────────────────────── */
+          <Image source={{ uri: mediaUrls[0] }} style={styles.galleryPostImage} resizeMode="cover" />
+        )
       )}
+
       <View style={styles.galleryPostFooter}>
         <Text style={styles.galleryPostMeta}>❤️ {post.likeCount ?? 0}  · 💬 {post.commentCount ?? 0}</Text>
       </View>
@@ -542,6 +593,22 @@ export default function NgoProfileScreen() {
     nav.navigate('Donate', { orgId });
   }, [nav, orgId]);
 
+  const handleShare = useCallback(async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const res = await shareApi.getToken('ORG', orgId);
+      const url = res.data?.data?.url;
+      const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
+      await Share.share({ message: url ?? `https://ripplehub.app/ngo/${orgId}`, title });
+    } catch {
+      const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
+      Share.share({ message: `https://ripplehub.app/ngo/${orgId}`, title }).catch(() => {});
+    } finally {
+      setSharing(false);
+    }
+  }, [sharing, orgId, org]);
+
   const handleWebsite = useCallback(() => {
     if (!org?.website) return;
     const url = org.website.startsWith('http') ? org.website : `https://${org.website}`;
@@ -619,30 +686,6 @@ export default function NgoProfileScreen() {
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => nav.goBack()} style={styles.backBtn} accessibilityLabel="Go back">
           <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.shareTopBtn, sharing && { opacity: 0.55 }]}
-          accessibilityLabel="Share NGO profile"
-          disabled={sharing}
-          onPress={async () => {
-            setSharing(true);
-            try {
-              const res = await shareApi.getToken('ORG', orgId);
-              const url = res.data?.data?.url;
-              const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
-              await Share.share({ message: url ?? `https://ripplehub.app/ngo/${orgId}`, title });
-            } catch {
-              // Fallback to legacy URL if API call fails
-              const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
-              Share.share({ message: `https://ripplehub.app/ngo/${orgId}`, title }).catch(() => {});
-            } finally {
-              setSharing(false);
-            }
-          }}>
-          {sharing
-            ? <ActivityIndicator size="small" color="#fff" style={{ width: 40 }} />
-            : <Text style={styles.shareTopBtnText}>↗ Share</Text>
-          }
         </TouchableOpacity>
         {authUser?.profilePhoto
           ? <Image source={{ uri: authUser.profilePhoto }} style={[styles.userAvatar, { overflow: 'hidden' }]} />
@@ -725,6 +768,18 @@ export default function NgoProfileScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtnOutline} onPress={handleDonate} activeOpacity={0.85}>
             <Text style={styles.actionBtnOutlineText}>💛 Donate</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtnShare, sharing && { opacity: 0.55 }]}
+            onPress={handleShare}
+            disabled={sharing}
+            activeOpacity={0.85}
+            accessibilityLabel="Share NGO profile"
+          >
+            {sharing
+              ? <ActivityIndicator size="small" color={C.PRIMARY} />
+              : <Text style={styles.actionBtnShareIcon}>📤</Text>
+            }
           </TouchableOpacity>
         </View>
 
@@ -946,8 +1001,9 @@ const styles = StyleSheet.create({
   backText:          { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   userAvatar:        { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   userAvatarText:    { color: '#fff', fontSize: 12, fontWeight: '700' },
-  shareTopBtn:       { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: C.PRIMARY + '18', borderWidth: 1, borderColor: C.PRIMARY + '40' },
-  shareTopBtnText:   { fontSize: 13, fontWeight: '600', color: C.PRIMARY },
+  // Share button in the action row — fixed width so existing flex buttons are untouched
+  actionBtnShare:     { width: 44, alignSelf: 'stretch', borderWidth: 1.5, borderColor: C.PRIMARY + '70', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  actionBtnShareIcon: { fontSize: 20 },
 
   // Hero
   hero:              { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16, backgroundColor: C.CARD },
@@ -1029,6 +1085,12 @@ const styles = StyleSheet.create({
   galleryPostTime:      { fontSize: 11, color: C.TEXT3 },
   galleryPostContent:   { fontSize: 13, color: C.TEXT2, lineHeight: 19, marginBottom: 8 },
   galleryPostImage:     { width: '100%', height: 180, borderRadius: 10, marginBottom: 8 },
+  galleryVideoWrap:     { width: '100%', height: 180, borderRadius: 10, marginBottom: 8, overflow: 'hidden', backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+  galleryVideoOverlay:  { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' }, // unused — kept for safety
+  galleryVideoCircle:   { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  galleryVideoIcon:     { color: '#fff', fontSize: 18, marginLeft: 3 },
+  galleryMuteBtn:       { position: 'absolute', bottom: 8, right: 8, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  galleryMuteBtnText:   { fontSize: 16 },
   galleryPostFooter:    { borderTopWidth: 1, borderTopColor: C.BORDER, paddingTop: 8 },
   galleryPostMeta:      { fontSize: 12, color: C.TEXT3 },
 });

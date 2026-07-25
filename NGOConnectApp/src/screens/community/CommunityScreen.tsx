@@ -717,7 +717,7 @@ export default function CommunityScreen() {
 
               <View style={styles.privacyBanner}>
                 <Text style={styles.privacyText}>
-                  {'Private space for your NGO members. Content here is never shown on the public Feed.'}
+                  {`Private space for your ${orgName} members. Content here is never shown on the public Feed.`}
                 </Text>
               </View>
             </>
