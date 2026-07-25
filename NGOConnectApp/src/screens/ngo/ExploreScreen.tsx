@@ -237,7 +237,7 @@ export default function ExploreScreen() {
 
   useFocusEffect(useCallback(() => {
     notificationApi.getUnreadCount()
-      .then(r => { if (r.data?.isSuccess) { setUnreadCount(r.data.data?.count ?? 0); } })
+      .then(r => { if (r.data?.isSuccess) { setUnreadCount(r.data.data?.unreadCount ?? 0); } })
       .catch(() => {});
   }, []));
 
