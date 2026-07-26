@@ -24,6 +24,13 @@ const C = AppConfig.COLORS;
 const CATEGORY_CHIPS = ['All', 'Community', 'Environment', 'Education', 'Healthcare', 'Animal Welfare'] as const;
 const TYPE_CHIPS     = ['Any Schedule', 'Recurring', 'One-time', 'Flexible'] as const;
 
+// Maps chip label → ValueCode returned by Project_GetNearbyFeed SP (ptv.ValueCode AS ProjectTypeCode)
+const TYPE_CODE_MAP: Record<string, string> = {
+  'One-time':  'ONE_TIME',
+  'Recurring': 'RECURRING',
+  'Flexible':  'FLEXIBLE',
+};
+
 const CATEGORY_COLOR: Record<string, string> = {
   Community:        C.TEAL,
   Environment:      C.TEAL,
@@ -68,7 +75,7 @@ function OppCard({ item, onApply, onPress }: { item: Project; onApply: () => voi
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <View style={[styles.typePill, { backgroundColor: '#F3F4F6' }]}>
-            <Text style={styles.typePillText}>{item.scheduleType ?? item.projectTypeCode ?? 'One-time'}</Text>
+            <Text style={styles.typePillText}>{(item as any).projectType ?? item.scheduleType ?? 'One-time'}</Text>
           </View>
           {!isFull && (
             <Text style={[styles.spotsText, { color: spotsColor(spots) }]}>
@@ -286,16 +293,14 @@ export default function AllOpportunitiesScreen() {
   };
 
   // Client-side filter on fetched results
+  // projectTypeCode comes from ptv.ValueCode AS ProjectTypeCode in Project_GetNearbyFeed SP
+  // It is ONE_TYPE, RECURRING, or FLEXIBLE — exact match against TYPE_CODE_MAP
   const displayed = allProjects.filter(p => {
-    const cat      = (p.categoryName ?? p.category ?? '').toLowerCase();
-    const typeCode = (p.scheduleType ?? p.projectTypeCode ?? '').toLowerCase();
+    const cat      = (p.categoryName ?? (p as any).category ?? '').toLowerCase();
+    const typeCode = ((p as any).projectTypeCode ?? p.scheduleType ?? '').toUpperCase();
 
     const catMatch  = activeCategory === 'All' || cat.includes(activeCategory.toLowerCase());
-    const typeMatch = activeType === 'Any Schedule' ||
-      typeCode.includes(activeType.toUpperCase().replace('-', '_').split(' ')[0].toLowerCase()) ||
-      (activeType === 'One-time'  && typeCode.includes('one')) ||
-      (activeType === 'Recurring' && typeCode.includes('recur')) ||
-      (activeType === 'Flexible'  && typeCode.includes('flex'));
+    const typeMatch = activeType === 'Any Schedule' || typeCode === (TYPE_CODE_MAP[activeType] ?? '');
 
     return catMatch && typeMatch;
   });
@@ -321,7 +326,7 @@ export default function AllOpportunitiesScreen() {
         <View style={{ alignItems: 'center' }}>
           <Text style={styles.topBarTitle}>Nearby Opportunities</Text>
           {userCoords && (
-            <Text style={styles.topBarSub}>Sorted by distance · relevance</Text>
+            <Text style={styles.topBarSub}>Sorted nearest first</Text>
           )}
         </View>
         <View style={{ width: 40 }} />

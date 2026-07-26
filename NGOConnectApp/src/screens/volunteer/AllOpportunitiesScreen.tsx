@@ -342,6 +342,12 @@ export default function AllOpportunitiesScreen() {
       const keyword = searchRef.current.trim() || undefined;
       const cityFilter = activeLocation !== 'Nearby' ? activeLocation : undefined;
       const categoryFilter = activeCategory !== 'All' ? activeCategory : undefined;
+      const TYPE_CODE_MAP: Record<string, string> = {
+        'Recurring': 'RECURRING',
+        'One-time':  'ONE_TIME',
+        'Flexible':  'FLEXIBLE',
+      };
+      const typeCode = TYPE_CODE_MAP[activeType];
       const nearbyCoords = activeLocation === 'Nearby' && userCoords
         ? { userLat: userCoords.lat, userLon: userCoords.lon }
         : {};
@@ -349,6 +355,7 @@ export default function AllOpportunitiesScreen() {
         keyword,
         city: cityFilter,
         category: categoryFilter,
+        typeCode,
         pageNumber: pg,
         pageSize: 15,
         ...nearbyCoords,
@@ -368,7 +375,7 @@ export default function AllOpportunitiesScreen() {
     }
   }, [activeType, activeLocation, activeCategory, userCoords]);
 
-  useEffect(() => { fetchData(1); }, [fetchData, activeLocation, activeCategory]);
+  useEffect(() => { fetchData(1); }, [fetchData, activeLocation, activeCategory, activeType]);
 
   const handleSearch = () => {
     searchRef.current = search;
