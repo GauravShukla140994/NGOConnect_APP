@@ -27,6 +27,7 @@ import Video from 'react-native-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { fmtDate } from '../../utils/dateUtils';
 import { feedApi } from '../../api/feed.api';
 import type { Post } from '../../types/api.types';
 
@@ -47,11 +48,8 @@ function avatarBg(postId: number) {
 }
 
 function fmtSavedAt(iso?: string): string {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return `Saved ${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-  } catch { return ''; }
+  const d = fmtDate(iso);
+  return d ? `Saved ${d}` : '';
 }
 
 // ─── SavedPostCard ────────────────────────────────────────────────────────────

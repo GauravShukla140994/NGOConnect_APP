@@ -30,15 +30,28 @@ function statusBadge(code?: string) {
 }
 
 function fmtSchedule(p: any): string {
-  const type = (p.scheduleType ?? p.projectTypeCode ?? '').toUpperCase();
-  if (type === 'RECURRING' && p.recurDays) {
-    const days = String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3)).join(' & ');
-    const range = p.recurStart ? ` · ${p.recurStart}${p.recurEnd ? ` – ${p.recurEnd}` : ''}` : '';
+  // Detect schedule type from data fields — robust against type-code mismatches
+  // (same approach as AllOpportunitiesScreen which is confirmed working)
+  if (p.recurDays) {
+    const dayList = String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3).toUpperCase());
+    const days = dayList.length <= 2
+      ? dayList.join(' & ')
+      : dayList.slice(0, -1).join(', ') + ' & ' + dayList[dayList.length - 1];
+    const range = p.recurStart
+      ? ` · ${_fmtDate(p.recurStart)}${p.recurEnd ? ` – ${_fmtDate(p.recurEnd)}` : ''}`
+      : '';
     return `Recurring · ${days}${range}`;
   }
-  if (type === 'ONE_TIME' && p.oneTimeDate) return `One-time · ${p.oneTimeDate}`;
-  if (type === 'FLEXIBLE') return `Flexible${p.flexFromDate ? ` · ${p.flexFromDate}${p.flexToDate ? ` – ${p.flexToDate}` : ''}` : ''}`;
-  return p.scheduleType ?? '';
+  if (p.oneTimeDate) return `One-time · ${_fmtDate(p.oneTimeDate)}`;
+  if (p.flexFromDate) {
+    return `Flexible · ${_fmtDate(p.flexFromDate)}${p.flexToDate ? ` – ${_fmtDate(p.flexToDate)}` : ''}`;
+  }
+  // Last-resort: generic date fields some older SPs return
+  if (p.startDate) {
+    return _fmtDate(p.startDate) +
+      (p.endDate && p.endDate !== p.startDate ? ` – ${_fmtDate(p.endDate)}` : '');
+  }
+  return '';
 }
 
 function buildTimeRange(p: any): string | null {

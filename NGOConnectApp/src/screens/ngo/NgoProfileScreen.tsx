@@ -17,6 +17,7 @@ import Video from 'react-native-video';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { fmtDate } from '../../utils/dateUtils';
 import apiClient from '../../api/apiClient';
 import { getProfile, orgApi } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
@@ -56,12 +57,7 @@ const fmtTime = (t?: string) => {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
 };
 
-const fmtDate = (d?: string) => {
-  if (!d) return '';
-  try {
-    return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  } catch { return d; }
-};
+// fmtDate imported from utils/dateUtils (26-Jul-2026 format)
 
 const abbrevDays = (days?: string) => {
   if (!days) return '';

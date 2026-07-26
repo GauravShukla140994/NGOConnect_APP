@@ -18,6 +18,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { fmtDate } from '../../utils/dateUtils';
 import { orgApi } from '../../api/org.api';
 import { getMyOrgs } from '../../api/user.api';
 import { useAdminStore } from '../../store/adminStore';
@@ -60,7 +61,7 @@ function PendingCard({
             )}
           </View>
           <Text style={styles.memberMeta} numberOfLines={1}>
-            {[member.email, member.occupation, member.joinedAt].filter(Boolean).join(' · ')}
+            {[member.email, member.occupation, fmtDate(member.joinedAt)].filter(Boolean).join(' · ')}
           </Text>
         </View>
         <View style={styles.pendingBadge}><Text style={styles.pendingBadgeText}>Pending</Text></View>
@@ -130,7 +131,7 @@ function MemberRow({ member, onView }: { member: OrgMember; onView: () => void }
           </View>
         </View>
         <Text style={styles.memberMeta} numberOfLines={1}>
-          {[member.occupation, member.joinedAt ? `Joined ${member.joinedAt}` : null].filter(Boolean).join(' · ')}
+          {[member.occupation, member.joinedAt ? `Joined ${fmtDate(member.joinedAt)}` : null].filter(Boolean).join(' · ')}
         </Text>
       </View>
       <TouchableOpacity onPress={onView} accessibilityLabel={`View ${member.fullName}`} style={styles.eyeBtn}>
@@ -358,7 +359,7 @@ function MemberDetailsSheet({
               <View style={styles.contactRow}>
                 <Text style={styles.contactIcon}>📅</Text>
                 <Text style={styles.contactText}>
-                  Joined {member.joinedAt}{member.lastActiveAt ? ` · Active ${member.lastActiveAt}` : ''}
+                  Joined {fmtDate(member.joinedAt)}{member.lastActiveAt ? ` · Active ${fmtDate(member.lastActiveAt)}` : ''}
                 </Text>
               </View>
             </View>

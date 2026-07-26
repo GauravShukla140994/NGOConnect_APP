@@ -24,6 +24,7 @@ import {
 import DocumentPicker, { types as DocTypes } from 'react-native-document-picker';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import AppConfig from '../../config/AppConfig';
+import { fmtDate } from '../../utils/dateUtils';
 import { userApi } from '../../api/user.api';
 import { uploadFile, getSignedUrl } from '../../api/upload.api';
 import type { UserDocument, LookupValue } from '../../types/api.types';
@@ -329,7 +330,7 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
                   <Text style={styles.uploadedName} numberOfLines={1}>{existing.fileName}</Text>
                   <Text style={styles.uploadedMeta}>
                     {existing.fileSizeKb ? `${existing.fileSizeKb} KB · ` : ''}
-                    Uploaded {new Date(existing.uploadedAt).toLocaleDateString()}
+                    Uploaded {fmtDate(existing.uploadedAt)}
                   </Text>
                 </View>
                 <View style={styles.uploadedActions}>

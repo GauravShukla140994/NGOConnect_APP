@@ -1,18 +1,19 @@
 /**
  * Shared date/time formatting utilities for NGO Connect.
  *
- * Standard display format: DD MMM YYYY  |  h:mm AM/PM
+ * Standard display format: DD-Mon-YYYY  |  hh:mm AM/PM
  * Examples:
- *   19 Jul 2026
- *   9:30 AM
- *   19 Jul 2026 9:30 AM
- *   19 Jul 2026 – 30 Dec 2026
- *   9:30 AM – 1:00 PM
+ *   26-Jul-2026
+ *   03:59 AM
+ *   26-Jul-2026 02:00 PM
+ *   26-Jul-2026 – 30-Dec-2026
+ *   09:30 AM – 01:00 PM
  *
  * Design notes:
  *   - Date strings are parsed by splitting on 'T' so timezone never shifts the day.
  *     e.g. "2026-07-19T00:00:00" → local Date(2026, 6, 19) regardless of device TZ.
- *   - Time strings ("HH:MM" or "HH:MM:SS") are converted to 12-hour + AM/PM.
+ *   - Time strings ("HH:MM" or "HH:MM:SS") are converted to 12-hour + AM/PM with
+ *     leading zero on the hour (02:00 PM, not 2:00 PM).
  *   - All functions are null-safe — empty string is returned for falsy input.
  */
 
@@ -28,26 +29,29 @@ function parseLocalDate(s: string): Date {
   return new Date(y, mo - 1, d);   // local midnight, no UTC shift
 }
 
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
 // ─── Public formatters ────────────────────────────────────────────────────────
 
 /**
- * Format a date string or Date to "DD MMM YYYY".
- * e.g. "2026-07-19T00:00:00" → "19 Jul 2026"
+ * Format a date string or Date to "DD-Mon-YYYY".
+ * e.g. "2026-07-19T00:00:00" → "19-Jul-2026"
+ *      "2026-07-06T00:00:00" → "06-Jul-2026"
  */
 export function fmtDate(d: string | Date | null | undefined): string {
   if (!d) return '';
   const date = typeof d === 'string' ? parseLocalDate(d) : d;
-  return date.toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  const day = String(date.getDate()).padStart(2, '0');
+  const mon = MONTHS[date.getMonth()];
+  const yr  = date.getFullYear();
+  return `${day}-${mon}-${yr}`;
 }
 
 /**
- * Format a time string "HH:MM" or "HH:MM:SS" → "h:mm AM/PM".
- * e.g. "09:30:00" → "9:30 AM"
- *      "13:00"    → "1:00 PM"
+ * Format a time string "HH:MM" or "HH:MM:SS" → "hh:mm AM/PM" (leading zero on hour).
+ * e.g. "09:30:00" → "09:30 AM"
+ *      "13:00"    → "01:00 PM"
+ *      "00:00"    → "12:00 AM"
  */
 export function fmtTime(t: string | null | undefined): string {
   if (!t) return '';
@@ -55,7 +59,7 @@ export function fmtTime(t: string | null | undefined): string {
   if (isNaN(h) || isNaN(m)) return t;
   const ampm = h >= 12 ? 'PM' : 'AM';
   const h12  = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 /**

@@ -79,7 +79,12 @@ function timeAgoShort(iso: string | undefined | null): string {
 }
 
 function fmtTime(iso: string): string {
-  return asUtc(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const d = asUtc(iso);
+  const h = d.getUTCHours();
+  const m = d.getUTCMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 // ── Leaflet map HTML (OpenStreetMap tiles, no API key) ────────────────────────

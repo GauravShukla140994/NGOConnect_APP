@@ -51,9 +51,12 @@ function respondedAgo(iso: string | undefined): string {
 
 function formatTime(iso: string | undefined): string {
   if (!iso) { return ''; }
-  return new Date(iso).toLocaleTimeString('en-IN', {
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
+  const d = new Date(iso);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 // ── Responder row ─────────────────────────────────────────────────────────────

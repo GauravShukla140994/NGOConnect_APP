@@ -20,6 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { fmtDate } from '../../utils/dateUtils';
 import { userApi } from '../../api/user.api';
 import { projectApi } from '../../api/project.api';
 import { orgApi } from '../../api/org.api';
@@ -295,7 +296,7 @@ export default function VolunteerProfileScreen() {
               <Text style={s.cardTitle}>Membership Application</Text>
               {!!requestedAt && (
                 <Text style={s.adminOnlyText}>
-                  {new Date(requestedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {fmtDate(requestedAt)}
                 </Text>
               )}
             </View>

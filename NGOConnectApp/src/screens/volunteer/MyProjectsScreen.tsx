@@ -12,6 +12,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { fmtDate } from '../../utils/dateUtils';
 import { getMyApplications } from '../../api/user.api';
 import type { UserApplication } from '../../types/api.types';
 
@@ -45,12 +46,7 @@ const isUpcoming  = (a: UserApplication) =>
 const isApplied   = (a: UserApplication) =>
   !isUpcoming(a) && !isCompleted(a);
 
-function fmtDate(iso?: string) {
-  if (!iso) return undefined;
-  try {
-    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  } catch { return iso; }
-}
+// fmtDate imported from utils/dateUtils (26-Jul-2026 format)
 
 function ProjectCard({ item, tab }: { item: UserApplication; tab: Tab }) {
   const statusColor = STATUS_COLORS[item.statusCode] ?? STATUS_COLORS.APPROVED;
