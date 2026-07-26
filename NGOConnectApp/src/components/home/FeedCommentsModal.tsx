@@ -57,7 +57,7 @@ interface FeedComment {
 
 const CommentRow = React.memo(({ item }: { item: FeedComment }) => {
   const author = item.authorName ?? item.fullName ?? 'User';
-  const when   = item.timeAgo || timeAgoFromDate(item.createdAt);
+  const when   = timeAgoFromDate(item.createdAt) || item.timeAgo;
 
   return (
     <View style={s.commentRow}>

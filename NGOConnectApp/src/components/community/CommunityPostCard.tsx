@@ -21,6 +21,22 @@ import { UserAvatar } from '../ui';
 
 const C = AppConfig.COLORS;
 
+// ── UTC-safe time helper ──────────────────────────────────────────────────────
+// MySQL DATETIME has no timezone suffix — JS parses without 'Z' as LOCAL time.
+// Same pattern as FeedCommentsModal / CommunityScreen.
+function asUtc(iso: string): Date {
+  return new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+}
+function timeAgoStr(iso: string | undefined | null): string {
+  if (!iso) { return ''; }
+  const diff = Math.floor((Date.now() - asUtc(iso).getTime()) / 1000);
+  if (diff < 60)        { return 'Just now'; }
+  if (diff < 3600)      { return `${Math.floor(diff / 60)}m ago`; }
+  if (diff < 86400)     { return `${Math.floor(diff / 3600)}h ago`; }
+  if (diff < 7 * 86400) { return `${Math.floor(diff / 86400)}d ago`; }
+  return iso.slice(0, 10); // YYYY-MM-DD fallback
+}
+
 // ── Download icon (no icon library needed) ────────────────────────────────────
 function DownloadIcon({ color, size = 16 }: { color: string; size?: number }) {
   return (
@@ -88,7 +104,7 @@ function AuthorRow({ item, rightSlot }: { item: CommunityPost; rightSlot?: React
             </View>
           ) : null}
         </View>
-        <Text style={css.timeAgo}>{item.timeAgo ?? item.createdAt?.slice(0, 10)}</Text>
+        <Text style={css.timeAgo}>{timeAgoStr(item.createdAt)}</Text>
       </View>
       {rightSlot}
     </View>

@@ -46,6 +46,23 @@ import type { Post, Project, Organisation } from '../../types/api.types';
 const SCREEN_W = Dimensions.get('window').width;
 const C = AppConfig.COLORS;
 
+// ── UTC-safe time helpers ─────────────────────────────────────────────────────
+// MySQL DATETIME has no timezone suffix — JS parses it as LOCAL time, causing a
+// ~5.5h wrong offset in IST. Appending 'Z' forces UTC parse, same pattern used
+// in FeedCommentsModal and CommunityScreen.
+function asUtc(iso: string): Date {
+  return new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+}
+function timeAgoStr(iso: string | undefined | null): string {
+  if (!iso) { return ''; }
+  const diff = Math.floor((Date.now() - asUtc(iso).getTime()) / 1000);
+  if (diff < 60)        { return 'Just now'; }
+  if (diff < 3600)      { return `${Math.floor(diff / 60)}m ago`; }
+  if (diff < 86400)     { return `${Math.floor(diff / 3600)}h ago`; }
+  if (diff < 7 * 86400) { return `${Math.floor(diff / 86400)}d ago`; }
+  return fmtDate(iso);
+}
+
 // ── Persist the selected org across sessions ──────────────────────────────────
 const ACTIVE_ORG_KEY = 'home_active_org_id';
 
@@ -779,8 +796,8 @@ const PostCard = React.memo(function PostCard({
       ) : null}
 
       {/* ── Timestamp ──────────────────────────────────────────────── */}
-      {post.timeAgo ? (
-        <Text style={styles.igTimestamp}>{post.timeAgo}</Text>
+      {post.createdAt ? (
+        <Text style={styles.igTimestamp}>{timeAgoStr(post.createdAt)}</Text>
       ) : null}
     </View>
   );
