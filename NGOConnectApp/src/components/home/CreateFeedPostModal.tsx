@@ -445,14 +445,6 @@ export default function CreateFeedPostModal({
 
         {/* ── Footer ────────────────────────────────────────────────────── */}
         <View style={s.footer}>
-          <TouchableOpacity
-            style={s.draftBtn}
-            onPress={() => { Alert.alert('Draft saved', 'Draft sync coming soon.'); handleClose(); }}
-            disabled={submitting}
-          >
-            <Text style={s.draftText}>Save Draft</Text>
-          </TouchableOpacity>
-
           <Pressable
             style={[
               s.publishBtn,
@@ -641,12 +633,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 16, paddingTop: 10,
     borderTopWidth: 1, borderTopColor: '#F0F0F8',
   },
-  draftBtn: {
-    flex: 1, paddingVertical: 13, borderRadius: 12,
-    borderWidth: 1.5, borderColor: '#D1D5DB',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  draftText:    { fontSize: 14, fontWeight: '600', color: '#374151' },
   publishBtn:   {
     flex: 1.4, paddingVertical: 13, borderRadius: 12, backgroundColor: C.PRIMARY,
     alignItems: 'center', justifyContent: 'center',

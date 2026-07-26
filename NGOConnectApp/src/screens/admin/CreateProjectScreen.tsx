@@ -1157,10 +1157,6 @@ export default function CreateProjectScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Save as draft — plain text button matching prototype */}
-        <TouchableOpacity style={s.draftLink} onPress={() => doSave(true)} disabled={saving}>
-          <Text style={s.draftLinkText}>Save as draft</Text>
-        </TouchableOpacity>
       </ScrollView>
     );
   };
@@ -1409,8 +1405,6 @@ const s = StyleSheet.create({
   },
   publishBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 
-  draftLink:     { width: '100%', alignItems: 'center', paddingVertical: 7, marginBottom: 4 },
-  draftLinkText: { fontSize: 11, color: '#64748b' },
 
   footer: {
     paddingHorizontal: 16, paddingVertical: 12,
