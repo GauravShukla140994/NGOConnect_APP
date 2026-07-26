@@ -207,6 +207,35 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Hero — fixed, does not scroll */}
+      <View style={styles.hero}>
+        {profile?.profilePhoto
+          ? <Image source={{ uri: profile.profilePhoto }} style={styles.heroAvatarImg} />
+          : (
+            <View style={styles.heroAvatar}>
+              <Text style={styles.heroAvatarText}>{initials}</Text>
+            </View>
+          )
+        }
+        <Text style={styles.heroName}>
+          {profile?.firstName} {profile?.lastName}
+        </Text>
+        {profile?.occupation ? (
+          <Text style={styles.heroOccupation}>{profile.occupation}</Text>
+        ) : null}
+        {profile?.bio ? (
+          <Text style={styles.heroBio}>{profile.bio}</Text>
+        ) : null}
+        <TouchableOpacity
+          style={styles.editProfileBtn}
+          onPress={() => nav.navigate('EditProfile')}
+          accessibilityLabel="Edit profile"
+        >
+          <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Scrollable content below the hero */}
       <ScrollView
         refreshControl={
           <RefreshControl
@@ -215,36 +244,8 @@ export default function ProfileScreen() {
             colors={[AppConfig.COLORS.PRIMARY]}
           />
         }
-        contentContainerStyle={[{   paddingBottom: 80  }, { paddingBottom: insets.bottom + 90 }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
       >
-        {/* Hero */}
-        <View style={styles.hero}>
-          {profile?.profilePhoto
-            ? <Image source={{ uri: profile.profilePhoto }} style={styles.heroAvatarImg} />
-            : (
-              <View style={styles.heroAvatar}>
-                <Text style={styles.heroAvatarText}>{initials}</Text>
-              </View>
-            )
-          }
-          <Text style={styles.heroName}>
-            {profile?.firstName} {profile?.lastName}
-          </Text>
-          {profile?.occupation ? (
-            <Text style={styles.heroOccupation}>{profile.occupation}</Text>
-          ) : null}
-          {profile?.bio ? (
-            <Text style={styles.heroBio}>{profile.bio}</Text>
-          ) : null}
-          <TouchableOpacity
-            style={styles.editProfileBtn}
-            onPress={() => nav.navigate('EditProfile')}
-            accessibilityLabel="Edit profile"
-          >
-            <Text style={styles.editProfileBtnText}>Edit Profile</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Stats row hidden — will be re-enabled in a future release */}
 
         {/* MY ACTIVITY Menu */}

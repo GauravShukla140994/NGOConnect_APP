@@ -405,7 +405,7 @@ export default function AllOpportunitiesScreen() {
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>All Opportunities</Text>
-        <Text style={styles.filterText}>Filter</Text>
+        <View style={{ width: 40 }} />
       </View>
 
       {/* Filters */}

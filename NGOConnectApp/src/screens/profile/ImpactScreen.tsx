@@ -734,10 +734,8 @@ export default function ImpactScreen() {
             }
           </Animated.View>
 
-          {/* Primary stats card — anchored at the bottom of the hero */}
+          {/* Primary stats card — Hours hidden, will be re-enabled in a future release */}
           <View style={s.statsCardHero}>
-            <StatPill value={impact?.totalHours ?? 0}        label="Hours"    color={C.PRIMARY} />
-            <View style={s.statDiv} />
             <StatPill value={impact?.projectsCompleted ?? 0} label="Projects" color={C.TEAL} />
             <View style={s.statDiv} />
             <StatPill value={impact?.ngosJoined ?? 0}        label="NGOs"     color={C.ORANGE} />
