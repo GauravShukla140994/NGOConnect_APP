@@ -259,7 +259,7 @@ function OppCard({ project, onApply }: { project: Project; onApply?: (p: Project
           const p = project as any;
           const summary = project.scheduleSummary
             ?? (p.recurDays
-                ? `${String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3)).join(' & ')}${p.sessionStartTime ? ` · ${fmtTime(p.sessionStartTime)}${p.sessionEndTime ? `–${fmtTime(p.sessionEndTime)}` : ''}` : ''}`
+                ? (() => { const dl = String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3).toUpperCase()); const dStr = dl.length <= 2 ? dl.join(' & ') : dl.slice(0, -1).join(', ') + ' & ' + dl[dl.length - 1]; return `${dStr}${p.sessionStartTime ? ` · ${fmtTime(p.sessionStartTime)}${p.sessionEndTime ? `–${fmtTime(p.sessionEndTime)}` : ''}` : ''}`; })()
                 : p.oneTimeDate
                   ? fmtDateTime(p.oneTimeDate, p.sessionStartTime ?? null)
                   : p.recurStart

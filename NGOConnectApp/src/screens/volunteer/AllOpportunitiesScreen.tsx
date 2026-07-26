@@ -75,7 +75,10 @@ function buildDateLine(item: Project): string | null {
   if (item.scheduleSummary) return item.scheduleSummary;
   const p = item as any;
   if (p.recurDays) {
-    const days = String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3)).join(' & ');
+    const dayList = String(p.recurDays).split(',').map((d: string) => d.trim().slice(0, 3).toUpperCase());
+    const days = dayList.length <= 2
+      ? dayList.join(' & ')
+      : dayList.slice(0, -1).join(', ') + ' & ' + dayList[dayList.length - 1];
     const range = p.recurStart ? ` · ${fmtDateRange(p.recurStart, p.recurEnd)}` : '';
     return `${days}${range}`;
   }
