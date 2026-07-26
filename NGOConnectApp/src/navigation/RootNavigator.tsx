@@ -31,24 +31,42 @@ type NotifData = {
 function resolveScreen(data: NotifData): { screen: string; params?: object } | null {
   const refId = data.refId ? parseInt(data.refId, 10) : undefined;
   switch (data.notifType) {
-    case 'NEW_APPLICATION':
+    case 'NEW_PROJECT':
+      return refId ? { screen: 'ProjectDetail', params: { projectId: refId } } : { screen: 'AllOpportunities' };
+    // Sent to the volunteer applicant
     case 'APPLICATION_APPROVED':
     case 'APPLICATION_REJECTED':
+    case 'NO_SHOW_EXCUSED':
       return { screen: 'MyProjects' };
+    // Sent to org admins
+    case 'NEW_APPLICATION':
+      return { screen: 'AdminProjects' };
     case 'MEMBERSHIP_REQUEST':
     case 'MEMBERSHIP_APPROVED':
     case 'MEMBERSHIP_REJECTED':
     case 'MEMBER_REMOVED':
+    case 'MEMBER_ROLE_CHANGED':
     case 'ORG_APPROVED':
     case 'ORG_REJECTED':
     case 'ORG_SUSPENDED':
+    case 'ORG_REACTIVATED':
+    case 'ORG_PROFILE_VERIFIED':
+    case 'ORG_PROFILE_REJECTED':
+    case 'INVITE_ACCEPTED':
+    case 'INVITE_DECLINED':
       return { screen: 'MyOrgs' };
     case 'SOS_TRIGGERED':
+    case 'SOS_RESPONDER_INCOMING':
     case 'SOS_RESPONDER_APPROVED':
     case 'SOS_RESOLVED':
       return refId ? { screen: 'SosActive', params: { sosIncidentId: refId } } : null;
     case 'DONATION_CONFIRMED':
       return { screen: 'MyDonations' };
+    case 'DONATION_RECEIVED_ADMIN':
+      return { screen: 'AdminDonations' };
+    case 'WITHDRAWAL_APPROVED':
+    case 'WITHDRAWAL_REJECTED':
+      return { screen: 'AdminWithdrawal' };
     case 'NEW_FEED_POST':
       return { screen: 'Home' };
     // CAMPAIGN: if deepLink is present the caller handles it before resolveScreen.
@@ -62,6 +80,10 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
     case 'SKILL_RATING':
     case 'PROFILE_VERIFIED':
       return { screen: 'Impact' };
+    case 'PROFILE_UPDATE_REQUIRED':
+    case 'ACCOUNT_SUSPENDED':
+    case 'ACCOUNT_REACTIVATED':
+      return { screen: 'Profile' };
     default:
       return null;
   }
