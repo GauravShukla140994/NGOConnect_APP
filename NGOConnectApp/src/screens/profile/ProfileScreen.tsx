@@ -245,30 +245,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats row — all four values come from User_GetProfile SP (v4.9).
-            Hours/Projects/NGOs use the same logic as User_GetImpact so they
-            always match the Impact screen. */}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{profile?.totalHours ?? 0}</Text>
-            <Text style={styles.statLabel}>Hours</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{profile?.projectsCount ?? 0}</Text>
-            <Text style={styles.statLabel}>Projects</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{profile?.impactScore ?? 0}</Text>
-            <Text style={styles.statLabel}>Score</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{profile?.ngosJoined ?? 0}</Text>
-            <Text style={styles.statLabel}>NGOs</Text>
-          </View>
-        </View>
+        {/* Stats row hidden — will be re-enabled in a future release */}
 
         {/* MY ACTIVITY Menu */}
         <View style={styles.section}>
