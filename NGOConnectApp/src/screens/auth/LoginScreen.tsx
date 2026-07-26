@@ -242,7 +242,11 @@ export default function LoginScreen({ navigation }: Props) {
 
               {/* Send OTP button */}
               <Pressable
-                style={({ pressed }) => [styles.btn, pressed && { opacity: 0.88 }]}
+                style={({ pressed }) => [
+                  styles.btn,
+                  (showCheckbox && !termsAccepted) && styles.btnDisabled,
+                  pressed && !(showCheckbox && !termsAccepted) && { opacity: 0.88 },
+                ]}
                 android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: false }}
                 onPress={handleSendOtp}
                 disabled={loading || (showCheckbox && !termsAccepted)}
@@ -420,6 +424,7 @@ const styles = StyleSheet.create({
 
   // Button
   btn:            { backgroundColor: C.PRIMARY, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginBottom: 12 },
+  btnDisabled:    { backgroundColor: C.PRIMARY, opacity: 0.4 },
   btnText:        { color: '#fff', fontSize: 16, fontWeight: '700' },
   terms:          { fontSize: 12, color: C.TEXT2, textAlign: 'center', lineHeight: 18 },
   link:           { color: C.PRIMARY, fontWeight: '600' },
