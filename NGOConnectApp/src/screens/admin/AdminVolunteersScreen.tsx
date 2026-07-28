@@ -429,10 +429,12 @@ function MemberDetailsSheet({
               <Text style={styles.viewProfileBtnText}>👁 View Full Profile & Impact</Text>
             </TouchableOpacity>
 
-            {/* Deactivate */}
-            <TouchableOpacity style={styles.deactivateBtn} onPress={handleDeactivate} accessibilityLabel="Deactivate member">
-              <Text style={styles.deactivateBtnText}>Deactivate Member</Text>
-            </TouchableOpacity>
+            {/* Deactivate — hidden for FOUNDER */}
+            {member.roleCode?.toUpperCase() !== 'FOUNDER' && (
+              <TouchableOpacity style={styles.deactivateBtn} onPress={handleDeactivate} accessibilityLabel="Deactivate member">
+                <Text style={styles.deactivateBtnText}>Deactivate Member</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </Pressable>
       </Pressable>
