@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { fmtDate as _fmtDate, fmtTime as _fmtTime } from '../../utils/dateUtils';
+import QRCode from 'react-native-qrcode-svg';
+import { fmtDate as _fmtDate, fmtTime as _fmtTime, isProjectExpired } from '../../utils/dateUtils';
 import {
   ActivityIndicator,
   Alert,
@@ -389,6 +390,11 @@ export default function AdminProjectDetailScreen() {
     );
   }
 
+  // An expired-unstarted project still has statusCode='UPCOMING' in the DB
+  // but its scheduled end datetime has already passed. We disable Edit and
+  // the Complete/Cancel actions for these — nothing can be done to them.
+  const isExpiredUnstarted = project?.statusCode === 'UPCOMING' && isProjectExpired(project);
+
   const badge        = statusBadge(project?.statusCode);
   const schedule     = project ? fmtSchedule(project) : '';
   const timeStr      = project ? buildTimeRange(project) : null;
@@ -418,7 +424,7 @@ export default function AdminProjectDetailScreen() {
   const joinText    = joinTypeText(project?.joinTypeCode);
   const maxVols     = project?.maxVolunteers ?? 0;
   const spotsText   = maxVols > 0 ? `${counts.approved} approved · ${maxVols} spots total` : null;
-  const ageText     = project?.ageRestriction > 0 ? `${project.ageRestriction}+ years minimum` : null;
+  const ageText     = project?.ageRestriction ? '18+ years minimum' : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -428,9 +434,15 @@ export default function AdminProjectDetailScreen() {
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Project Details</Text>
-        <TouchableOpacity onPress={() => nav.navigate('CreateProject', { projectId, orgId })} style={styles.editBtn}>
-          <Text style={styles.editText}>Edit</Text>
-        </TouchableOpacity>
+        {isExpiredUnstarted ? (
+          <View style={styles.editBtn}>
+            <Text style={[styles.editText, { color: '#c2410c' }]}>Expired</Text>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={() => nav.navigate('CreateProject', { projectId, orgId })} style={styles.editBtn}>
+            <Text style={styles.editText}>Edit</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
@@ -572,9 +584,14 @@ export default function AdminProjectDetailScreen() {
 
           <View style={styles.qrBox}>
             {qrToken ? (
-              <View style={styles.qrPlaceholder}>
-                <Text style={styles.qrEmoji}>⬛⬜⬛{'\n'}⬜⬛⬜{'\n'}⬛⬜⬛</Text>
-                <Text style={styles.qrTokenText} numberOfLines={1}>{qrToken.slice(0, 16)}…</Text>
+              <View style={styles.qrCodeWrapper}>
+                <QRCode
+                  value={qrToken}
+                  size={180}
+                  backgroundColor="#fff"
+                  color="#1a1a2e"
+                  quietZone={10}
+                />
               </View>
             ) : (
               <View style={styles.qrPlaceholder}>
@@ -666,23 +683,34 @@ export default function AdminProjectDetailScreen() {
             onPress={() => Alert.alert('Coming soon', 'Impact Report will be available in the next sprint.')} />
         </View>
 
-        {/* ── Complete / Cancel ── */}
-        <View style={styles.dangerSection}>
-          <TouchableOpacity
-            style={[styles.dangerBtn, styles.completeBtn, actioning && { opacity: 0.6 }]}
-            onPress={handleComplete}
-            disabled={actioning}
-          >
-            <Text style={styles.completeBtnText}>☑ Mark as Completed</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.dangerBtn, styles.cancelBtn, actioning && { opacity: 0.6 }]}
-            onPress={handleCancel}
-            disabled={actioning}
-          >
-            <Text style={styles.cancelBtnText}>✕ Cancel Project</Text>
-          </TouchableOpacity>
-        </View>
+        {/* ── Complete / Cancel — hidden for expired-unstarted projects ── */}
+        {isExpiredUnstarted ? (
+          <View style={[styles.dangerSection, { backgroundColor: '#fff7ed', borderRadius: 12, padding: 16 }]}>
+            <Text style={{ fontSize: 13, color: '#c2410c', textAlign: 'center', fontWeight: '600' }}>
+              ⚠️ This project was never started and its scheduled date has passed.
+            </Text>
+            <Text style={{ fontSize: 12, color: '#9a3412', textAlign: 'center', marginTop: 4 }}>
+              No further actions are available.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.dangerSection}>
+            <TouchableOpacity
+              style={[styles.dangerBtn, styles.completeBtn, actioning && { opacity: 0.6 }]}
+              onPress={handleComplete}
+              disabled={actioning}
+            >
+              <Text style={styles.completeBtnText}>☑ Mark as Completed</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dangerBtn, styles.cancelBtn, actioning && { opacity: 0.6 }]}
+              onPress={handleCancel}
+              disabled={actioning}
+            >
+              <Text style={styles.cancelBtnText}>✕ Cancel Project</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -741,9 +769,8 @@ const styles = StyleSheet.create({
   sectionTitle:        { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
   sectionSub:          { fontSize: 12, color: C.TEXT2, marginBottom: 12, textAlign: 'center' },
   qrBox:               { alignItems: 'center', marginBottom: 14 },
-  qrPlaceholder:       { width: 140, height: 140, borderRadius: 12, borderWidth: 2, borderColor: C.PRIMARY, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F3FF' },
-  qrEmoji:             { fontSize: 28, textAlign: 'center', color: C.PRIMARY, lineHeight: 34 },
-  qrTokenText:         { fontSize: 10, color: C.TEXT2, marginTop: 6, maxWidth: 120 },
+  qrCodeWrapper:       { padding: 12, borderRadius: 14, backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.10, shadowRadius: 8, elevation: 4 },
+  qrPlaceholder:       { width: 160, height: 160, borderRadius: 12, borderWidth: 2, borderColor: C.PRIMARY, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F3FF' },
   qrHint:              { fontSize: 11, color: C.TEXT3, marginTop: 6, textAlign: 'center' },
   sessionCount:        { fontSize: 11, color: C.TEXT3, marginBottom: 6 },
   primaryBtn:          { backgroundColor: C.PRIMARY, borderRadius: 10, padding: 13, alignItems: 'center' },

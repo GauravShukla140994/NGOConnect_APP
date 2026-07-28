@@ -12,6 +12,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { isProjectExpired } from '../../utils/dateUtils';
 import { getNearbyFeed, apply } from '../../api/project.api';
 import { getMyDocuments } from '../../api/user.api';
 import { useAuthStore } from '../../store/authStore';
@@ -296,6 +297,10 @@ export default function AllOpportunitiesScreen() {
   // projectTypeCode comes from ptv.ValueCode AS ProjectTypeCode in Project_GetNearbyFeed SP
   // It is ONE_TYPE, RECURRING, or FLEXIBLE — exact match against TYPE_CODE_MAP
   const displayed = allProjects.filter(p => {
+    // Hide projects whose scheduled end datetime has already passed.
+    // These are UPCOMING projects never started — should not appear to volunteers.
+    if (isProjectExpired(p as any)) return false;
+
     const cat      = (p.categoryName ?? (p as any).category ?? '').toLowerCase();
     const typeCode = ((p as any).projectTypeCode ?? p.scheduleType ?? '').toUpperCase();
 

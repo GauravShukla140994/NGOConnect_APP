@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { fmtDate, fmtTime } from '../../utils/dateUtils';
+import { fmtDate, fmtTime, isProjectExpired } from '../../utils/dateUtils';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   ActivityIndicator, TextInput, Alert, Modal, RefreshControl, PanResponder,
@@ -15,10 +15,10 @@ const C_CONST = AppConfig.COLORS;
 import { useAdminStore } from '../../store/adminStore';
 import { getMyOrgs } from '../../api/user.api';
 
-type Tab = 'ACTIVE' | 'UPCOMING' | 'COMPLETED' | 'CANCELLED';
-const TABS: Tab[] = ['ACTIVE', 'UPCOMING', 'COMPLETED', 'CANCELLED'];
+type Tab = 'UPCOMING' | 'COMPLETED' | 'CANCELLED';
+const TABS: Tab[] = ['UPCOMING', 'COMPLETED', 'CANCELLED'];
 const TAB_LABELS: Record<Tab, string> = {
-  ACTIVE: 'Active', UPCOMING: 'Upcoming', COMPLETED: 'Completed', CANCELLED: 'Cancelled',
+  UPCOMING: 'Upcoming', COMPLETED: 'Completed', CANCELLED: 'Cancelled',
 };
 
 interface AdminProject {
@@ -77,188 +77,193 @@ function mapRow(r: any): AdminProject {
   };
 }
 
-// fmtDate imported from dateUtils
 
-function scheduleLabel(p: AdminProject): string {
-  if (p.projectTypeCode === 'ONE_TIME') {
-    const t = p.sessionStartTime ? ` · ${fmtTime(p.sessionStartTime)}` : '';
-    return `One-time · ${fmtDate(p.oneTimeDate)}${t}`;
-  }
-  if (p.projectTypeCode === 'RECURRING') {
-    const days = p.recurDays ? `${p.recurDays} · ` : '';
-    const range = [fmtDate(p.recurStart), fmtDate(p.recurEnd)].filter(Boolean).join(' – ');
-    return `Recurring · ${days}${range}`;
-  }
-  const range = [fmtDate(p.flexFromDate), fmtDate(p.flexToDate)].filter(Boolean).join(' – ');
-  return `Flexible · ${range}`;
+// ─── Unified ProjectCard ─────────────────────────────────────────────────────
+
+const TYPE_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
+  ONE_TIME:  { label: 'One-time',  bg: '#f3f4f6', text: '#6b7280' },
+  RECURRING: { label: 'Recurring', bg: '#ecfdf5', text: '#10b981' },
+  FLEXIBLE:  { label: 'Flexible',  bg: '#fffbeb', text: '#f59e0b' },
+};
+
+interface DateInfo {
+  fromDate:  string | null;
+  toDate:    string | null;
+  startTime: string | null;
+  endTime:   string | null;
+  recurDays: string | null;
 }
 
+function getDateInfo(p: AdminProject): DateInfo {
+  const tc        = p.projectTypeCode;
+  const startTime = p.sessionStartTime ? fmtTime(p.sessionStartTime) : null;
+  const endTime   = p.sessionEndTime   ? fmtTime(p.sessionEndTime)   : null;
+  const recurDays = p.recurDays
+    ? String(p.recurDays).split(',').map(d => d.trim().slice(0, 3)).join(' · ')
+    : null;
+  if (tc === 'ONE_TIME') return { fromDate: fmtDate(p.oneTimeDate), toDate: null, startTime, endTime, recurDays: null };
+  if (tc === 'RECURRING') return { fromDate: fmtDate(p.recurStart), toDate: fmtDate(p.recurEnd), startTime, endTime, recurDays };
+  return { fromDate: fmtDate(p.flexFromDate), toDate: fmtDate(p.flexToDate), startTime, endTime, recurDays: null };
+}
 
-function ActiveCard({ p, onManage }: { p: AdminProject; onManage: () => void }) {
+const BADGE_CONFIG: Record<string, { label: string; bgStyle: object; textColor: string }> = {
+  ACTIVE:    { label: 'Active',    bgStyle: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }, textColor: '#16a34a' },
+  UPCOMING:  { label: 'Upcoming',  bgStyle: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }, textColor: '#2563eb' },
+  COMPLETED: { label: 'Completed', bgStyle: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }, textColor: '#16a34a' },
+  CANCELLED: { label: 'Cancelled', bgStyle: { backgroundColor: '#fff1f2', borderColor: '#fecdd3' }, textColor: '#be123c' },
+  EXPIRED:   { label: 'Expired',   bgStyle: { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }, textColor: '#c2410c' },
+};
+
+function ProjectCard({
+  p, tab, onManage,
+}: {
+  p:         AdminProject;
+  tab:       Tab;
+  onManage?: () => void;
+}) {
   const C = AppConfig.COLORS;
-  const max      = p.maxVolunteers ?? 0;
-  const approved = p.approvedCount ?? 0;
-  const pct      = max > 0 ? Math.min((approved / max) * 100, 100) : 0;
-  const barColor = pct >= 80 ? '#ef4444' : pct >= 50 ? '#f97316' : C.PRIMARY;
+
+  // Projects injected into CANCELLED from UPCOMING still carry statusCode='UPCOMING'
+  const isExpiredUnstarted = tab === 'CANCELLED' && p.statusCode === 'UPCOMING';
+
+  const max       = p.maxVolunteers ?? 0;
+  const approved  = p.approvedCount ?? 0;
+  const remaining = max > 0 ? Math.max(max - approved, 0) : null;
+  const pct       = max > 0 ? Math.min((approved / max) * 100, 100) : 0;
+  const barColor  = pct >= 80 ? '#ef4444' : pct >= 50 ? '#f97316' : C.PRIMARY;
+
+  const type  = TYPE_CONFIG[p.projectTypeCode] ?? { label: p.projectType ?? p.projectTypeCode, bg: '#f3f4f6', text: '#6b7280' };
+  const di    = getDateInfo(p);
+  const badge = isExpiredUnstarted ? BADGE_CONFIG.EXPIRED : BADGE_CONFIG[p.statusCode] ?? BADGE_CONFIG.CANCELLED;
 
   return (
     <View style={s.card}>
-      {/* Title row + Active badge */}
+
+      {/* ── Row 1: Title + Status badge ── */}
       <View style={s.cardTitleRow}>
         <Text style={s.cardTitle} numberOfLines={2}>{p.projectName}</Text>
-        <View style={s.activeBadge}>
-          <Text style={s.activeBadgeText}>Active</Text>
+        <View style={[s.activeBadge, badge.bgStyle]}>
+          <Text style={[s.activeBadgeText, { color: badge.textColor }]}>{badge.label}</Text>
         </View>
       </View>
 
-      {/* Schedule */}
-      <Text style={s.cardSub}>{scheduleLabel(p)}</Text>
+      {/* ── Row 2: Type pill + recurring days ── */}
+      <View style={s.typePillRow}>
+        <View style={[s.typePill, { backgroundColor: type.bg }]}>
+          <Text style={[s.typePillText, { color: type.text }]}>{type.label}</Text>
+        </View>
+        {di.recurDays ? (
+          <Text style={s.recurDaysText}>{di.recurDays}</Text>
+        ) : null}
+      </View>
 
-      {/* Location + capacity */}
-      {p.city ? (
-        <Text style={s.cardLocation}>
-          📍 {p.city}{p.state ? `, ${p.state}` : ''}
-          {max > 0 ? ` · ${approved}/${max} per session` : ''}
-        </Text>
+      {/* ── Row 3: Date range (From → To) ── */}
+      {di.fromDate ? (
+        <View style={s.cardInfoRow}>
+          <Text style={s.cardInfoIcon}>📅</Text>
+          <Text style={s.cardInfoText}>
+            {di.fromDate}{di.toDate ? ` → ${di.toDate}` : ''}
+          </Text>
+        </View>
       ) : null}
 
-      {/* Progress bar + footer */}
-      {max > 0 && (
-        <View style={{ marginTop: 10 }}>
-          <View style={s.progressWrap}>
-            <View style={[s.progressBar, { width: `${pct}%` as any, backgroundColor: barColor }]} />
-          </View>
-          <View style={s.cardFooterRow}>
-            <Text style={s.progressText}>{Math.round(pct)}% filled</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-              <TouchableOpacity onPress={onManage}>
-                <Text style={s.qrLink}>QR</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={onManage}>
-                <Text style={s.manageLink}>Manage ›</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+      {/* ── Row 4: Session time ── */}
+      {di.startTime ? (
+        <View style={s.cardInfoRow}>
+          <Text style={s.cardInfoIcon}>🕐</Text>
+          <Text style={s.cardInfoText}>
+            {di.startTime}{di.endTime ? ` – ${di.endTime}` : ''}
+          </Text>
         </View>
-      )}
+      ) : null}
 
-      {/* No slots defined — just show Manage link */}
-      {max === 0 && (
+      {/* ── Row 5: Location ── */}
+      {(p.city || p.state) ? (
+        <View style={s.cardInfoRow}>
+          <Text style={s.cardInfoIcon}>📍</Text>
+          <Text style={s.cardInfoText}>{[p.city, p.state].filter(Boolean).join(', ')}</Text>
+        </View>
+      ) : null}
+
+      {/* ── Row 6: Capacity ── */}
+      <View style={{ marginTop: 8 }}>
+        {max > 0 ? (
+          <>
+            <View style={s.capacityRow}>
+              <Text style={s.capacityText}>
+                <Text style={{ color: '#1e293b', fontWeight: '700' }}>{approved}</Text>
+                /{max} per session
+              </Text>
+              <Text style={[s.capacityRemaining, {
+                color: remaining === 0 ? '#ef4444' : (remaining ?? 99) <= 3 ? '#f97316' : '#10b981',
+              }]}>
+                {remaining === 0 ? 'Full' : `${remaining} remaining`}
+              </Text>
+            </View>
+            {(tab === 'ACTIVE' || tab === 'UPCOMING') ? (
+              <View style={s.progressWrap}>
+                <View style={[s.progressBar, { width: `${pct}%` as any, backgroundColor: barColor }]} />
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <Text style={s.unlimitedText}>👥 Open / Unlimited</Text>
+        )}
+      </View>
+
+      {/* ── Tab-specific extras ── */}
+
+      {isExpiredUnstarted ? (
+        <View style={[s.cancelBox, { backgroundColor: '#fff7ed', borderColor: '#fed7aa', marginTop: 10 }]}>
+          <Text style={[s.cancelLabel, { color: '#c2410c' }]}>NOT STARTED</Text>
+          <Text style={[s.cancelText, { color: '#9a3412' }]}>
+            This project passed its scheduled date without being started.
+          </Text>
+        </View>
+      ) : null}
+
+      {tab === 'CANCELLED' && !isExpiredUnstarted ? (
+        <>
+          {p.cancelledAt ? (
+            <Text style={[s.cardMeta, { marginTop: 8 }]}>Cancelled: {fmtDate(p.cancelledAt)}</Text>
+          ) : null}
+          {p.cancelReason ? (
+            <View style={[s.cancelBox, { marginTop: 8 }]}>
+              <Text style={s.cancelLabel}>Reason</Text>
+              <Text style={s.cancelText}>{p.cancelReason}</Text>
+            </View>
+          ) : null}
+        </>
+      ) : null}
+
+      {tab === 'COMPLETED' ? (
+        <>
+          {p.impactSummary ? (
+            <View style={[s.impactBox, { marginTop: 10 }]}>
+              <Text style={s.impactText}>{p.impactSummary}</Text>
+            </View>
+          ) : null}
+          {p.beneficiaryCount ? (
+            <Text style={[s.cardMeta, { marginTop: 6 }]}>Beneficiaries: {p.beneficiaryCount}</Text>
+          ) : null}
+        </>
+      ) : null}
+
+      {/* ── QR + Manage footer (Active / Upcoming only) ── */}
+      {onManage ? (
         <View style={[s.cardFooterRow, { marginTop: 10 }]}>
           <View />
-          <TouchableOpacity onPress={onManage}>
-            <Text style={s.manageLink}>Manage ›</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
-  );
-}
-
-function UpcomingCard({ p, onManage }: { p: AdminProject; onManage: () => void }) {
-  const C        = AppConfig.COLORS;
-  const max      = p.maxVolunteers ?? 0;
-  const approved = p.approvedCount ?? 0;
-  const pct      = max > 0 ? Math.min((approved / max) * 100, 100) : 0;
-  const barColor = pct >= 80 ? '#ef4444' : pct >= 50 ? '#f97316' : C.PRIMARY;
-
-  return (
-    <View style={s.card}>
-      {/* Title row + Upcoming badge */}
-      <View style={s.cardTitleRow}>
-        <Text style={s.cardTitle} numberOfLines={2}>{p.projectName}</Text>
-        <View style={[s.activeBadge, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}>
-          <Text style={[s.activeBadgeText, { color: '#2563eb' }]}>Upcoming</Text>
-        </View>
-      </View>
-
-      {/* Schedule */}
-      <Text style={s.cardSub}>{scheduleLabel(p)}</Text>
-
-      {/* Location + capacity */}
-      {p.city ? (
-        <Text style={s.cardLocation}>
-          📍 {p.city}{p.state ? `, ${p.state}` : ''}
-          {max > 0 ? ` · ${approved}/${max} per session` : ''}
-        </Text>
-      ) : null}
-
-      {/* Progress bar + footer */}
-      {max > 0 && (
-        <View style={{ marginTop: 10 }}>
-          <View style={s.progressWrap}>
-            <View style={[s.progressBar, { width: `${pct}%` as any, backgroundColor: barColor }]} />
-          </View>
-          <View style={s.cardFooterRow}>
-            <Text style={s.progressText}>{Math.round(pct)}% filled</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-              <TouchableOpacity onPress={onManage}>
-                <Text style={s.qrLink}>QR</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={onManage}>
-                <Text style={s.manageLink}>Manage ›</Text>
-              </TouchableOpacity>
-            </View>
+          <View style={{ flexDirection: 'row', gap: 14 }}>
+            <TouchableOpacity onPress={onManage}>
+              <Text style={s.qrLink}>QR</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onManage}>
+              <Text style={s.manageLink}>Manage ›</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      )}
-
-      {/* No slots defined — just show Manage link */}
-      {max === 0 && (
-        <View style={[s.cardFooterRow, { marginTop: 10 }]}>
-          <View />
-          <TouchableOpacity onPress={onManage}>
-            <Text style={s.manageLink}>Manage ›</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
-  );
-}
-
-function CompletedCard({ p }: { p: AdminProject }) {
-  return (
-    <View style={s.card}>
-      <View style={s.cardTitleRow}>
-        <Text style={s.cardTitle} numberOfLines={2}>{p.projectName}</Text>
-        <View style={[s.activeBadge, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
-          <Text style={[s.activeBadgeText, { color: '#16a34a' }]}>Completed</Text>
-        </View>
-      </View>
-      <Text style={s.cardSub}>{scheduleLabel(p)}</Text>
-      {p.city ? <Text style={s.cardLocation}>📍 {p.city}</Text> : null}
-      {p.impactSummary ? (
-        <View style={s.impactBox}>
-          <Text style={s.impactText}>{p.impactSummary}</Text>
-        </View>
       ) : null}
-      {p.beneficiaryCount ? (
-        <Text style={s.cardMeta}>Beneficiaries: {p.beneficiaryCount}</Text>
-      ) : null}
-    </View>
-  );
-}
 
-function CancelledCard({ p }: { p: AdminProject }) {
-  return (
-    <View style={s.card}>
-      <View style={s.cardTitleRow}>
-        <Text style={s.cardTitle} numberOfLines={2}>{p.projectName}</Text>
-        <View style={[s.activeBadge, { backgroundColor: '#fff1f2', borderColor: '#fecdd3' }]}>
-          <Text style={[s.activeBadgeText, { color: '#be123c' }]}>Cancelled</Text>
-        </View>
-      </View>
-      <Text style={s.cardSub}>{scheduleLabel(p)}</Text>
-      {p.city ? <Text style={s.cardLocation}>📍 {p.city}</Text> : null}
-      {p.cancelledAt && (
-        <Text style={s.cardMeta}>Cancelled: {fmtDate(p.cancelledAt)}</Text>
-      )}
-      {p.cancelReason ? (
-        <View style={s.cancelBox}>
-          <Text style={s.cancelLabel}>Reason</Text>
-          <Text style={s.cancelText}>{p.cancelReason}</Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -448,18 +453,18 @@ export default function AdminProjectsScreen() {
   }, [selectedOrg, setAdminOrgs, setSelectedOrg]);
   const C = AppConfig.COLORS;
 
-  const [activeTab, setActiveTab] = useState<Tab>('ACTIVE');
+  const [activeTab, setActiveTab] = useState<Tab>('UPCOMING');
   const [projects, setProjects] = useState<Record<Tab, AdminProject[]>>({
-    ACTIVE: [], UPCOMING: [], COMPLETED: [], CANCELLED: [],
+    UPCOMING: [], COMPLETED: [], CANCELLED: [],
   });
   const [loading, setLoading] = useState<Record<Tab, boolean>>({
-    ACTIVE: false, UPCOMING: false, COMPLETED: false, CANCELLED: false,
+    UPCOMING: false, COMPLETED: false, CANCELLED: false,
   });
   const [refreshing, setRefreshing] = useState(false);
   const loadedTabs = useRef<Set<Tab>>(new Set());
 
   // ── Swipe to change tab ──────────────────────────────────────────────────────
-  const swipeState = useRef({ tab: 'ACTIVE' as Tab, handleTabChange: (_t: Tab) => {} });
+  const swipeState = useRef({ tab: 'UPCOMING' as Tab, handleTabChange: (_t: Tab) => {} });
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -486,24 +491,33 @@ export default function AdminProjectsScreen() {
   const [fromPickerOpen,  setFromPickerOpen]  = useState(false);
   const [toPickerOpen,    setToPickerOpen]    = useState(false);
 
+  const extractItems = (res: any): any[] => {
+    const raw = res.data?.data;
+    return Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
+  };
+
   const loadTab = useCallback(async (tab: Tab, force = false) => {
     if (!activeOrgId) return;
     if (!force && loadedTabs.current.has(tab)) return;
     setLoading(prev => ({ ...prev, [tab]: true }));
     try {
-      const res = await projectApi.list({
-        orgId: activeOrgId,
-        statusCode: tab,
-        pageNumber: 1,
-        pageSize: 50,
-      });
-      const raw = res.data?.data;
-      const items = Array.isArray(raw)
-        ? raw
-        : Array.isArray(raw?.items)
-        ? raw.items
-        : [];
-      setProjects(prev => ({ ...prev, [tab]: items.map(mapRow) }));
+      if (tab === 'UPCOMING') {
+        // Fetch ACTIVE + UPCOMING in parallel; merge into one list (active first)
+        const [activeRes, upcomingRes] = await Promise.all([
+          projectApi.list({ orgId: activeOrgId, statusCode: 'ACTIVE',   pageNumber: 1, pageSize: 50 }),
+          projectApi.list({ orgId: activeOrgId, statusCode: 'UPCOMING', pageNumber: 1, pageSize: 50 }),
+        ]);
+        const merged = [...extractItems(activeRes), ...extractItems(upcomingRes)].map(mapRow);
+        setProjects(prev => ({ ...prev, UPCOMING: merged }));
+      } else {
+        const res = await projectApi.list({
+          orgId: activeOrgId,
+          statusCode: tab,
+          pageNumber: 1,
+          pageSize: 50,
+        });
+        setProjects(prev => ({ ...prev, [tab]: extractItems(res).map(mapRow) }));
+      }
       loadedTabs.current.add(tab);
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? 'Failed to load projects';
@@ -511,6 +525,7 @@ export default function AdminProjectsScreen() {
     } finally {
       setLoading(prev => ({ ...prev, [tab]: false }));
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrgId]);
 
   useFocusEffect(useCallback(() => {
@@ -540,9 +555,9 @@ export default function AdminProjectsScreen() {
       if (res.data?.isSuccess) {
         setCancelTarget(null);
         setCancelReason('');
-        loadedTabs.current.delete('ACTIVE');
+        loadedTabs.current.delete('UPCOMING');
         loadedTabs.current.delete('CANCELLED');
-        await loadTab('ACTIVE', true);
+        await loadTab('UPCOMING', true);
         if (activeTab === 'CANCELLED') await loadTab('CANCELLED', true);
       } else {
         Alert.alert('Error', res.data?.message ?? 'Could not cancel project.');
@@ -578,11 +593,26 @@ export default function AdminProjectsScreen() {
 
   const hasFilters = searchText.trim() !== '' || fromDate !== null || toDate !== null;
 
-  // Apply filters to every tab so tab counts also reflect filtered state
+  // Apply filters to every tab so tab counts also reflect filtered state.
+  // UPCOMING status projects that have expired are pushed into the CANCELLED bucket.
+  // ACTIVE status projects always stay in UPCOMING (admin must manually complete them).
   const filteredAll = useMemo<Record<Tab, AdminProject[]>>(() => {
+    const expiredUnstarted = projects['UPCOMING'].filter(
+      p => p.statusCode === 'UPCOMING' && isProjectExpired(p),
+    );
+    const stillUpcoming = projects['UPCOMING'].filter(
+      p => !(p.statusCode === 'UPCOMING' && isProjectExpired(p)),
+    );
+
+    const source: Record<Tab, AdminProject[]> = {
+      ...projects,
+      UPCOMING:  stillUpcoming,
+      CANCELLED: [...projects['CANCELLED'], ...expiredUnstarted],
+    };
+
     const result = {} as Record<Tab, AdminProject[]>;
     for (const tab of TABS) {
-      result[tab] = projects[tab].filter(p => {
+      result[tab] = source[tab].filter(p => {
         const matchesText = !searchText.trim() ||
           p.projectName.toLowerCase().includes(searchText.trim().toLowerCase());
         const matchesDate = projectInDateRange(p, fromDate, toDate);
@@ -599,25 +629,19 @@ export default function AdminProjectsScreen() {
 
   // ── Render data ───────────────────────────────────────────────────────────────
 
-  const currentList = projects[activeTab];
   const isLoading = loading[activeTab];
 
-  const renderItem = ({ item }: { item: AdminProject }) => {
-    if (activeTab === 'ACTIVE') return (
-      <ActiveCard
-        p={item}
-        onManage={() => nav.navigate('AdminProjectDetail', { projectId: item.projectId, orgId: activeOrgId })}
-      />
-    );
-    if (activeTab === 'UPCOMING') return (
-      <UpcomingCard
-        p={item}
-        onManage={() => nav.navigate('AdminProjectDetail', { projectId: item.projectId, orgId: activeOrgId })}
-      />
-    );
-    if (activeTab === 'COMPLETED') return <CompletedCard p={item} />;
-    return <CancelledCard p={item} />;
-  };
+  const renderItem = ({ item }: { item: AdminProject }) => (
+    <ProjectCard
+      p={item}
+      tab={activeTab}
+      onManage={
+        activeTab === 'UPCOMING'
+          ? () => nav.navigate('AdminProjectDetail', { projectId: item.projectId, orgId: activeOrgId })
+          : undefined
+      }
+    />
+  );
 
   return (
     <SafeAreaView style={s.container} edges={['top']}>
@@ -740,7 +764,7 @@ export default function AdminProjectsScreen() {
       {/* Tab bar */}
       <View style={s.tabBar}>
         {TABS.map(tab => {
-          const cnt = hasFilters ? filteredAll[tab].length : projects[tab].length;
+          const cnt = filteredAll[tab].length;
           return (
             <TouchableOpacity
               key={tab}
@@ -774,13 +798,15 @@ export default function AdminProjectsScreen() {
           ) : (
             <>
               <Text style={s.emptyIcon}>
-                {activeTab === 'ACTIVE' ? '📋' : activeTab === 'UPCOMING' ? '📅' : activeTab === 'COMPLETED' ? '✅' : '❌'}
+                {activeTab === 'UPCOMING' ? '📅' : activeTab === 'COMPLETED' ? '✅' : '❌'}
               </Text>
               <Text style={s.emptyTitle}>No {TAB_LABELS[activeTab]} Projects</Text>
               <Text style={s.emptyText}>
-                {activeTab === 'ACTIVE' ? 'Create a project to get started.' : `No ${TAB_LABELS[activeTab].toLowerCase()} projects found.`}
+                {activeTab === 'UPCOMING'
+                  ? 'No active or upcoming projects yet.'
+                  : `No ${TAB_LABELS[activeTab].toLowerCase()} projects found.`}
               </Text>
-              {activeTab === 'ACTIVE' && (
+              {activeTab === 'UPCOMING' && (
                 <TouchableOpacity
                   style={[s.newBtn, { marginTop: 16, backgroundColor: C.PRIMARY }]}
                   onPress={() => nav.navigate('CreateProject', { orgId: activeOrgId })}
@@ -931,8 +957,21 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: '#bbf7d0', flexShrink: 0,
   },
   activeBadgeText: { fontSize: 11, color: '#16a34a', fontWeight: '700' },
-  cardSub: { fontSize: 12, color: '#64748b', marginBottom: 3 },
-  cardLocation: { fontSize: 12, color: '#94a3b8', marginBottom: 2 },
+  // Type pill
+  typePillRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  typePill:      { alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 3, borderRadius: 12 },
+  typePillText:  { fontSize: 11, fontWeight: '700' },
+  recurDaysText: { fontSize: 11, color: '#64748b', fontWeight: '500' },
+  // Info rows (date, time, location)
+  cardInfoRow:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  cardInfoIcon: { fontSize: 12, width: 20, textAlign: 'center' as const },
+  cardInfoText: { fontSize: 12, color: '#475569', fontWeight: '500', flex: 1 },
+  // Capacity
+  capacityRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  capacityText:      { fontSize: 12, color: '#64748b' },
+  capacityRemaining: { fontSize: 12, fontWeight: '700' },
+  unlimitedText:     { fontSize: 12, color: '#94a3b8', marginTop: 2 },
+  // Legacy (kept for potential reuse)
   cardMeta: { fontSize: 12, color: '#64748b', marginTop: 6 },
   progressWrap: {
     height: 6, backgroundColor: '#f1f5f9', borderRadius: 4,
@@ -948,14 +987,14 @@ const s = StyleSheet.create({
   manageLink: { fontSize: 12, color: C_CONST.PRIMARY, fontWeight: '700' },
   impactBox: {
     backgroundColor: '#f0fdf4', borderRadius: 10, padding: 10,
-    borderWidth: 1, borderColor: '#bbf7d0', marginTop: 10,
+    borderWidth: 1, borderColor: '#bbf7d0',
   },
   impactText: { fontSize: 12, color: '#166534', lineHeight: 18 },
   cancelBox: {
     backgroundColor: '#fff1f2', borderRadius: 10, padding: 10,
-    borderWidth: 1, borderColor: '#fecdd3', marginTop: 10,
+    borderWidth: 1, borderColor: '#fecdd3',
   },
-  cancelLabel: { fontSize: 10, fontWeight: '700', color: '#be123c', textTransform: 'uppercase', marginBottom: 4 },
+  cancelLabel: { fontSize: 10, fontWeight: '700', color: '#be123c', textTransform: 'uppercase' as const, marginBottom: 4 },
   cancelText: { fontSize: 12, color: '#9f1239', lineHeight: 18 },
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

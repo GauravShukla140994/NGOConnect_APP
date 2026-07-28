@@ -103,3 +103,41 @@ export function fmtTimeRange(
   const e = fmtTime(end);
   return e ? `${s} – ${e}` : s;
 }
+
+/**
+ * Check whether a project's scheduled end datetime has already passed.
+ *
+ * Storage convention:
+ *   - Date columns (oneTimeDate, recurEnd, flexToDate) → "YYYY-MM-DD" local calendar date.
+ *   - sessionEndTime → "HH:MM:SS" stored as UTC (e.g. "05:00:00" = 10:30 IST).
+ *
+ * To build the correct UTC moment:  new Date(`${datePart}T${timePart}Z`)
+ * Default timePart "18:29:59" UTC = 23:59:59 IST — safe end-of-day fallback.
+ *
+ * Works for all three project types:
+ *   ONE_TIME  → oneTimeDate  + sessionEndTime
+ *   RECURRING → recurEnd     + sessionEndTime
+ *   OPEN      → flexToDate   (end of day — no session time)
+ */
+export function isProjectExpired(p: {
+  projectTypeCode?: string | null;
+  scheduleType?:    string | null;
+  oneTimeDate?:     string | null;
+  recurEnd?:        string | null;
+  flexToDate?:      string | null;
+  sessionEndTime?:  string | null;
+}): boolean {
+  const typeCode = (p.projectTypeCode ?? p.scheduleType ?? '').toUpperCase();
+
+  let endDateStr: string | null | undefined;
+  if (typeCode === 'ONE_TIME')   endDateStr = p.oneTimeDate;
+  else if (typeCode === 'RECURRING') endDateStr = p.recurEnd;
+  else                           endDateStr = p.flexToDate; // OPEN / FLEXIBLE
+
+  if (!endDateStr) return false;
+
+  const datePart = endDateStr.split('T')[0];               // "YYYY-MM-DD"
+  const timePart = p.sessionEndTime ?? '18:29:59';         // UTC; default = 23:59 IST
+  const endUTC   = new Date(`${datePart}T${timePart}Z`);
+  return !isNaN(endUTC.getTime()) && endUTC.getTime() < Date.now();
+}

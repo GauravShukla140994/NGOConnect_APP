@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { fmtDate, fmtTime, fmtDateTime, fmtDateRange, fmtTimeRange } from '../../utils/dateUtils';
+import { fmtDate, fmtTime, fmtDateTime, fmtDateRange, fmtTimeRange, isProjectExpired } from '../../utils/dateUtils';
 import {
   ActivityIndicator,
   Alert,
@@ -201,6 +201,7 @@ function ShareSheet({ project, onClose }: { project: Project | null; onClose: ()
 
 // ── OppCard ───────────────────────────────────────────────────────────────────
 function OppCard({ item, onApply, onShare, onPress }: { item: Project; onApply: () => void; onShare: () => void; onPress: () => void }) {
+  const isExpired = isProjectExpired(item as any);
   const max    = item.maxParticipants ?? item.maxVolunteers ?? 0;
   const curr   = item.currentParticipants ?? item.approvedCount ?? 0;
   const spots  = item.spotsLeft ?? (max > 0 ? max - curr : null);
@@ -289,7 +290,11 @@ function OppCard({ item, onApply, onShare, onPress }: { item: Project; onApply: 
 
       {/* Actions */}
       <View style={styles.cardActions}>
-        {isFull ? (
+        {isExpired ? (
+          <View style={[styles.applyBtn, { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA', flex: 2 }]}>
+            <Text style={{ color: '#C2410C', fontSize: 13, fontWeight: '600' }}>Deadline Passed</Text>
+          </View>
+        ) : isFull ? (
           <View style={[styles.applyBtn, { backgroundColor: '#F0F2F8', flex: 2 }]}>
             <Text style={{ color: C.TEXT2, fontSize: 13 }}>No spots available</Text>
           </View>
@@ -486,7 +491,7 @@ export default function AllOpportunitiesScreen() {
 
       {/* Results */}
       <FlatList
-        data={projects}
+        data={projects.filter(p => !isProjectExpired(p as any))}
         keyExtractor={(p) => String(p.projectId)}
         contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 24 }]}
         ListHeaderComponent={
