@@ -436,18 +436,6 @@ export default function MyOrgsScreen() {
               </View>
             )}
 
-            {/* ── Suspended ── */}
-            {suspendedOrgs.length > 0 && (
-              <View style={styles.section}>
-                <SectionHeader title="Suspended" count={suspendedOrgs.length} />
-                <View style={styles.cardGroup}>
-                  {suspendedOrgs.map(org => (
-                    <SuspendedOrgCard key={org.orgId} org={org} />
-                  ))}
-                </View>
-              </View>
-            )}
-
             {/* ── Linked Organizations: APPROVED ── */}
             <View style={styles.section}>
               <SectionHeader title="Linked Organizations" count={activeOrgs.length} />
@@ -490,6 +478,18 @@ export default function MyOrgsScreen() {
                       />
                     )
                   )}
+                </View>
+              </View>
+            )}
+
+            {/* ── Suspended ── */}
+            {suspendedOrgs.length > 0 && (
+              <View style={styles.section}>
+                <SectionHeader title="Suspended" count={suspendedOrgs.length} />
+                <View style={styles.cardGroup}>
+                  {suspendedOrgs.map(org => (
+                    <SuspendedOrgCard key={org.orgId} org={org} />
+                  ))}
                 </View>
               </View>
             )}
