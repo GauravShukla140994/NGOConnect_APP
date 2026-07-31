@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import QRCode from 'react-native-qrcode-svg';
 import { fmtDate as _fmtDate, fmtTime as _fmtTime, isProjectExpired } from '../../utils/dateUtils';
 import {
   ActivityIndicator,
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { projectApi } from '../../api/project.api';
 import { UserAvatar } from '../../components/ui';
@@ -218,6 +219,7 @@ export default function AdminProjectDetailScreen() {
   const [apps,         setApps]         = useState<any[]>([]);
   const [counts,       setCounts]       = useState({ approved: 0, attended: 0, noShow: 0, pending: 0 });
   const [loading,      setLoading]      = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
   const [qrToken,      setQrToken]      = useState<string | null>(null);
   const [qrLoading,    setQrLoading]    = useState(false);
   const [sessions,     setSessions]     = useState<any[]>([]);
@@ -262,7 +264,36 @@ export default function AdminProjectDetailScreen() {
     }
   }, [projectId]);
 
-  useEffect(() => { load(); }, [load]);
+  // Re-fetch every time the screen comes into focus (catches changes from child screens)
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Pull-to-refresh: silent reload — keeps content visible, only shows pull indicator
+  const handleRefresh = useCallback(async () => {
+    if (!projectId) return;
+    setRefreshing(true);
+    try {
+      const projRes = await projectApi.get(projectId);
+      if (projRes.data?.isSuccess) { setProject(projRes.data.data); }
+      const [appsSettled, sessSettled] = await Promise.allSettled([
+        projectApi.getApplications(projectId, { pageNumber: 1, pageSize: 50 }),
+        projectApi.getSessions(projectId),
+      ]);
+      if (appsSettled.status === 'fulfilled' && appsSettled.value.data?.isSuccess) {
+        const all = appsSettled.value.data.data?.items ?? [];
+        setApps(all);
+        setCounts({
+          approved: all.filter((a: any) => a.statusCode === 'APPROVED').length,
+          attended: all.filter((a: any) => a.statusCode === 'ATTENDED').length,
+          noShow:   all.filter((a: any) => a.statusCode === 'NO_SHOW').length,
+          pending:  all.filter((a: any) => a.statusCode === 'PENDING').length,
+        });
+      }
+      if (sessSettled.status === 'fulfilled' && sessSettled.value.data?.isSuccess) {
+        setSessions(sessSettled.value.data.data ?? []);
+      }
+    } catch { /* silent on pull-to-refresh failure */ }
+    finally { setRefreshing(false); }
+  }, [projectId]);
 
   // Create a session for today using the project's times, then auto-generate QR
   const handleCreateSessionForToday = async () => {
@@ -445,7 +476,18 @@ export default function AdminProjectDetailScreen() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[C.PRIMARY]}
+            tintColor={C.PRIMARY}
+          />
+        }
+      >
 
         {/* ── Project Info Card ── */}
         <View style={styles.card}>

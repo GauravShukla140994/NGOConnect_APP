@@ -18,6 +18,7 @@ import {
   Alert,
   Linking,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,7 +26,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
 import AppConfig from '../../config/AppConfig';
 import { get, apply } from '../../api/project.api';
@@ -129,15 +130,19 @@ export default function ProjectDetailScreen() {
   const [loading,    setLoading]    = useState(true);
   const [applying,   setApplying]   = useState(false);
   const [applied,    setApplied]    = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [mapReady,   setMapReady]   = useState(false);
 
-  // Load project data
+  // Load project data — called on mount AND on every focus return
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await get(projectId);
-      if (res.data?.isSuccess) { setProject(res.data.data); }
+      if (res.data?.isSuccess) {
+        setProject(res.data.data);
+        setApplied(false); // server data now reflects true application state
+      }
     } catch {
       Alert.alert('Error', 'Could not load project details.');
     } finally {
@@ -145,7 +150,18 @@ export default function ProjectDetailScreen() {
     }
   }, [projectId]);
 
-  useEffect(() => { load(); }, [load]);
+  // Pull-to-refresh: silent reload — no full-page spinner, only the pull indicator
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const res = await get(projectId);
+      if (res.data?.isSuccess) { setProject(res.data.data); setApplied(false); }
+    } catch { /* silent on pull-to-refresh failure */ }
+    finally { setRefreshing(false); }
+  }, [projectId]);
+
+  // Re-fetch every time the screen comes into focus (catches changes from child screens)
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Fetch user GPS once
   useEffect(() => {
@@ -260,6 +276,14 @@ export default function ProjectDetailScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingTop: 12, paddingBottom: insets.bottom + 96 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[C.PRIMARY]}
+            tintColor={C.PRIMARY}
+          />
+        }
       >
         {/* 1 ── Hero ──────────────────────────────────────────────────────── */}
         <View style={s.card}>
