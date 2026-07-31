@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   RefreshControl,
@@ -14,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getMyOrgs, getMyDocuments } from '../../api/user.api';
+import { cancelMembershipRequest } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
 import type { Organisation } from '../../types/api.types';
 import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
@@ -81,6 +83,73 @@ function OrgCard({ org, isAdmin, onPress }: {
         <Text style={[styles.statusPillText, { color: pill.text }]}>{pill.label}</Text>
       </View>
     </TouchableOpacity>
+  );
+}
+
+// ── Pending join-request card (member can cancel) ────────────────────────────
+function PendingRequestCard({ org, onCancelSuccess }: {
+  org: Organisation; onCancelSuccess: () => void;
+}) {
+  const name      = org.orgName ?? (org as any).name ?? 'NGO';
+  const color     = orgColor(name);
+  const joinDate  = formatJoinDate(org.joinedAt);
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleCancel = useCallback(() => {
+    Alert.alert(
+      'Cancel Request',
+      `Are you sure you want to cancel your join request for ${name}?`,
+      [
+        { text: 'Keep Request', style: 'cancel' },
+        {
+          text: 'Cancel Request',
+          style: 'destructive',
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              const res = await cancelMembershipRequest(org.orgId);
+              if (res.data?.isSuccess) {
+                onCancelSuccess();
+              } else {
+                Alert.alert('Error', res.data?.message ?? 'Could not cancel. Please try again.');
+              }
+            } catch {
+              Alert.alert('Error', 'Could not connect. Please try again.');
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [org.orgId, name, onCancelSuccess]);
+
+  return (
+    <View style={styles.pendingCard}>
+      <View style={styles.pendingCardHeader}>
+        {org.logoUrl || org.orgLogoUrl
+          ? <Image source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.orgAvatar} resizeMode="cover" />
+          : <View style={[styles.orgAvatar, { backgroundColor: color }]}><Text style={styles.orgAvatarText}>{initials(name)}</Text></View>
+        }
+        <View style={{ flex: 1 }}>
+          <Text style={styles.orgName} numberOfLines={1}>{name}</Text>
+          {!!joinDate && <Text style={styles.orgMeta}>Requested {joinDate}</Text>}
+        </View>
+        <View style={[styles.statusPill, { backgroundColor: '#FFF4EE' }]}>
+          <Text style={[styles.statusPillText, { color: '#D97706' }]}>Pending</Text>
+        </View>
+      </View>
+      <TouchableOpacity
+        style={[styles.cancelRequestBtn, cancelling && { opacity: 0.6 }]}
+        onPress={handleCancel}
+        disabled={cancelling}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.cancelRequestBtnText}>
+          {cancelling ? 'Cancelling…' : 'Cancel Request'}
+        </Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -275,10 +344,15 @@ export default function MyOrgsScreen() {
   const activeOrgs    = orgs.filter(o =>
     o.orgStatusCode === 'APPROVED' && o.memberStatusCode === 'APPROVED'
   ).sort(sortByOrgName);
-  const pendingOrgs   = orgs.filter(o =>
-    o.memberStatusCode === 'PENDING' ||
-    (o.memberStatusCode === 'APPROVED' && (o.orgStatusCode === 'PENDING' || o.orgStatusCode === 'UNDER_REVIEW'))
+  // member's own join request still pending — shows Cancel button
+  const myPendingRequests = orgs.filter(o =>
+    o.memberStatusCode === 'PENDING'
   ).sort(sortByOrgName);
+  // org itself pending/under-review (founder waiting for Super Admin approval)
+  const orgPendingOrgs    = orgs.filter(o =>
+    o.memberStatusCode === 'APPROVED' && (o.orgStatusCode === 'PENDING' || o.orgStatusCode === 'UNDER_REVIEW')
+  ).sort(sortByOrgName);
+  const pendingOrgs = [...myPendingRequests, ...orgPendingOrgs];
   const rejectedOrgs  = orgs.filter(o =>
     o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'REJECTED'
   ).sort(sortByOrgName);
@@ -400,14 +474,22 @@ export default function MyOrgsScreen() {
               <View style={styles.section}>
                 <SectionHeader title="Pending Review" count={pendingOrgs.length} />
                 <View style={styles.cardGroup}>
-                  {pendingOrgs.map(org => (
-                    <OrgCard
-                      key={org.orgId}
-                      org={org}
-                      isAdmin={false}
-                      onPress={() => nav.navigate('NgoProfile', { orgId: org.orgId })}
-                    />
-                  ))}
+                  {pendingOrgs.map(org =>
+                    org.memberStatusCode === 'PENDING' ? (
+                      <PendingRequestCard
+                        key={org.orgId}
+                        org={org}
+                        onCancelSuccess={load}
+                      />
+                    ) : (
+                      <OrgCard
+                        key={org.orgId}
+                        org={org}
+                        isAdmin={false}
+                        onPress={() => nav.navigate('NgoProfile', { orgId: org.orgId })}
+                      />
+                    )
+                  )}
                 </View>
               </View>
             )}
@@ -472,6 +554,12 @@ const styles = StyleSheet.create({
   orgMeta:            { fontSize: 12, color: C.TEXT2, marginTop: 2 },
   statusPill:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   statusPillText:     { fontSize: 11, fontWeight: '600' },
+
+  // Pending request card (member cancel)
+  pendingCard:        { backgroundColor: C.CARD, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#D97706', ...AppConfig.SHADOW.CARD },
+  pendingCardHeader:  { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  cancelRequestBtn:   { backgroundColor: '#FFF4EE', borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#D97706' },
+  cancelRequestBtnText: { color: '#D97706', fontSize: 14, fontWeight: '700' },
 
   // Alert cards (rejected / suspended)
   alertCard:          { backgroundColor: C.CARD, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#DC2626', ...AppConfig.SHADOW.CARD },

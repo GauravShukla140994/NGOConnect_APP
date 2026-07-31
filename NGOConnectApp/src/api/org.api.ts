@@ -60,6 +60,9 @@ export const orgApi = {
   }) =>
     apiClient.post<ApiResponse<null>>(`/org/${orgId}/membership-request`, data),
 
+  cancelMembershipRequest: (orgId: number) =>
+    apiClient.delete<ApiResponse<null>>(`/org/${orgId}/membership-request`),
+
   reviewMembershipRequest: (orgId: number, data: { membershipRequestId: number; statusCode: string; adminNotes?: string }) =>
     apiClient.put<ApiResponse<null>>(`/org/${orgId}/membership-request/review`, data),
 
@@ -140,7 +143,8 @@ export const requestMembership = (
   orgId: number,
   data: { prevNgoExperience?: string; volunteerSkills?: string; areasOfInterest?: string; whyJoin?: string }
 ) => orgApi.requestMembership(orgId, data);
-export const reviewMembershipRequest = (orgId: number, data: { membershipRequestId: number; statusCode: string; adminNotes?: string }) => orgApi.reviewMembershipRequest(orgId, data);
+export const cancelMembershipRequest  = (orgId: number) => orgApi.cancelMembershipRequest(orgId);
+export const reviewMembershipRequest  = (orgId: number, data: { membershipRequestId: number; statusCode: string; adminNotes?: string }) => orgApi.reviewMembershipRequest(orgId, data);
 export const removeMember = (orgId: number, userId: number) => orgApi.removeMember(orgId, userId);
 export const awardBadge = (orgId: number, data: { userId: number; badgeLkpId: number; projectId: number }) => orgApi.awardBadge(orgId, data);
 export const getDonors = (orgId: number, params: { tab?: string; pageNumber?: number; pageSize?: number }) => orgApi.getDonors(orgId, params);
