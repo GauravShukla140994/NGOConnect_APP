@@ -362,8 +362,22 @@ export default function EditProfileScreen() {
         return false;
       }
     }
+    if (s === 4) {
+      const hasPhotoId   = docs.some(d => d.docTypeCode === 'PHOTO_ID');
+      const hasAddrProof = docs.some(d => d.docTypeCode === 'ADDR_PROOF');
+      if (!hasPhotoId || !hasAddrProof) {
+        const missing: string[] = [];
+        if (!hasPhotoId)   { missing.push('Government Photo ID'); }
+        if (!hasAddrProof) { missing.push('Address Proof'); }
+        Alert.alert(
+          'Documents Required',
+          `Please upload the following before proceeding:\n\n• ${missing.join('\n• ')}`,
+        );
+        return false;
+      }
+    }
     return true;
-  }, [firstName]);
+  }, [firstName, docs]);
 
   const goNext = useCallback(() => {
     if (!validateStep(step)) return;
@@ -1157,7 +1171,7 @@ export default function EditProfileScreen() {
             onPress={goPrev}
             accessibilityLabel="Previous step"
           >
-            <Text style={styles.prevText}>← Back</Text>
+            <Text style={styles.prevText}>← Previous</Text>
           </TouchableOpacity>
         )}
         {step < 5 ? (
