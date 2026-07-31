@@ -179,15 +179,18 @@ export default function ExploreScreen() {
   // ── Org switcher state (mirrors CommunityScreen pattern) ──────────────────────
   const [userOrgs,        setUserOrgs]        = useState<any[]>([]);
   const [activeOrgId,     setActiveOrgId]     = useState<number | null>(
-    selectedOrg?.orgId ?? storeActiveOrg?.orgId ?? null,
+    // Use volunteer-scoped activeOrg only; selectedOrg is the admin org and may be suspended
+    storeActiveOrg?.orgId ?? null,
   );
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
 
   // Derived
   // Only consider orgs where both membership AND org status are APPROVED (suspended orgs excluded)
+  // Never fall back to selectedOrg (admin org — may be suspended)
+  // storeActiveOrg is set by HomeScreen from approvedOrgs only, so it's always approved
   const activeOrg    = userOrgs.find((o) => o.orgId === activeOrgId && o.orgStatusCode === 'APPROVED')
                     ?? userOrgs.find((o) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED')
-                    ?? selectedOrg ?? storeActiveOrg;
+                    ?? storeActiveOrg;
   const exploreOrgName = activeOrg?.orgName ?? activeOrg?.name ?? 'Explore';
   const orgInitials  = exploreOrgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const approvedOrgs = userOrgs.filter((o) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED');

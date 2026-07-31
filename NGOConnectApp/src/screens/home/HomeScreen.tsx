@@ -1063,7 +1063,7 @@ export default function HomeScreen() {
           // Try to restore the previously selected org (validate it's still approved)
           const savedId  = storage.getNumber(ACTIVE_ORG_KEY);
           const restored = savedId ? approvedOrgs.find((o: Organisation) => o.orgId === savedId) : null;
-          const chosen   = restored ?? approvedOrgs[0] ?? orgs[0];
+          const chosen   = restored ?? approvedOrgs[0] ?? null;
           if (chosen) {
             setActiveOrgId(chosen.orgId);
             // Always write back so the key stays fresh

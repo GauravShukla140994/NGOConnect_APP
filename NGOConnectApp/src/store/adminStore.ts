@@ -29,8 +29,11 @@ export const useAdminStore = create<AdminState>((set) => ({
   setAdminOrgs: (orgs) =>
     set((s) => ({
       adminOrgs:   orgs,
-      // Keep selected if still in list; otherwise default to first
-      selectedOrg: orgs.find((o) => o.orgId === s.selectedOrg?.orgId) ?? orgs[0] ?? null,
+      // Keep selected if still approved; otherwise default to first approved org
+      // Never let a suspended org become the selectedOrg
+      selectedOrg: orgs.find((o) => o.orgId === s.selectedOrg?.orgId && o.orgStatusCode === 'APPROVED')
+                ?? orgs.find((o) => o.orgStatusCode === 'APPROVED')
+                ?? null,
     })),
 
   setSelectedOrg: (org) => set({ selectedOrg: org }),

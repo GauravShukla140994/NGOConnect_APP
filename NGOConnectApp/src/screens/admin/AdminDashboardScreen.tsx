@@ -145,12 +145,13 @@ export default function AdminDashboardScreen() {
       const res = await getMyOrgs();
       if (res.data?.isSuccess) {
         const all: Organisation[] = Array.isArray(res.data.data) ? res.data.data : [];
-        let filtered = all.filter(isAdminOrg).sort((a, b) => {
+        let filtered = all.filter((o) => isAdminOrg(o) && (o as any).orgStatusCode === 'APPROVED').sort((a, b) => {
           if (selectedOrg && a.orgId === selectedOrg.orgId) return -1;
           if (selectedOrg && b.orgId === selectedOrg.orgId) return  1;
           return (a.orgName ?? (a as any).name ?? '').localeCompare(b.orgName ?? (b as any).name ?? '');
         });
-        if (filtered.length === 0 && all.length > 0) { filtered = all; }
+        // Fallback: no admin roles on approved orgs (edge case) — show all approved orgs
+        if (filtered.length === 0) { filtered = all.filter((o: any) => o.orgStatusCode === 'APPROVED'); }
         setAdminOrgs(filtered);
         return filtered;
       }

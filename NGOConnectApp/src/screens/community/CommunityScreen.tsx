@@ -246,15 +246,18 @@ export default function CommunityScreen() {
   // ── Org switcher state ────────────────────────────────────────────────────────
   const [userOrgs,        setUserOrgs]        = useState<any[]>([]);
   const [activeOrgId,     setActiveOrgId]     = useState<number | null>(
-    selectedOrg?.orgId ?? storeActiveOrg?.orgId ?? null,
+    // Use volunteer-scoped activeOrg only; selectedOrg is the admin org and may be suspended
+    storeActiveOrg?.orgId ?? null,
   );
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
 
   // Derived from local state (mirrors HomeScreen pattern)
   // Only consider orgs where both membership AND org status are APPROVED (suspended orgs excluded)
+  // Never fall back to selectedOrg (admin org — may be suspended)
+  // storeActiveOrg is set by HomeScreen from approvedOrgs only, so it's always approved
   const activeOrg   = userOrgs.find((o) => o.orgId === activeOrgId && o.orgStatusCode === 'APPROVED')
                    ?? userOrgs.find((o) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED')
-                   ?? selectedOrg ?? storeActiveOrg;
+                   ?? storeActiveOrg;
   const orgId       = (route.params?.orgId as number | undefined) ?? activeOrg?.orgId ?? 0;
   const orgName     = activeOrg?.orgName ?? activeOrg?.name ?? 'Community';
   const orgInitials = orgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
