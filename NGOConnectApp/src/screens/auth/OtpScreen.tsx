@@ -1,5 +1,7 @@
 import React, {useState, useRef, useEffect, useCallback} from 'react';
-import {View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator} from 'react-native';
+import {View, Text, Image, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator} from 'react-native';
+
+const LOGO = require('../../assets/images/logo.png');
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {RouteProp} from '@react-navigation/native';
@@ -89,6 +91,12 @@ const OtpScreen = ({navigation, route}: Props) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.inner}>
+        {/* Brand */}
+        <View style={styles.brandBlock}>
+          <Image source={LOGO} style={styles.logoImage} resizeMode="cover" />
+          <Text style={styles.brandName}>RippleHub</Text>
+        </View>
+
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
@@ -160,7 +168,10 @@ const OtpScreen = ({navigation, route}: Props) => {
 const styles = StyleSheet.create({
   container:      {flex: 1, backgroundColor: AppConfig.COLORS.BG},
   inner:          {flex: 1, padding: 24},
-  back:           {marginBottom: 32, marginTop: 8},
+  brandBlock:     {alignItems: 'center', paddingTop: 16, paddingBottom: 20},
+  logoImage:      {width: 64, height: 64, borderRadius: 16, marginBottom: 8},
+  brandName:      {fontSize: 20, fontWeight: '800', color: AppConfig.COLORS.TEXT, letterSpacing: -0.5},
+  back:           {marginBottom: 20, marginTop: 0},
   backText:       {color: AppConfig.COLORS.PRIMARY, fontSize: 16, fontWeight: '600'},
   title:          {fontSize: 22, fontWeight: '700', color: AppConfig.COLORS.TEXT, marginBottom: 6},
   subtitle:       {fontSize: 14, color: AppConfig.COLORS.TEXT2, marginBottom: 32},

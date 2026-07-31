@@ -316,9 +316,10 @@ const RootNavigator = () => {
           channelId:     'ripplehub_default',     // channel created in MainApplication.kt
           importance:    AndroidImportance.HIGH,
           pressAction:   { id: 'default' },       // tapping opens the app
+          smallIcon:     'ic_notification',       // monochrome status-bar icon
+          largeIcon:     imageUrl ?? 'logo',      // campaign image if present, else brand logo
           showTimestamp: true,
           when:          Date.now(),              // precise time, not "today" date
-          ...(imageUrl ? { largeIcon: imageUrl } : {}),
         },
       });
     });

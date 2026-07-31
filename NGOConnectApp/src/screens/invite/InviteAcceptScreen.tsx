@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const LOGO = require('../../assets/images/logo.png');
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
@@ -126,7 +128,10 @@ const InviteAcceptScreen = () => {
         <TouchableOpacity style={s.backBtn} onPress={() => nav.goBack()}>
           <Text style={s.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Invitation</Text>
+        <View style={s.headerCenter}>
+          <Image source={LOGO} style={s.headerLogo} resizeMode="cover" />
+          <Text style={s.headerTitle}>Invitation</Text>
+        </View>
         <View style={{ width: 70 }} />
       </View>
 
@@ -174,6 +179,12 @@ const InviteAcceptScreen = () => {
             <Text style={[s.expiryText, isExpired && s.expiryTextRed]}>
               {isExpired ? '⚠️ Expired' : `⏱ ${expiryLabel(info.tokenExpiry)}`}
             </Text>
+          </View>
+
+          {/* Sent via RippleHub */}
+          <View style={s.sentVia}>
+            <Image source={LOGO} style={s.sentViaLogo} resizeMode="cover" />
+            <Text style={s.sentViaText}>Sent via RippleHub</Text>
           </View>
         </View>
 
@@ -224,12 +235,14 @@ const s = StyleSheet.create({
   container:  { flex: 1, backgroundColor: C.BG },
 
   // header
-  header:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
-                paddingVertical: 12, backgroundColor: C.CARD,
-                borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backBtn:    { minWidth: 70, height: 36, justifyContent: 'center' },
-  backText:   { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
-  headerTitle:{ flex: 1, fontSize: 18, fontWeight: '700', color: C.TEXT, textAlign: 'center' },
+  header:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
+                  paddingVertical: 12, backgroundColor: C.CARD,
+                  borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  backBtn:      { minWidth: 70, height: 36, justifyContent: 'center' },
+  backText:     { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
+  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  headerLogo:   { width: 28, height: 28, borderRadius: 7 },
+  headerTitle:  { fontSize: 18, fontWeight: '700', color: C.TEXT },
 
   // content
   content:    { flex: 1, paddingHorizontal: 20, paddingTop: 24, alignItems: 'center' },
@@ -260,6 +273,13 @@ const s = StyleSheet.create({
   inviterInfo:{ flex: 1 },
   inviterLabel: { fontSize: 11, color: C.TEXT2, marginBottom: 2 },
   inviterName:  { fontSize: 15, fontWeight: '600', color: C.TEXT },
+
+  // sent via strip
+  sentVia:        { flexDirection: 'row', alignItems: 'center', marginTop: 16,
+                    paddingTop: 14, borderTopWidth: 1, borderTopColor: C.BORDER,
+                    alignSelf: 'stretch', justifyContent: 'center', gap: 6 },
+  sentViaLogo:    { width: 20, height: 20, borderRadius: 5 },
+  sentViaText:    { fontSize: 12, color: C.TEXT3, fontWeight: '500' },
 
   // expiry badge
   expiryBadge:    { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,

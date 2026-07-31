@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,6 +16,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const LOGO = require('../../assets/images/logo.png');
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -151,9 +154,7 @@ export default function LoginScreen({ navigation }: Props) {
 
             {/* Brand */}
             <View style={styles.brandBlock}>
-              <View style={styles.logoCircle}>
-                <Text style={styles.logoIcon}>{'♡'}</Text>
-              </View>
+              <Image source={LOGO} style={styles.logoImage} resizeMode="cover" />
               <Text style={styles.brandName}>RippleHub</Text>
               <Text style={styles.brandTagline}>Building communities, sharing impact</Text>
             </View>
@@ -396,8 +397,7 @@ const styles = StyleSheet.create({
 
   // Brand
   brandBlock:    { alignItems: 'center', paddingTop: 32, paddingBottom: 8 },
-  logoCircle:    { width: 72, height: 72, borderRadius: 22, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  logoIcon:      { fontSize: 34 },
+  logoImage:     { width: 80, height: 80, borderRadius: 22, marginBottom: 12 },
   brandName:     { fontSize: 26, fontWeight: '800', color: C.TEXT, letterSpacing: -0.5 },
   brandTagline:  { fontSize: 14, color: C.TEXT2, marginTop: 4 },
 

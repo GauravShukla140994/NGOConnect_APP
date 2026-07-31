@@ -23,7 +23,8 @@ async function displaySystemNotification(title, body) {
       channelId:     'ripplehub_default',
       importance:    AndroidImportance.HIGH,
       pressAction:   { id: 'default' },   // tapping opens the app
-      smallIcon:     'ic_notification',   // use ic_launcher fallback if not present
+      smallIcon:     'ic_notification',   // monochrome status-bar icon
+      largeIcon:     'logo',              // brand logo in notification tray (res/drawable/logo.png)
       showTimestamp: true,
       when:          Date.now(),           // precise delivery time, not "today" date
     },
