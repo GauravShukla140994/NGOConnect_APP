@@ -249,18 +249,13 @@ function ProjectCard({
         </>
       ) : null}
 
-      {/* ── QR + Manage footer (Active / Upcoming only) ── */}
+      {/* ── Manage footer (Active / Upcoming only) ── */}
       {onManage ? (
         <View style={[s.cardFooterRow, { marginTop: 10 }]}>
           <View />
-          <View style={{ flexDirection: 'row', gap: 14 }}>
-            <TouchableOpacity onPress={onManage}>
-              <Text style={s.qrLink}>QR</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onManage}>
-              <Text style={s.manageLink}>Manage ›</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={onManage}>
+            <Text style={s.manageLink}>Manage ›</Text>
+          </TouchableOpacity>
         </View>
       ) : null}
 
