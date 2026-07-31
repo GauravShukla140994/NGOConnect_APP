@@ -261,6 +261,7 @@ export interface Organisation {
   memberStatusCode?: string;    // APPROVED | PENDING  (user's membership status in OrgMembers)
   orgStatusCode?: string;       // PENDING | UNDER_REVIEW | APPROVED | REJECTED | SUSPENDED
   lastRejectionReason?: string; // populated when orgStatusCode = REJECTED or SUSPENDED
+  suspendedAt?: string;         // ISO datetime when org was last suspended (from OrgStatusHistory)
   joinedAt?: string;            // ISO date string when user joined this org
   areasOfWork?: string[];
   followerCount?: number;         // denormalized — from Organisations.FollowerCount

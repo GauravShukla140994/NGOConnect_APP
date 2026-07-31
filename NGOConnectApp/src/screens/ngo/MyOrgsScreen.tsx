@@ -138,6 +138,17 @@ function SuspendedOrgCard({ org }: { org: Organisation }) {
   const color  = orgColor(name);
   const reason = org.lastRejectionReason ?? 'This organisation has been suspended by the platform.';
 
+  const suspendedAt = (() => {
+    const raw = org.suspendedAt;
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    });
+  })();
+
   return (
     <View style={[styles.alertCard, styles.alertCardSuspended]}>
       <View style={styles.alertCardHeader}>
@@ -149,6 +160,9 @@ function SuspendedOrgCard({ org }: { org: Organisation }) {
           <View style={[styles.statusPill, { backgroundColor: '#FFF7ED', alignSelf: 'flex-start', marginTop: 4 }]}>
             <Text style={[styles.statusPillText, { color: '#EA580C' }]}>⚠️  Suspended</Text>
           </View>
+          {!!suspendedAt && (
+            <Text style={styles.suspendedDate}>Suspended on {suspendedAt}</Text>
+          )}
         </View>
       </View>
       <View style={[styles.reasonBox, { backgroundColor: '#FFF7ED' }]}>
@@ -469,6 +483,7 @@ const styles = StyleSheet.create({
   resubmitBtn:        { backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   resubmitBtnText:    { color: '#fff', fontSize: 14, fontWeight: '700' },
   suspendedNote:      { fontSize: 12, color: C.TEXT2, textAlign: 'center', marginTop: 4 },
+  suspendedDate:      { fontSize: 11, color: '#EA580C', marginTop: 3, fontWeight: '500' },
 
   // Empty / error states
   emptyBox:           { backgroundColor: C.CARD, borderRadius: 12, padding: 20, alignItems: 'center', marginTop: 6 },
