@@ -11,35 +11,44 @@ import { name as appName } from './app.json';
 import AppConfig from './src/config/AppConfig';
 import { navigationIntegration } from './src/config/sentry';
 
+// SOS notif types that go on the urgent channel with alarm sound + triple vibration
+const SOS_NOTIF_TYPES = new Set(['SOS_TRIGGERED', 'SOS_RESPONDER_APPROVED']);
+
 // ── Notifee: display a system notification banner ─────────────────────────────
 // Used for both foreground and background/quit cases so notifications
 // always appear in the phone's notification panel.
-async function displaySystemNotification(title, body) {
-  // Reuse the channel already created in MainApplication.kt
+// channelId: 'ripplehub_sos' for SOS alerts, 'ripplehub_default' for everything else.
+async function displaySystemNotification(title, body, channelId) {
   await notifee.displayNotification({
     title: title ?? 'RippleHub',
     body:  body  ?? '',
     android: {
-      channelId:     'ripplehub_default',
+      channelId:     channelId ?? 'ripplehub_default',
       importance:    AndroidImportance.HIGH,
       pressAction:   { id: 'default' },   // tapping opens the app
       smallIcon:     'ic_notification',   // monochrome status-bar icon
       largeIcon:     'logo',              // brand logo in notification tray (res/drawable/logo.png)
       showTimestamp: true,
-      when:          Date.now(),           // precise delivery time, not "today" date
+      when:          Date.now(),          // precise delivery time, not "today" date
     },
   });
 }
 
 // ── FCM: Background / Quit-state message handler ─────────────────────────────
 // MUST be registered here (outside React), before AppRegistry.
-// For notification messages (title+body set on backend) FCM auto-shows the
-// system banner. We also call notifee to ensure it always lands in the panel.
+// Backend now sends data-only messages on Android (no Message.Notification),
+// so FCM will NOT auto-display — our handler has full control of the timestamp.
+// title/body/notifType/imageUrl all arrive in remoteMessage.data.
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
-  const title = remoteMessage.notification?.title;
-  const body  = remoteMessage.notification?.body;
+  // Data-only: title/body are in the data payload (backend moved them there to
+  // prevent FCM auto-display with its wrong/frozen event_time default).
+  // Fallback to notification fields for any legacy / non-Android messages.
+  const title     = remoteMessage.data?.title    ?? remoteMessage.notification?.title;
+  const body      = remoteMessage.data?.body     ?? remoteMessage.notification?.body;
+  const notifType = remoteMessage.data?.notifType ?? '';
   if (title || body) {
-    await displaySystemNotification(title, body);
+    const channelId = SOS_NOTIF_TYPES.has(notifType) ? 'ripplehub_sos' : 'ripplehub_default';
+    await displaySystemNotification(title, body, channelId);
   }
 });
 

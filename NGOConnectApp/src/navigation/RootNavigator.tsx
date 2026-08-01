@@ -16,6 +16,11 @@ import AppNavigator from './AppNavigator';
 
 const Stack = createNativeStackNavigator();
 
+// SOS types that route to the urgent channel (alarm sound + triple vibration)
+// Matches MainApplication.kt "ripplehub_sos" channel.
+// SOS_RESOLVED goes on the default channel — it's a relief notification, not urgent.
+const SOS_NOTIF_TYPES = new Set(['SOS_TRIGGERED', 'SOS_RESPONDER_APPROVED']);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Deep-link routing: notifType → { screen, params }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,9 +43,9 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
     case 'APPLICATION_REJECTED':
     case 'NO_SHOW_EXCUSED':
       return { screen: 'MyProjects' };
-    // Sent to org admins
+    // Sent to org admins — open the specific project's participants list (Applied tab)
     case 'NEW_APPLICATION':
-      return { screen: 'AdminProjects' };
+      return refId ? { screen: 'Participants', params: { projectId: refId } } : { screen: 'AdminProjects' };
     case 'MEMBERSHIP_REQUEST':
     case 'MEMBERSHIP_APPROVED':
     case 'MEMBERSHIP_REJECTED':
@@ -300,26 +305,30 @@ const RootNavigator = () => {
   useEffect(() => {
     if (!isAuthenticated) { return; }
     const unsub = messaging().onMessage(async (remoteMessage) => {
-      const title = remoteMessage.notification?.title ?? 'RippleHub';
-      const body  = remoteMessage.notification?.body  ?? '';
-      if (!body) { return; } // data-only message — ignore visually
+      // Backend sends data-only on Android: title/body/imageUrl are in remoteMessage.data.
+      // Fallback to notification fields covers iOS and any legacy sends.
+      const title    = (remoteMessage.data?.title    as string | undefined) ?? remoteMessage.notification?.title ?? 'RippleHub';
+      const body     = (remoteMessage.data?.body     as string | undefined) ?? remoteMessage.notification?.body  ?? '';
+      const imageUrl = (remoteMessage.data?.imageUrl as string | undefined) ?? (remoteMessage.notification as any)?.android?.imageUrl;
+      if (!body) { return; }
 
-      const data = (remoteMessage.data ?? {}) as NotifData;
-      // CAMPAIGN: use image from FCM notification payload as large icon
-      const imageUrl = (remoteMessage.notification as any)?.android?.imageUrl as string | undefined;
+      const data      = (remoteMessage.data ?? {}) as NotifData;
+      const channelId = SOS_NOTIF_TYPES.has(data.notifType ?? '')
+        ? 'ripplehub_sos'       // alarm sound + triple vibration for active SOS
+        : 'ripplehub_default';  // standard sound + double vibration for everything else
 
       await notifee.displayNotification({
         title,
         body,
         data: data as Record<string, string>,   // passed through to press handler
         android: {
-          channelId:     'ripplehub_default',     // channel created in MainApplication.kt
+          channelId,
           importance:    AndroidImportance.HIGH,
           pressAction:   { id: 'default' },       // tapping opens the app
           smallIcon:     'ic_notification',       // monochrome status-bar icon
           largeIcon:     imageUrl ?? 'logo',      // campaign image if present, else brand logo
           showTimestamp: true,
-          when:          Date.now(),              // precise time, not "today" date
+          when:          Date.now(),              // precise delivery time — fixes frozen "03/01/01" date
         },
       });
     });

@@ -9,7 +9,7 @@
  * State is persisted via MMKV so we only show the rationale once.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Linking, Platform } from 'react-native';
+import { AppState, AppStateStatus, Linking, Platform } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import { MMKV } from 'react-native-mmkv';
 import { notificationApi } from '../api/notification.api';
@@ -110,17 +110,34 @@ export function useNotificationPermission(isAuthenticated: boolean) {
   };
 
   // ── Open system app settings (for denied users) ────────────────────────────
+  // After opening Settings we watch AppState: if the user grants permission
+  // and returns to the app, we re-check and register the token automatically
+  // so the nudge disappears without requiring a restart.
   const openSettings = () => {
     if (Platform.OS === 'android') {
       Linking.openSettings();
     } else {
       Linking.openURL('app-settings:');
     }
-    setPermState('denied');
+
+    // Set up a one-shot AppState listener for when the app comes back to foreground
+    const sub = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        sub.remove(); // one-shot — remove immediately
+        const current = await messaging().hasPermission();
+        const granted =
+          current === messaging.AuthorizationStatus.AUTHORIZED ||
+          current === messaging.AuthorizationStatus.PROVISIONAL;
+        if (granted) {
+          await registerToken(); // sets permState → 'granted', nudge disappears
+        }
+        // If still denied, leave permState as 'denied' (nudge already dismissed)
+      }
+    });
   };
 
-  // ── Dismiss the nudge banner ────────────────────────────────────────────────
-  const dismissNudge = () => setPermState('denied');
+  // ── Dismiss the nudge banner for this session ──────────────────────────────
+  const dismissNudge = () => setPermState('denied'); // 'denied' = "stop showing UI this session"
 
   return { permState, requestPermission, dismissRationale, openSettings, dismissNudge };
 }

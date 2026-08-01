@@ -58,7 +58,10 @@ function notifMeta(type: string): { emoji: string; color: string } {
 function resolveScreen(notif: Notification): { screen: string; params?: object } | null {
   const refId = notif.refId;
   switch (notif.notifType) {
+    // Admin receives this — open the specific project's participants list
     case 'NEW_APPLICATION':
+      return refId ? { screen: 'Participants', params: { projectId: refId } } : { screen: 'AdminProjects' };
+    // Volunteer receives these — open their project list
     case 'APPLICATION_APPROVED':
     case 'APPLICATION_REJECTED':
       return { screen: 'MyProjects' };
