@@ -158,6 +158,8 @@ export interface UserApplication {
   // Project status (drives tab routing client-side)
   projectStatusCode?: string; // UPCOMING | ACTIVE | COMPLETED | EXPIRED | CANCELLED
   projectStatus?: string;
+  requiresApproval?: boolean; // true = QR scan required to mark attendance
+  isCheckedIn?: boolean;      // true = user already scanned QR for this project
   // Completed tab extras (enriched by future SP update)
   hoursLogged?: number;
   impactNote?: string;

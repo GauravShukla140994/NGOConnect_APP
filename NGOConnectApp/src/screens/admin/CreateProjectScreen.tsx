@@ -763,7 +763,7 @@ export default function CreateProjectScreen() {
       </View>
       <View style={s.switchRow}>
         <View style={{ flex: 1 }}>
-          <Text style={s.label}>Requires Approval</Text>
+          <Text style={s.label}>Required Approval for Attendance</Text>
           <Text style={s.subText}>Admin reviews each application</Text>
         </View>
         <Switch value={form.requiresApproval} onValueChange={v => set('requiresApproval', v)} trackColor={{ true: C.PRIMARY }} />

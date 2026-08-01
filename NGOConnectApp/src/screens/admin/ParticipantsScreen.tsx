@@ -215,11 +215,13 @@ function AttendedCard({
   onAwardBadge: (key: string) => void;
 }) {
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
-  const checkinTime = fmtTime12(app.checkedInAt);
+  const checkinDt   = app.checkedInAt ? new Date(app.checkedInAt) : null;
+  const checkinDate = checkinDt ? fmtDate(app.checkedInAt) : null;
+  const checkinTime = checkinDt ? fmtTime12(app.checkedInAt) : null;
   const hours = app.hoursLogged ?? app.hoursAttended;
 
   const checkinLine = [
-    checkinTime ? `QR ${checkinTime}` : null,
+    (checkinDate && checkinTime) ? `QR ${checkinDate} ${checkinTime}` : null,
     hours ? `${hours} hrs logged` : null,
   ].filter(Boolean).join(' · ');
 

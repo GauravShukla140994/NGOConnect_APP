@@ -15,6 +15,7 @@ import AppConfig from '../../config/AppConfig';
 import { fmtDate } from '../../utils/dateUtils';
 import { getMyApplications } from '../../api/user.api';
 import type { UserApplication } from '../../types/api.types';
+import QRScannerModal from '../../screens/profile/QRScannerModal';
 
 const C = AppConfig.COLORS;
 
@@ -48,7 +49,7 @@ const isApplied   = (a: UserApplication) =>
 
 // fmtDate imported from utils/dateUtils (26-Jul-2026 format)
 
-function ProjectCard({ item, tab }: { item: UserApplication; tab: Tab }) {
+function ProjectCard({ item, tab, onScan }: { item: UserApplication; tab: Tab; onScan: (projectId: number, projectName: string) => void }) {
   const statusColor = STATUS_COLORS[item.statusCode] ?? STATUS_COLORS.APPROVED;
   const borderColor = TAB_BORDER[tab];
   const location    = [item.landmark, item.city].filter(Boolean).join(', ');
@@ -101,7 +102,7 @@ function ProjectCard({ item, tab }: { item: UserApplication; tab: Tab }) {
         </View>
       )}
 
-      {/* Upcoming tab — QR button */}
+      {/* Upcoming tab — schedule info + optional QR button */}
       {tab === 'upcoming' && (
         <>
           {item.scheduleTypeCode && (
@@ -111,16 +112,24 @@ function ProjectCard({ item, tab }: { item: UserApplication; tab: Tab }) {
               {item.sessionStartTime ? ` · ${item.sessionStartTime}` : ''}
             </Text>
           )}
-          <View style={styles.qrSection}>
-            <Text style={styles.qrHint}>At the venue? Ask admin to show the QR and scan it to log attendance.</Text>
-            <TouchableOpacity
-              style={styles.qrBtn}
-              onPress={() => Alert.alert('QR Scan', 'QR scanner coming in Sprint 6')}
-              accessibilityLabel="Scan QR code"
-            >
-              <Text style={styles.qrBtnText}>📷 Scan QR to Mark Attendance</Text>
-            </TouchableOpacity>
-          </View>
+          {item.requiresApproval && !item.isCheckedIn && (
+            <View style={styles.qrSection}>
+              <Text style={styles.qrHint}>At the venue? Ask admin to show the QR and scan it to log attendance.</Text>
+              <TouchableOpacity
+                style={styles.qrBtn}
+                onPress={() => onScan(item.projectId, item.projectName)}
+                accessibilityLabel="Scan QR code"
+              >
+                <Text style={styles.qrBtnText}>📷 Scan QR to Mark Attendance</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {item.requiresApproval && item.isCheckedIn && (
+            <View style={[styles.qrSection, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+              <Text style={{ fontSize: 16 }}>✅</Text>
+              <Text style={{ fontSize: 13, color: '#059669', fontWeight: '600' }}>Attendance marked</Text>
+            </View>
+          )}
         </>
       )}
 
@@ -164,6 +173,7 @@ export default function MyProjectsScreen() {
   const [tab,        setTab]        = useState<Tab>('applied');
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [scanTarget, setScanTarget] = useState<{ projectId: number; projectName: string } | null>(null);
 
   // ── Swipe to change tab ──────────────────────────────────────────────────────
   const swipeState = useRef({ tab: 'applied' as Tab, setTab: (_t: Tab) => {} });
@@ -250,7 +260,7 @@ export default function MyProjectsScreen() {
             data={tabItems}
             keyExtractor={(item, idx) => `${item.applicationId ?? idx}`}
             contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 24 }]}
-            renderItem={({ item }) => <ProjectCard item={item} tab={tab} />}
+            renderItem={({ item }) => <ProjectCard item={item} tab={tab} onScan={(id, name) => setScanTarget({ projectId: id, projectName: name })} />}
             onRefresh={() => load(true)}
             refreshing={refreshing}
             ListEmptyComponent={
@@ -264,6 +274,16 @@ export default function MyProjectsScreen() {
           />
         )}
       </View>
+
+      {scanTarget && (
+        <QRScannerModal
+          visible={!!scanTarget}
+          projectId={scanTarget.projectId}
+          projectName={scanTarget.projectName}
+          onClose={() => setScanTarget(null)}
+          onSuccess={() => { setScanTarget(null); load(true); }}
+        />
+      )}
     </SafeAreaView>
   );
 }

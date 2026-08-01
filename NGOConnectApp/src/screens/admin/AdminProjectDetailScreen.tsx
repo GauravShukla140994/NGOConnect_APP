@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import QRCode from 'react-native-qrcode-svg';
-import { fmtDate as _fmtDate, fmtTime as _fmtTime, isProjectExpired } from '../../utils/dateUtils';
+import { fmtDate as _fmtDate, fmtTime as _fmtTime, fmtDateTime as _fmtDateTime, isProjectExpired } from '../../utils/dateUtils';
 import {
   ActivityIndicator,
   Alert,
@@ -184,7 +184,7 @@ function ParticipantRow({ app }: { app: any }) {
   let subtitle = app.city ?? '';
   if (app.statusCode === 'ATTENDED') {
     const parts = [
-      app.checkedInAt ? `QR ${_fmtTime(app.checkedInAt)}` : null,
+      app.checkedInAt ? `QR ${_fmtDateTime(app.checkedInAt, app.checkedInAt.split('T')[1])}` : null,
       app.hoursLogged  ? `${app.hoursLogged} hrs` : null,
     ].filter(Boolean);
     subtitle = parts.join(' · ') || subtitle;
