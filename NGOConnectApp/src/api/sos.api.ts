@@ -32,6 +32,8 @@ export interface SosIncidentDetail {
   longitude?: number;
   status: string;           // ACTIVE | RESOLVED | CANCELLED
   createdAt: string;
+  resolvedAt?: string;      // set when status = RESOLVED
+  cancelledAt?: string;     // set when status = CANCELLED (CancelledAt column)
   responders: SosResponderItem[];
 }
 

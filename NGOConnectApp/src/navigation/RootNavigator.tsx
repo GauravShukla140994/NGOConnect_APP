@@ -319,20 +319,27 @@ const RootNavigator = () => {
         ? 'ripplehub_sos'       // alarm sound + triple vibration for active SOS
         : 'ripplehub_default';  // standard sound + double vibration for everything else
 
-      await notifee.displayNotification({
-        title,
-        body,
-        data: data as Record<string, string>,   // passed through to press handler
-        android: {
-          channelId,
-          importance:    AndroidImportance.HIGH,
-          pressAction:   { id: 'default' },       // tapping opens the app
-          smallIcon:     'ic_notification',       // monochrome status-bar icon (falls back to app icon if not found)
-          ...(imageUrl ? { largeIcon: imageUrl } : {}),  // only set when a real URL is provided
-          showTimestamp: true,
-          when:          Date.now(),              // precise delivery time — fixes frozen "03/01/01" date
-        },
-      });
+      try {
+        await notifee.displayNotification({
+          title,
+          body,
+          data: data as Record<string, string>,   // passed through to press handler
+          android: {
+            channelId,
+            importance:    AndroidImportance.HIGH,
+            pressAction:   { id: 'default' },       // tapping opens the app
+            smallIcon:     'ic_notification',       // monochrome status-bar icon — must exist in every drawable-*dpi (no fallback if missing, see index.js note)
+            ...(imageUrl ? { largeIcon: imageUrl } : {}),  // only set when a real URL is provided
+            showTimestamp: true,
+            when:          Date.now(),              // precise delivery time — fixes frozen "03/01/01" date
+          },
+        });
+      } catch (err) {
+        // If this throws (e.g. a missing drawable resource), the notification silently never
+        // appears with no visible error — log it instead of letting it disappear.
+        console.error('[Foreground] displayNotification failed:', err);
+        return;
+      }
 
       // CAMPAIGN delivery acknowledgment — fire-and-forget after the notification renders.
       // Only for CAMPAIGN type; other types don't have/need this endpoint.

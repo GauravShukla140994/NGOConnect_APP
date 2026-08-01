@@ -27,14 +27,23 @@ const TYPE_META: Record<string, { emoji: string; color: string }> = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function useTimer(createdAt: string | undefined) {
-  const [elapsed, setElapsed] = useState(0);
+function useTimer(createdAt: string | undefined, endAt?: string | null) {
+  // When endAt is set (resolved/cancelled), compute a fixed duration — no interval needed.
+  const fixedElapsed = (createdAt && endAt)
+    ? Math.max(0, Math.floor((new Date(endAt).getTime() - new Date(createdAt).getTime()) / 1000))
+    : null;
+
+  const [elapsed, setElapsed] = useState(fixedElapsed ?? 0);
+
   useEffect(() => {
+    // If end time is already known, freeze immediately — no tick needed.
+    if (fixedElapsed !== null) { setElapsed(fixedElapsed); return; }
     if (!createdAt) { return; }
     const start = new Date(createdAt).getTime();
     const id = setInterval(() => { setElapsed(Math.floor((Date.now() - start) / 1000)); }, 1000);
     return () => clearInterval(id);
-  }, [createdAt]);
+  }, [createdAt, fixedElapsed]);
+
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
   return `${mm}:${ss}`;
@@ -315,7 +324,9 @@ export default function SosActiveScreen() {
     return () => { if (locInterval.current) { clearInterval(locInterval.current); } };
   }, [isVictim, sosIncidentId]);
 
-  const timer    = useTimer(incident?.createdAt);
+  // Freeze timer at resolve/cancel time so it doesn't keep counting after the SOS ends.
+  const sosEndAt = incident?.resolvedAt ?? incident?.cancelledAt ?? null;
+  const timer    = useTimer(incident?.createdAt, incident?.status !== 'ACTIVE' ? sosEndAt : null);
   const meta     = incident ? (TYPE_META[incident.alertType] ?? { emoji: '⚠️', color: '#EF4444' }) : { emoji: '⚠️', color: '#EF4444' };
   const headerBg = meta.color;
 

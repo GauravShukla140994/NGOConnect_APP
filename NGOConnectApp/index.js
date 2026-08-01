@@ -27,6 +27,14 @@ const SOS_NOTIF_TYPES = new Set(['SOS_TRIGGERED', 'SOS_RESPONDER_APPROVED']);
 // NOTE: largeIcon is only set when imageUrl is a real URL. Passing a drawable resource
 // name fallback (e.g. 'logo') caused the notification to be silently dropped on devices
 // where the APK was built before the drawable was added — so we omit it instead.
+//
+// smallIcon: 'ic_notification' MUST exist as a real drawable in every density folder
+// (android/app/src/main/res/drawable-*dpi/ic_notification.png). There is NO automatic
+// fallback to the app/launcher icon if it's missing — Android resolves the resource
+// name via getIdentifier() at runtime, and a miss makes notifee's displayNotification()
+// throw. Since this call is wrapped in try/catch below, that failure was being logged to
+// console.error only (invisible unless watching Metro/adb logcat) and the notification
+// silently never appeared — for every notification type, in every app state.
 async function displaySystemNotification(title, body, channelId, imageUrl) {
   await notifee.displayNotification({
     title: title ?? 'RippleHub',
