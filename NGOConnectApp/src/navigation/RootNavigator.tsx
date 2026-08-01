@@ -327,8 +327,8 @@ const RootNavigator = () => {
           channelId,
           importance:    AndroidImportance.HIGH,
           pressAction:   { id: 'default' },       // tapping opens the app
-          smallIcon:     'ic_notification',       // monochrome status-bar icon
-          largeIcon:     imageUrl ?? 'logo',      // campaign image if present, else brand logo
+          smallIcon:     'ic_notification',       // monochrome status-bar icon (falls back to app icon if not found)
+          ...(imageUrl ? { largeIcon: imageUrl } : {}),  // only set when a real URL is provided
           showTimestamp: true,
           when:          Date.now(),              // precise delivery time — fixes frozen "03/01/01" date
         },

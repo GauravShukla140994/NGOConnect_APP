@@ -36,6 +36,7 @@ import { getNearbyFeed } from '../../api/project.api';
 import { getMyOrgs, getMyDocuments } from '../../api/user.api';
 import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
 import { haversineKm, formatDistance } from '../../utils/geo';
+import { isProjectExpired } from '../../utils/dateUtils';
 import { orgApi } from '../../api/org.api';
 import { inviteApi, PendingInviteItem } from '../../api/invite.api';
 import { storage } from '../../api/apiClient';
@@ -987,7 +988,7 @@ export default function HomeScreen() {
     }));
     // Step 2 — refetch with GPS for correct relevance-ordered list from server
     getNearbyFeed({ pageNumber: 1, pageSize: 5, userLat: userCoords.lat, userLon: userCoords.lon })
-      .then(r => { if (r.data?.isSuccess) setProjects(r.data.data?.items ?? []); })
+      .then(r => { if (r.data?.isSuccess) setProjects((r.data.data?.items ?? []).filter(p => !isProjectExpired(p))); })
       .catch(() => {});
   }, [userCoords]);
 
@@ -1050,7 +1051,7 @@ export default function HomeScreen() {
           ? { userLat: userCoordsRef.current.lat, userLon: userCoordsRef.current.lon }
           : {}),
       }).then(r => {
-        if (r.data?.isSuccess) setProjects(r.data.data?.items ?? []);
+        if (r.data?.isSuccess) setProjects((r.data.data?.items ?? []).filter(p => !isProjectExpired(p)));
       }).catch(() => {}),
       getMyOrgs().then(r => {
         if (r.data?.isSuccess) {
