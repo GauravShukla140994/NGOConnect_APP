@@ -31,4 +31,14 @@ export const notificationApi = {
     imageUrl?:    string;
   }) =>
     apiClient.post<ApiResponse<null>>('/notifications/send-test', payload),
+
+  // ── CAMPAIGN delivery acknowledgment ─────────────────────────────────────
+  // Call this the moment the app renders a CAMPAIGN notification (foreground
+  // or background). Fire-and-forget — never block notification rendering on
+  // the response. A missed ack just means one row won't show as confirmed-
+  // delivered in the Super Admin dashboard; not worth retrying aggressively.
+  acknowledgeDelivery: (campaignRecipientId: string) =>
+    apiClient.post<ApiResponse<null>>(
+      `/campaign-recipients/${campaignRecipientId}/delivered`,
+    ),
 };

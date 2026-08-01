@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fmtDate } from '../../utils/dateUtils';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { notificationApi } from '../../api/notification.api';
 import type { Notification } from '../../types/api.types';
@@ -176,6 +176,13 @@ const NotifRow = React.memo(({ item, onPress }: RowProps) => {
 const NotificationsScreen = () => {
   const nav    = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const route  = useRoute<any>();
+
+  // CAMPAIGN push with actionLabel and no deepLink lands here.
+  // Show a dismissible CTA banner so the user sees the intended call-to-action.
+  const [ctaLabel, setCtaLabel] = useState<string | null>(
+    route.params?.actionLabel ?? null,
+  );
 
   const [items, setItems]           = useState<Notification[]>([]);
   const [page, setPage]             = useState(1);
@@ -309,6 +316,16 @@ const NotificationsScreen = () => {
         )}
       </View>
 
+      {/* ── Campaign CTA banner ────────────────────────────────────────── */}
+      {!!ctaLabel && (
+        <View style={s.ctaBanner}>
+          <Text style={s.ctaBannerText}>📣 {ctaLabel}</Text>
+          <TouchableOpacity onPress={() => setCtaLabel(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={s.ctaBannerClose}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* ── List ───────────────────────────────────────────────────────── */}
       <FlatList
         data={items}
@@ -392,6 +409,13 @@ const s = StyleSheet.create({
   emptySub:     { fontSize: 14, color: C.TEXT2, textAlign: 'center', lineHeight: 20 },
 
   footerLoader: { paddingVertical: 20, alignItems: 'center' },
+
+  // CAMPAIGN CTA banner — shown when actionLabel nav param is set
+  ctaBanner:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
+                    paddingVertical: 12, backgroundColor: '#7C3AED',
+                    borderBottomWidth: 1, borderBottomColor: '#6D28D9' },
+  ctaBannerText:  { flex: 1, fontSize: 14, fontWeight: '700', color: '#fff' },
+  ctaBannerClose: { fontSize: 16, color: 'rgba(255,255,255,0.8)', paddingLeft: 12 },
 });
 
 export default NotificationsScreen;

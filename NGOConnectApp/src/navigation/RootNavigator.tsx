@@ -9,6 +9,7 @@ import { navigationIntegration } from '../config/sentry';
 import { pendingInviteStore } from '../store/pendingInviteStore';
 import { pendingDeepLinkStore } from '../store/pendingDeepLinkStore';
 import { shareApi } from '../api/share.api';
+import { notificationApi } from '../api/notification.api';
 import { useNotificationPermission } from '../hooks/useNotificationPermission';
 import NotificationPermissionModal from '../components/NotificationPermissionModal';
 import AuthNavigator from './AuthNavigator';
@@ -25,12 +26,13 @@ const SOS_NOTIF_TYPES = new Set(['SOS_TRIGGERED', 'SOS_RESPONDER_APPROVED']);
 // Deep-link routing: notifType → { screen, params }
 // ─────────────────────────────────────────────────────────────────────────────
 type NotifData = {
-  notifType?:   string;
-  refId?:       string;
-  refType?:     string;
+  notifType?:            string;
+  refId?:                string;
+  refType?:              string;
   // CAMPAIGN extras — set by backend's Marketing & Communication Center
-  deepLink?:    string;   // ngoconnect:// or https:// URL to open on tap
-  actionLabel?: string;   // CTA label ("Donate Now" etc.) passed as nav param
+  deepLink?:             string;   // ngoconnect:// or https:// URL to open on tap
+  actionLabel?:          string;   // CTA label ("Donate Now" etc.) passed as nav param
+  campaignRecipientId?:  string;   // delivery ack ID — POST /campaign-recipients/{id}/delivered
 };
 
 function resolveScreen(data: NotifData): { screen: string; params?: object } | null {
@@ -331,6 +333,12 @@ const RootNavigator = () => {
           when:          Date.now(),              // precise delivery time — fixes frozen "03/01/01" date
         },
       });
+
+      // CAMPAIGN delivery acknowledgment — fire-and-forget after the notification renders.
+      // Only for CAMPAIGN type; other types don't have/need this endpoint.
+      if (data.notifType === 'CAMPAIGN' && data.campaignRecipientId) {
+        notificationApi.acknowledgeDelivery(data.campaignRecipientId).catch(() => {});
+      }
     });
     return unsub;
   }, [isAuthenticated]);
@@ -349,7 +357,11 @@ const RootNavigator = () => {
         }
         const target = resolveScreen(data);
         if (target && navRef.current) {
-          navRef.current.navigate(target.screen as never, (target.params ?? {}) as never);
+          // For CAMPAIGN with no deepLink, pass actionLabel so the destination
+          // screen can render an in-app CTA banner (e.g. "Donate Now").
+          const extra = data.notifType === 'CAMPAIGN' && data.actionLabel
+            ? { actionLabel: data.actionLabel } : {};
+          navRef.current.navigate(target.screen as never, { ...(target.params ?? {}), ...extra } as never);
         }
       }
     });
@@ -367,7 +379,9 @@ const RootNavigator = () => {
       }
       const target = resolveScreen(data);
       if (target && navRef.current) {
-        navRef.current.navigate(target.screen as never, (target.params ?? {}) as never);
+        const extra = data.notifType === 'CAMPAIGN' && data.actionLabel
+          ? { actionLabel: data.actionLabel } : {};
+        navRef.current.navigate(target.screen as never, { ...(target.params ?? {}), ...extra } as never);
       }
     });
 
@@ -381,8 +395,10 @@ const RootNavigator = () => {
       }
       const target = resolveScreen(data);
       if (target && navRef.current) {
+        const extra = data.notifType === 'CAMPAIGN' && data.actionLabel
+          ? { actionLabel: data.actionLabel } : {};
         setTimeout(() => {
-          navRef.current?.navigate(target.screen as never, (target.params ?? {}) as never);
+          navRef.current?.navigate(target.screen as never, { ...(target.params ?? {}), ...extra } as never);
         }, 600);
       }
     });
