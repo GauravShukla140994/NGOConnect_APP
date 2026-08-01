@@ -75,6 +75,22 @@ export const projectApi = {
   addSkill: (projectId: number, skillName: string, isRequired = false) =>
     apiClient.post<ApiResponse<null>>(`/project/${projectId}/skills`, { skillName, isRequired }),
 
+  getSkills: (projectId: number) =>
+    apiClient.get<ApiResponse<any[]>>(`/project/${projectId}/skills`),
+
+  getSkillRatings: (projectId: number, userId: number) =>
+    apiClient.get<ApiResponse<any[]>>(`/project/${projectId}/skill-ratings/${userId}`),
+
+  rateSkill: (data: {
+    ratedUserId: number;
+    projectSkillId: number;
+    rating: number;
+    notes?: string;
+    projectId?: number;
+    orgId?: number;
+  }) =>
+    apiClient.post<ApiResponse<null>>('/skills/rate', data),
+
   // Sessions
   getSessions: (projectId: number) =>
     apiClient.get<ApiResponse<any[]>>(`/project/${projectId}/sessions`),
@@ -127,8 +143,13 @@ export const create       = (data: CreateProjectPayload) => projectApi.create(da
 export const update       = (projectId: number, data: Partial<CreateProjectPayload>) =>
   projectApi.update(projectId, data);
 export const cancel       = (projectId: number, reason?: string) => projectApi.cancel(projectId, reason);
-export const addSkill     = (projectId: number, skillName: string, isRequired?: boolean) =>
+export const addSkill        = (projectId: number, skillName: string, isRequired?: boolean) =>
   projectApi.addSkill(projectId, skillName, isRequired);
+export const getSkills       = (projectId: number) => projectApi.getSkills(projectId);
+export const getSkillRatings = (projectId: number, userId: number) =>
+  projectApi.getSkillRatings(projectId, userId);
+export const rateSkill       = (data: Parameters<typeof projectApi.rateSkill>[0]) =>
+  projectApi.rateSkill(data);
 export const getSessions  = (projectId: number) => projectApi.getSessions(projectId);
 export const getSessionQr = (projectId: number, sessionId: number) =>
   projectApi.getSessionQr(projectId, sessionId);

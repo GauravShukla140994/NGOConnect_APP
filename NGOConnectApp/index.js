@@ -5,7 +5,7 @@
 import * as Sentry from '@sentry/react-native';
 import { AppRegistry } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native';
 import App from './App';
 import { name as appName } from './app.json';
 import AppConfig from './src/config/AppConfig';
@@ -43,8 +43,11 @@ async function displaySystemNotification(title, body, channelId, imageUrl) {
       channelId:     channelId ?? 'ripplehub_default',
       importance:    AndroidImportance.HIGH,
       pressAction:   { id: 'default' },         // tapping opens the app
-      smallIcon:     'ic_notification',         // monochrome status-bar icon (falls back to app icon if not found)
-      ...(imageUrl ? { largeIcon: imageUrl } : {}),  // only set when a real URL is provided
+      smallIcon:     'ic_notification',         // monochrome status-bar icon — see note above, no fallback if missing
+      ...(imageUrl ? { largeIcon: imageUrl } : {}),  // small thumbnail, collapsed AND expanded
+      // Full-width banner image on expand — same fix as the foreground handler in
+      // RootNavigator.tsx; largeIcon alone never gave a big-picture view.
+      ...(imageUrl ? { style: { type: AndroidStyle.BIGPICTURE, picture: imageUrl } } : {}),
       showTimestamp: true,
       when:          Date.now(),                // precise delivery time, not "today" date
     },

@@ -22,6 +22,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { projectApi } from '../../api/project.api';
+import { awardBadge } from '../../api/org.api';
+
+type ProjectSkill = { id: number; name: string };
+import { lookupApi } from '../../api/lookup.api';
 import { UserAvatar } from '../../components/ui';
 
 const C = AppConfig.COLORS;
@@ -29,9 +33,9 @@ const C = AppConfig.COLORS;
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const BADGE_DEFS = [
-  { key: 'STAR_VOL',      icon: '☆',  label: 'Star Vol.'     },
-  { key: 'TEAM_PLAYER',   icon: '♡',  label: 'Team Player'   },
-  { key: 'TOP_PERFORMER', icon: '🏆', label: 'Top Performer' },
+  { key: 'STAR_VOL',    icon: '⭐', label: 'Star Vol.'     },
+  { key: 'TEAM_PLAYER', icon: '🤝', label: 'Team Player'   },
+  { key: 'TOP_PERFORM', icon: '🏆', label: 'Top Performer' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -205,14 +209,20 @@ function ApprovedCard({
 // ─── ATTENDED CARD ────────────────────────────────────────────────────────────
 
 function AttendedCard({
-  app, projectSkills, skillRatings, onRateSkill, awardedBadges, onAwardBadge,
+  app, projectSkills, skillRatings, onRateSkill, onSubmitRatings,
+  submittingRatings, submittedRatings,
+  awardedBadges, onAwardBadge, awardingBadge,
 }: {
   app: any;
-  projectSkills: string[];
-  skillRatings: Record<string, number>;
-  onRateSkill: (skill: string, val: number) => void;
+  projectSkills: ProjectSkill[];
+  skillRatings: Record<number, number>;    // projectSkillId → star count
+  onRateSkill: (skillId: number, val: number) => void;
+  onSubmitRatings: () => void;
+  submittingRatings: boolean;
+  submittedRatings: boolean;
   awardedBadges: string[];
   onAwardBadge: (key: string) => void;
+  awardingBadge: string | null;
 }) {
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
   const checkinDt   = app.checkedInAt ? new Date(app.checkedInAt) : null;
@@ -224,6 +234,8 @@ function AttendedCard({
     (checkinDate && checkinTime) ? `QR ${checkinDate} ${checkinTime}` : null,
     hours ? `${hours} hrs logged` : null,
   ].filter(Boolean).join(' · ');
+
+  const hasAnyRating = projectSkills.some(sk => (skillRatings[sk.id] ?? 0) > 0);
 
   return (
     <View style={s.card}>
@@ -242,43 +254,70 @@ function AttendedCard({
         <View style={s.attendedChip}><Text style={s.attendedChipText}>Attended</Text></View>
       </View>
 
-      {/* Skill ratings — "Rate skills:" label left, skill columns right */}
+      {/* Skill ratings — only shown when project has skills defined */}
       {projectSkills.length > 0 && (
-        <View style={s.skillRatingWrap}>
-          <Text style={s.rateSkillsLabel}>Rate skills:</Text>
-          <View style={s.skillColumnsRow}>
-            {projectSkills.map(skill => (
-              <View key={skill} style={s.skillColumn}>
-                <Text style={s.skillColName}>{skill}</Text>
-                <View style={s.starsRow}>
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <TouchableOpacity
-                      key={i}
-                      onPress={() => onRateSkill(skill, i)}
-                      hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
-                    >
-                      <Text style={[s.star, { color: i <= (skillRatings[skill] ?? 0) ? '#F59E0B' : '#D1D5DB' }]}>★</Text>
-                    </TouchableOpacity>
-                  ))}
+        <View style={s.skillRatingSection}>
+          <View style={s.skillRatingWrap}>
+            <Text style={s.rateSkillsLabel}>Rate skills:</Text>
+            <View style={s.skillColumnsRow}>
+              {projectSkills.map(sk => (
+                <View key={sk.id} style={s.skillColumn}>
+                  <Text style={s.skillColName}>{sk.name}</Text>
+                  <View style={s.starsRow}>
+                    {[1, 2, 3, 4, 5].map(i => (
+                      <TouchableOpacity
+                        key={i}
+                        onPress={() => !submittedRatings && onRateSkill(sk.id, i)}
+                        hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
+                        disabled={submittedRatings}
+                      >
+                        <Text style={[s.star, { color: i <= (skillRatings[sk.id] ?? 0) ? '#F59E0B' : '#D1D5DB' }]}>★</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
-              </View>
-            ))}
+              ))}
+            </View>
           </View>
+
+          {/* Save ratings button */}
+          {!submittedRatings && (
+            <TouchableOpacity
+              style={[s.saveRatingsBtn, (!hasAnyRating || submittingRatings) && s.btnDisabled]}
+              onPress={onSubmitRatings}
+              disabled={!hasAnyRating || submittingRatings}
+              activeOpacity={0.8}
+            >
+              {submittingRatings
+                ? <ActivityIndicator size="small" color="#FFFFFF" />
+                : <Text style={s.saveRatingsBtnText}>Save Ratings</Text>}
+            </TouchableOpacity>
+          )}
+          {submittedRatings && (
+            <View style={s.ratingsSubmittedRow}>
+              <Text style={s.ratingsSubmittedText}>✓ Ratings saved</Text>
+            </View>
+          )}
         </View>
       )}
 
-      {/* Badge buttons */}
+      {/* Badge buttons — only for attended volunteers; disabled while API is in-flight */}
       <View style={s.badgeRow}>
         {BADGE_DEFS.map(b => {
-          const awarded = awardedBadges.includes(b.key);
+          const awarded   = awardedBadges.includes(b.key);
+          const awarding  = awardingBadge === b.key;
+          const disabled  = awarded || !!awardingBadge;
           return (
             <TouchableOpacity
               key={b.key}
-              style={[s.badgeBtn, awarded && s.badgeBtnAwarded]}
-              onPress={() => onAwardBadge(b.key)}
+              style={[s.badgeBtn, awarded && s.badgeBtnAwarded, disabled && !awarded && s.btnDisabled]}
+              onPress={() => !disabled && onAwardBadge(b.key)}
               activeOpacity={0.8}
+              disabled={disabled}
             >
-              <Text style={[s.badgeBtnIcon, awarded && { color: C.PRIMARY }]}>{b.icon}</Text>
+              {awarding
+                ? <ActivityIndicator size="small" color={C.PRIMARY} />
+                : <Text style={[s.badgeBtnIcon, awarded && { color: C.PRIMARY }]}>{b.icon}</Text>}
               <Text style={[s.badgeBtnLabel, awarded && { color: C.PRIMARY }]}>{b.label}</Text>
             </TouchableOpacity>
           );
@@ -355,7 +394,7 @@ export default function ParticipantsScreen() {
   const { projectId, orgId } = route.params ?? {};
 
   const [apps,          setApps]          = useState<any[]>([]);
-  const [projectSkills, setProjectSkills] = useState<string[]>([]);
+  const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [refreshing,    setRefreshing]    = useState(false);
   const [reviewing,     setReviewing]     = useState<number | null>(null);
@@ -363,25 +402,61 @@ export default function ParticipantsScreen() {
   // Per-app state
   const [markingAttended, setMarkingAttended] = useState<number | null>(null);
 
-  // Per-app state
-  const [skillRatings,  setSkillRatings]  = useState<Record<number, Record<string, number>>>({});
+  // Skill ratings: appId → { projectSkillId → star count }
+  const [skillRatings,      setSkillRatings]      = useState<Record<number, Record<number, number>>>({});
+  // Which apps have had ratings submitted (appId → true)
+  const [submittingRatings, setSubmittingRatings] = useState<Record<number, boolean>>({});
+  const [submittedRatings,  setSubmittedRatings]  = useState<Record<number, boolean>>({});
+
   const [awardedBadges, setAwardedBadges] = useState<Record<number, string[]>>({});
+  // Which badge (ValueCode) is currently being awarded for each appId (null = idle)
+  const [awardingBadge, setAwardingBadge] = useState<Record<number, string | null>>({});
+
+  // BADGE_TYPE lookup: ValueCode → LookupValueId (needed to call the API)
+  const [badgeLkpMap, setBadgeLkpMap] = useState<Record<string, number>>({});
+
+  // ── Load badge lookups once on mount ──
+  useEffect(() => {
+    lookupApi.getValuesByTypeCode('BADGE_TYPE').then(res => {
+      if (res.data?.isSuccess) {
+        const map: Record<string, number> = {};
+        for (const v of res.data.data ?? []) {
+          if (v.valueCode && v.lookupValueId) map[v.valueCode] = v.lookupValueId;
+        }
+        setBadgeLkpMap(map);
+      }
+    }).catch(() => { /* non-fatal */ });
+  }, []);
 
   // ── Load ──
   const load = useCallback(async (isRefresh = false) => {
     if (!projectId) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
     try {
-      const [appsRes, projRes] = await Promise.allSettled([
+      const [appsRes, skillsRes] = await Promise.allSettled([
         projectApi.getApplications(projectId, { pageNumber: 1, pageSize: 200 }),
-        projectApi.get(projectId),
+        projectApi.getSkills(projectId),
       ]);
-      if (appsRes.status === 'fulfilled' && appsRes.value.data?.isSuccess)
-        setApps(appsRes.value.data.data?.items ?? []);
-      if (projRes.status === 'fulfilled' && projRes.value.data?.isSuccess)
-        setProjectSkills(
-          (projRes.value.data.data?.skills ?? []).map((sk: any) => sk.skillName ?? sk).filter(Boolean),
-        );
+
+      if (appsRes.status === 'fulfilled' && appsRes.value.data?.isSuccess) {
+        const loaded = appsRes.value.data.data?.items ?? [];
+        setApps(loaded);
+        // Pre-populate already-awarded badges
+        const initBadges: Record<number, string[]> = {};
+        for (const app of loaded) {
+          if (app.awardedBadgeCodes) {
+            initBadges[app.applicationId] = (app.awardedBadgeCodes as string).split(',').filter(Boolean);
+          }
+        }
+        setAwardedBadges(initBadges);
+      }
+
+      if (skillsRes.status === 'fulfilled' && skillsRes.value.data?.isSuccess) {
+        const skills: ProjectSkill[] = (skillsRes.value.data.data ?? [])
+          .map((sk: any) => ({ id: sk.projectSkillId, name: sk.skillName }))
+          .filter((sk: ProjectSkill) => sk.id && sk.name);
+        setProjectSkills(skills);
+      }
     } catch {
       Alert.alert('Error', 'Could not load participants.');
     } finally {
@@ -480,24 +555,85 @@ export default function ParticipantsScreen() {
   }, []);
 
   // ── Skill rating ──
-  const handleRateSkill = useCallback((appId: number, skill: string, val: number) => {
-    setSkillRatings(prev => ({ ...prev, [appId]: { ...(prev[appId] ?? {}), [skill]: val } }));
+  const handleRateSkill = useCallback((appId: number, skillId: number, val: number) => {
+    setSkillRatings(prev => ({ ...prev, [appId]: { ...(prev[appId] ?? {}), [skillId]: val } }));
   }, []);
 
+  const handleSubmitRatings = useCallback(async (app: any) => {
+    const appId  = app.applicationId;
+    const userId = app.userId;
+    const ratings = skillRatings[appId] ?? {};
+    const entries = Object.entries(ratings).filter(([, v]) => v > 0);
+    if (entries.length === 0) return;
+
+    setSubmittingRatings(prev => ({ ...prev, [appId]: true }));
+    try {
+      const results = await Promise.all(
+        entries.map(([skillId, rating]) =>
+          projectApi.rateSkill({
+            ratedUserId:    userId,
+            projectSkillId: Number(skillId),
+            rating,
+            projectId,
+            orgId: orgId ?? undefined,
+          }),
+        ),
+      );
+      const allOk = results.every(r => r.data?.isSuccess);
+      if (allOk) {
+        setSubmittedRatings(prev => ({ ...prev, [appId]: true }));
+      } else {
+        Alert.alert('Partial save', 'Some ratings could not be saved. Please try again.');
+      }
+    } catch {
+      Alert.alert('Error', 'Could not save ratings. Check your connection.');
+    } finally {
+      setSubmittingRatings(prev => ({ ...prev, [appId]: false }));
+    }
+  }, [skillRatings, projectId, orgId]);
+
   // ── Award badge ──
-  const handleAwardBadge = useCallback((appId: number, key: string, name: string) => {
-    if ((awardedBadges[appId] ?? []).includes(key)) return;
-    const label = BADGE_DEFS.find(b => b.key === key)?.label ?? key;
-    Alert.alert(`Award "${label}"?`, `This badge will appear on ${name}'s profile.`, [
+  const handleAwardBadge = useCallback((app: any, key: string) => {
+    if ((awardedBadges[app.applicationId] ?? []).includes(key)) return;
+    const label      = BADGE_DEFS.find(b => b.key === key)?.label ?? key;
+    const name       = app.applicantName ?? app.fullName ?? 'Volunteer';
+    const badgeLkpId = badgeLkpMap[key];
+
+    if (!badgeLkpId) {
+      Alert.alert('Error', `Badge type "${key}" not found. Please refresh and try again.`);
+      return;
+    }
+
+    Alert.alert(`Award "${label}"?`, `This badge will appear on ${name}'s Impact profile and they'll receive a notification.`, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Award 🎉', onPress: () => {
-          setAwardedBadges(prev => ({ ...prev, [appId]: [...(prev[appId] ?? []), key] }));
-          Alert.alert('Badge Awarded!', `"${label}" awarded to ${name}.`);
+        text: 'Award 🎉',
+        onPress: async () => {
+          setAwardingBadge(prev => ({ ...prev, [app.applicationId]: key }));
+          try {
+            const res = await awardBadge(orgId, {
+              userId:     app.userId,
+              badgeLkpId,
+              projectId:  projectId,
+            });
+            if (res.data?.isSuccess) {
+              setAwardedBadges(prev => ({
+                ...prev,
+                [app.applicationId]: [...(prev[app.applicationId] ?? []), key],
+              }));
+              Alert.alert('Badge Awarded! 🎉', `"${label}" awarded to ${name}. They'll receive a notification.`);
+            } else {
+              Alert.alert('Could not award badge', res.data?.message ?? 'Please try again.');
+            }
+          } catch {
+            Alert.alert('Error', 'Could not award badge. Please check your connection.');
+          } finally {
+            setAwardingBadge(prev => ({ ...prev, [app.applicationId]: null }));
+          }
         },
       },
     ]);
-  }, [awardedBadges]);
+  }, [awardedBadges, badgeLkpMap, orgId, projectId]);
 
   // ── Derived sections (ALL statuses covered — no member ever disappears) ──
   const pendingApps  = apps.filter(a => a.statusCode === 'PENDING');
@@ -614,9 +750,13 @@ export default function ParticipantsScreen() {
                 app={app}
                 projectSkills={projectSkills}
                 skillRatings={skillRatings[app.applicationId] ?? {}}
-                onRateSkill={(skill, val) => handleRateSkill(app.applicationId, skill, val)}
+                onRateSkill={(skillId, val) => handleRateSkill(app.applicationId, skillId, val)}
+                onSubmitRatings={() => handleSubmitRatings(app)}
+                submittingRatings={submittingRatings[app.applicationId] ?? false}
+                submittedRatings={submittedRatings[app.applicationId] ?? false}
                 awardedBadges={awardedBadges[app.applicationId] ?? []}
-                onAwardBadge={key => handleAwardBadge(app.applicationId, key, app.applicantName ?? 'volunteer')}
+                onAwardBadge={key => handleAwardBadge(app, key)}
+                awardingBadge={awardingBadge[app.applicationId] ?? null}
               />
             ))}
           </>
@@ -736,13 +876,18 @@ const s = StyleSheet.create({
   checkinLine: { fontSize: 12, color: '#2563EB', fontWeight: '500' },
 
   // Attended card — skill rating area
-  skillRatingWrap:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12, paddingTop: 4, borderTopWidth: 1, borderTopColor: C.BORDER },
+  skillRatingSection: { marginBottom: 12, paddingTop: 4, borderTopWidth: 1, borderTopColor: C.BORDER },
+  skillRatingWrap:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
   rateSkillsLabel:  { fontSize: 12, color: C.TEXT2, paddingTop: 2, width: 68, flexShrink: 0 },
   skillColumnsRow:  { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   skillColumn:      { alignItems: 'center', gap: 5 },
   skillColName:     { fontSize: 11, color: C.TEXT, fontWeight: '600' },
   starsRow:         { flexDirection: 'row', gap: 2 },
   star:             { fontSize: 17 },
+  saveRatingsBtn:        { backgroundColor: C.PRIMARY, borderRadius: 8, paddingVertical: 8, alignItems: 'center', marginTop: 2 },
+  saveRatingsBtnText:    { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  ratingsSubmittedRow:   { alignItems: 'center', paddingVertical: 6 },
+  ratingsSubmittedText:  { fontSize: 12, color: '#16A34A', fontWeight: '600' },
 
   // Badge buttons
   badgeRow:        { flexDirection: 'row', gap: 8 },

@@ -189,11 +189,6 @@ function AppliedCard({
             <Text style={[s.withdrawBtnText, !allowed && { color: '#9CA3AF' }]}>Withdraw</Text>
           </TouchableOpacity>
         )}
-        {app.statusCode === 'APPROVED' && (
-          <View style={[s.chip, { backgroundColor: '#D1FAE5' }]}>
-            <Text style={[s.chipText, { color: '#059669' }]}>Approved</Text>
-          </View>
-        )}
       </View>
     </TouchableOpacity>
   );
@@ -223,19 +218,31 @@ function UpcomingCard({
         <Text style={s.scheduleLine}>{scheduleOneLiner(app)}</Text>
       </View>
 
-      {/* QR hint */}
-      <View style={s.hintBox}>
-        <Text style={s.hintText}>
-          At the venue? Ask admin to show the session QR and scan it to log your attendance.
-        </Text>
-      </View>
+      {/* QR hint + scan button — only shown when QR attendance is required and not yet checked in */}
+      {app.requiresApproval && !app.isCheckedIn && (
+        <>
+          <View style={s.hintBox}>
+            <Text style={s.hintText}>
+              At the venue? Ask admin to show the session QR and scan it to log your attendance.
+            </Text>
+          </View>
+          <View style={[s.cardRow, { alignItems: 'center', gap: 8 }]}>
+            <TouchableOpacity style={s.scanQrBtn} onPress={onScanQR} activeOpacity={0.85}>
+              <Text style={s.scanQrBtnText}>📱  Scan QR to Mark Attendance</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
 
-      {/* Scan button + registered chip */}
-      <View style={[s.cardRow, { alignItems: 'center', gap: 8 }]}>
-        <TouchableOpacity style={s.scanQrBtn} onPress={onScanQR} activeOpacity={0.85}>
-          <Text style={s.scanQrBtnText}>📱  Scan QR to Mark Attendance</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Attendance confirmed — shown after successful QR scan */}
+      {app.isCheckedIn && (
+        <View style={[s.hintBox, { backgroundColor: '#D1FAE5', borderColor: '#059669' }]}>
+          <Text style={[s.hintText, { color: '#059669', fontWeight: '600' }]}>
+            ✅ Attendance marked
+          </Text>
+        </View>
+      )}
+
       <View style={{ alignItems: 'flex-end', marginTop: 8 }}>
         <View style={[s.chip, { backgroundColor: '#D1FAE5' }]}>
           <Text style={[s.chipText, { color: '#059669' }]}>✓ Registered</Text>
@@ -331,10 +338,10 @@ function Avatar({ photo, name, compact }: { photo?: string; name: string; compac
   );
 }
 
-function StatPill({ value, label, color }: { value: number | string; label: string; color: string }) {
+function StatPill({ value, label, color, compact }: { value: number | string; label: string; color: string; compact?: boolean }) {
   return (
     <View style={s.statPill}>
-      <Text style={[s.statValue, { color }]}>{value}</Text>
+      <Text style={[s.statValue, { color, fontSize: compact ? 17 : 22 }]}>{value}</Text>
       <Text style={s.statLabel}>{label}</Text>
     </View>
   );
@@ -655,14 +662,6 @@ export default function ImpactScreen() {
             )}
           </View>
 
-          {/* ── SECONDARY STATS ── */}
-          <View style={[s.statsCard, { marginTop: 8 }]}>
-            <StatPill value={`${impact?.reliabilityPct ?? 0}%`} label="Reliability" color={C.TEAL} />
-            <View style={s.statDiv} />
-            <StatPill value={impact?.badgeCount ?? 0}        label="Badges"      color={C.YELLOW} />
-            <View style={s.statDiv} />
-            <StatPill value={impact?.certificateCount ?? 0}  label="Certs"       color={C.ORANGE} />
-          </View>
         </Animated.ScrollView>
 
         {/* ── HERO HEADER ──
@@ -734,11 +733,17 @@ export default function ImpactScreen() {
             }
           </Animated.View>
 
-          {/* Primary stats card — Hours hidden, will be re-enabled in a future release */}
+          {/* Primary stats card — all 5 KPIs in one row */}
           <View style={s.statsCardHero}>
-            <StatPill value={impact?.projectsCompleted ?? 0} label="Projects" color={C.TEAL} />
+            <StatPill compact value={impact?.projectsCompleted ?? 0}              label="Projects"    color={C.TEAL} />
             <View style={s.statDiv} />
-            <StatPill value={impact?.ngosJoined ?? 0}        label="NGOs"     color={C.ORANGE} />
+            <StatPill compact value={impact?.ngosJoined ?? 0}                    label="NGOs"        color={C.ORANGE} />
+            <View style={s.statDiv} />
+            <StatPill compact value={`${impact?.reliabilityPct ?? 0}%`}          label="Reliability" color={C.TEAL} />
+            <View style={s.statDiv} />
+            <StatPill compact value={impact?.badgeCount ?? 0}                    label="Badges"      color={C.YELLOW} />
+            <View style={s.statDiv} />
+            <StatPill compact value={impact?.certificateCount ?? 0}              label="Certs"       color={C.ORANGE} />
           </View>
         </Animated.View>
 

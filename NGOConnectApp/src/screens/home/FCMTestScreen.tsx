@@ -14,7 +14,7 @@ import {
   StyleSheet, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import messaging from '@react-native-firebase/messaging';
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native';
 import { notificationApi } from '../../api/notification.api';
 import AppConfig from '../../config/AppConfig';
 
@@ -58,6 +58,13 @@ const NOTIF_TYPES = [
   { type: 'TEST', label: '🧪 Generic Test', refType: undefined },
 ];
 
+// Quick-fill presets for the Image URL field — RippleHub's own asset (no redirect
+// chain, known 1200x630 dimensions) vs. a real third-party CDN URL (fastly.picsum.photos
+// with an hmac query param) to catch anything that breaks specifically on redirects/query
+// strings/external hosts but not on your own domain.
+const RIPPLEHUB_TEST_IMAGE = 'https://ripplehub.app/og-image.png';
+const PICSUM_TEST_IMAGE    = 'https://fastly.picsum.photos/id/454/800/400.jpg?hmac=3hLqPiKs-ycLYRMWprReUczXkwBqlRk_sTbqhSE2Zuo';
+
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FCMTestScreen() {
   const [token,      setToken]      = useState('');
@@ -65,6 +72,7 @@ export default function FCMTestScreen() {
   const [refId,      setRefId]      = useState('1');
   const [deepLink,   setDeepLink]   = useState('ngoconnect://ngo/1');
   const [actionLabel,setActionLabel]= useState('Donate Now');
+  const [imageUrl,   setImageUrl]   = useState(RIPPLEHUB_TEST_IMAGE);
   const [loading,    setLoading]    = useState(false);
   const [lastResult, setLastResult] = useState<string | null>(null);
 
@@ -93,6 +101,35 @@ export default function FCMTestScreen() {
     }
   };
 
+  // ── Local image test: same bypass, but exercises smallIcon + largeIcon + the
+  // BigPicture expand — isolates "does image rendering work on this device at all"
+  // from "did FCM/the backend deliver the payload correctly".
+  const handleLocalImageTest = async () => {
+    if (!imageUrl.trim()) {
+      Alert.alert('Image URL required', 'Enter an image URL above first.');
+      return;
+    }
+    try {
+      await notifee.displayNotification({
+        title: '🧪 Local Image Test',
+        body:  'Pull down / expand this notification to see the full banner image.',
+        android: {
+          channelId:   'ripplehub_default',
+          importance:  AndroidImportance.HIGH,
+          pressAction: { id: 'default' },
+          smallIcon:   'ic_notification',
+          largeIcon:   imageUrl.trim(),
+          style:       { type: AndroidStyle.BIGPICTURE, picture: imageUrl.trim() },
+          showTimestamp: true,
+          when:        Date.now(),
+        },
+      });
+      setLastResult('✅ Local image test fired — collapse shows a small thumbnail, expand shows the full banner');
+    } catch (e: any) {
+      setLastResult(`❌ Notifee error: ${e?.message ?? 'Unknown — rebuild the APK, or bad image URL'}`);
+    }
+  };
+
   const handleSend = async () => {
     if (!token.trim()) {
       Alert.alert('Token required', 'Enter a valid FCM device token.');
@@ -109,7 +146,11 @@ export default function FCMTestScreen() {
         notifType:   selected.type,
         refId:       refId ? parseInt(refId, 10) : undefined,
         refType:     selected.refType,
-        // CAMPAIGN extras — only included when testing CAMPAIGN type
+        // imageUrl is read by the handler for any notifType, not just CAMPAIGN —
+        // include it whenever set so you can test the largeIcon/BigPicture rendering
+        // on any notification type, not only campaigns.
+        ...(imageUrl.trim() ? { imageUrl: imageUrl.trim() } : {}),
+        // CAMPAIGN-only extras
         ...(isCampaign && deepLink    ? { deepLink    } : {}),
         ...(isCampaign && actionLabel ? { actionLabel } : {}),
       });
@@ -148,6 +189,25 @@ export default function FCMTestScreen() {
         placeholderTextColor="#aaa"
         keyboardType="number-pad"
       />
+
+      {/* Image URL — works for any notifType (largeIcon + BigPicture expand), not just CAMPAIGN */}
+      <Text style={s.label}>Image URL (optional — tests largeIcon + expanded banner)</Text>
+      <TextInput
+        style={s.input}
+        value={imageUrl}
+        onChangeText={setImageUrl}
+        placeholder="https://..."
+        placeholderTextColor="#aaa"
+        autoCapitalize="none"
+      />
+      <View style={s.presetRow}>
+        <TouchableOpacity style={s.presetChip} onPress={() => setImageUrl(RIPPLEHUB_TEST_IMAGE)}>
+          <Text style={s.presetChipText}>RippleHub OG image</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.presetChip} onPress={() => setImageUrl(PICSUM_TEST_IMAGE)}>
+          <Text style={s.presetChipText}>Picsum sample</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* CAMPAIGN extras — shown only when CAMPAIGN type is selected */}
       {selected.type === 'CAMPAIGN' && (
@@ -209,6 +269,11 @@ export default function FCMTestScreen() {
         <Text style={s.btnText}>🔔 Test Notifee Locally (no FCM)</Text>
       </TouchableOpacity>
 
+      {/* Local image test — isolates image rendering from FCM delivery */}
+      <TouchableOpacity style={[s.btn, s.btnSecondary]} onPress={handleLocalImageTest}>
+        <Text style={s.btnText}>🖼️ Test Image Locally (no FCM)</Text>
+      </TouchableOpacity>
+
       {/* Send via FCM */}
       <TouchableOpacity style={s.btn} onPress={handleSend} disabled={loading}>
         {loading
@@ -257,4 +322,7 @@ const s = StyleSheet.create({
   hint:            { fontSize: 11, color: '#aaa', textAlign: 'center', marginTop: 8 },
   campaignHint:    { backgroundColor: '#f0f4ff', borderRadius: 6, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: '#c7d7f5' },
   campaignHintText:{ fontSize: 11, color: '#444', lineHeight: 18 },
+  presetRow:       { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  presetChip:      { backgroundColor: '#eef0ff', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: '#d6dafd' },
+  presetChipText:  { fontSize: 11, fontWeight: '600', color: C.PRIMARY },
 });

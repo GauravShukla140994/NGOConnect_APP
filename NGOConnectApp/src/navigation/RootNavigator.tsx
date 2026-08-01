@@ -3,7 +3,7 @@ import { Linking, NavigationContainerRef, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import messaging from '@react-native-firebase/messaging';
-import notifee, { AndroidImportance, EventType } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidStyle, EventType } from '@notifee/react-native';
 import { useAuthStore } from '../store/authStore';
 import { navigationIntegration } from '../config/sentry';
 import { pendingInviteStore } from '../store/pendingInviteStore';
@@ -329,7 +329,11 @@ const RootNavigator = () => {
             importance:    AndroidImportance.HIGH,
             pressAction:   { id: 'default' },       // tapping opens the app
             smallIcon:     'ic_notification',       // monochrome status-bar icon — must exist in every drawable-*dpi (no fallback if missing, see index.js note)
-            ...(imageUrl ? { largeIcon: imageUrl } : {}),  // only set when a real URL is provided
+            ...(imageUrl ? { largeIcon: imageUrl } : {}),  // small thumbnail, shown collapsed AND expanded
+            // Full-width banner image on expand (Instagram/WhatsApp-style) — this was
+            // never implemented before; largeIcon alone only ever gives the small
+            // thumbnail, which is why images looked "not showing" even when expanded.
+            ...(imageUrl ? { style: { type: AndroidStyle.BIGPICTURE, picture: imageUrl } } : {}),
             showTimestamp: true,
             when:          Date.now(),              // precise delivery time — fixes frozen "03/01/01" date
           },

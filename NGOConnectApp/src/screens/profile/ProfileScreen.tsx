@@ -54,7 +54,9 @@ const SETTINGS_ITEMS = [
   { icon: '🔐', label: 'Privacy Policy',           screen: 'WebView',                   params: { url: 'https://www.ripplehub.app/privacy', title: 'Privacy Policy'   } },
   { icon: '🆘', label: 'Help & Support',           screen: 'HelpSupport',               params: undefined },
   { icon: '⚙',  label: 'Account Settings',         screen: 'AccountSettings',           params: undefined },
-  // DEV ONLY — uncomment to test push notifications, remove before Play Store release
+  // DEV ONLY — uncomment to test push notifications, remove before Play Store release.
+  // Was enabled 2026-08-01 to verify the notifee smallIcon/BigPicture fix; user confirmed
+  // it worked and asked to disable again before the tester build goes out.
   // { icon: '🔔', label: '🧪 Test Push Notification', screen: 'FCMTest', params: undefined },
 ];
 
