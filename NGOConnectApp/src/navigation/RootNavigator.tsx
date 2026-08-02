@@ -85,6 +85,10 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
       return { screen: 'Community' };
     case 'BADGE_AWARDED':
     case 'SKILL_RATING':
+      // refId = projectId — open the project directly; fall back to Impact tab
+      return refId
+        ? { screen: 'ProjectDetail', params: { projectId: refId } }
+        : { screen: 'Impact' };
     case 'PROFILE_VERIFIED':
       return { screen: 'Impact' };
     case 'PROFILE_UPDATE_REQUIRED':

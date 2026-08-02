@@ -424,13 +424,21 @@ export default function AdminProjectDetailScreen() {
   // An expired-unstarted project still has statusCode='UPCOMING' in the DB
   // but its scheduled end datetime has already passed. We disable Edit and
   // the Complete/Cancel actions for these — nothing can be done to them.
-  const isExpiredUnstarted = project?.statusCode === 'UPCOMING' && isProjectExpired(project);
+  const isExpiredUnstarted  = project?.statusCode === 'UPCOMING' && isProjectExpired(project);
+  // Completed and cancelled projects are read-only — editing is not allowed.
+  const isReadOnly = project?.statusCode === 'COMPLETED' || project?.statusCode === 'CANCELLED';
 
   const badge        = statusBadge(project?.statusCode);
   const schedule     = project ? fmtSchedule(project) : '';
   const timeStr      = project ? buildTimeRange(project) : null;
   const skills: string[] = project?.skills?.map((s: any) => s.skillName ?? s) ?? [];
-  const recentApps   = apps.slice(0, 3);
+  // For completed/cancelled projects, surface ATTENDED volunteers first
+  const recentApps = isReadOnly
+    ? [...apps].sort((a, b) => {
+        const order: Record<string, number> = { ATTENDED: 0, NO_SHOW: 1, APPROVED: 2, PENDING: 3 };
+        return (order[a.statusCode] ?? 4) - (order[b.statusCode] ?? 4);
+      }).slice(0, 3)
+    : apps.slice(0, 3);
   // Use local date (not UTC) — toISOString() is UTC and shifts the date
   // in IST before 5:30 AM, making today's session invisible until morning.
   const _d              = new Date();
@@ -465,7 +473,10 @@ export default function AdminProjectDetailScreen() {
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Project Details</Text>
-        {isExpiredUnstarted ? (
+        {isReadOnly ? (
+          /* Completed / Cancelled — no edit allowed; spacer keeps header balanced */
+          <View style={styles.editBtn} />
+        ) : isExpiredUnstarted ? (
           <View style={styles.editBtn}>
             <Text style={[styles.editText, { color: '#c2410c' }]}>Expired</Text>
           </View>
@@ -566,8 +577,8 @@ export default function AdminProjectDetailScreen() {
           <KpiBox value={counts.pending}  label="Pending"   color="#D97706"   />
         </View>
 
-        {/* ── QR Attendance ── */}
-        <View style={styles.card}>
+        {/* ── QR Attendance — hidden for completed/cancelled projects ── */}
+        {!isReadOnly && <View style={styles.card}>
           <Text style={styles.sectionTitle}>QR Attendance</Text>
           <Text style={styles.sectionSub}>QR is only active during the session window</Text>
 
@@ -696,13 +707,13 @@ export default function AdminProjectDetailScreen() {
                   </Text>}
             </TouchableOpacity>
           )}
-        </View>
+        </View>}
 
         {/* ── Participants Preview ── */}
         <View style={styles.card}>
           <View style={styles.rowBetween}>
             <Text style={styles.sectionTitle}>Participants</Text>
-            <TouchableOpacity onPress={() => nav.navigate('Participants', { projectId, orgId })}>
+            <TouchableOpacity onPress={() => nav.navigate('Participants', { projectId, orgId, projectStatus: project?.statusCode })}>
               <Text style={styles.viewAll}>View All →</Text>
             </TouchableOpacity>
           </View>
@@ -714,19 +725,9 @@ export default function AdminProjectDetailScreen() {
           )}
         </View>
 
-        {/* ── Project Actions ── */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Project Actions</Text>
-          <ActionBtn icon="👥" label="Manage Participants"
-            onPress={() => nav.navigate('Participants', { projectId, orgId })} />
-          <ActionBtn icon="📢" label="Post Project Update"
-            onPress={() => Alert.alert('Coming soon', 'Post Update will be available in the next sprint.')} />
-          <ActionBtn icon="📊" label="View Impact Report"
-            onPress={() => Alert.alert('Coming soon', 'Impact Report will be available in the next sprint.')} />
-        </View>
 
-        {/* ── Complete / Cancel — hidden for expired-unstarted projects ── */}
-        {isExpiredUnstarted ? (
+        {/* ── Complete / Cancel — hidden for completed/cancelled/expired-unstarted ── */}
+        {!isReadOnly && (isExpiredUnstarted ? (
           <View style={[styles.dangerSection, { backgroundColor: '#fff7ed', borderRadius: 12, padding: 16 }]}>
             <Text style={{ fontSize: 13, color: '#c2410c', textAlign: 'center', fontWeight: '600' }}>
               ⚠️ This project was never started and its scheduled date has passed.
@@ -752,7 +753,7 @@ export default function AdminProjectDetailScreen() {
               <Text style={styles.cancelBtnText}>✕ Cancel Project</Text>
             </TouchableOpacity>
           </View>
-        )}
+        ))}
 
       </ScrollView>
     </SafeAreaView>

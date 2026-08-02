@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { fmtDate, fmtTime, fmtTimeRange } from '../../utils/dateUtils';
+import { fmtDate, fmtDateRange, fmtTime, fmtTimeRange } from '../../utils/dateUtils';
 import {
   ActivityIndicator,
   Linking,
@@ -120,10 +120,19 @@ export default function ProjectDetailModal({ visible, application, onClose, onSc
     : app.sessionStartTime ? fmtTime(app.sessionStartTime) : '';
   const duration    = durationHours(app.sessionStartTime, app.sessionEndTime);
   const dateDisplay = app.scheduleTypeCode === 'ONE_TIME'
-    ? [fmtDate(app.recurStart), timePart, duration ? `(${duration})` : ''].filter(Boolean).join(' · ')
+    // oneTimeDate is the correct field; recurStart is a fallback for older API responses
+    ? [fmtDate(app.oneTimeDate ?? app.recurStart), timePart, duration ? `(${duration})` : ''].filter(Boolean).join(' · ')
     : app.scheduleTypeCode === 'RECURRING'
-    ? [abbrevDays(app.recurDays), timePart].filter(Boolean).join(' · ')
-    : timePart || 'Flexible schedule';
+    ? [
+        fmtDateRange(app.recurStart, app.recurEnd),
+        abbrevDays(app.recurDays),
+        timePart,
+        duration ? `(${duration})` : '',
+      ].filter(Boolean).join(' · ')
+    : [
+        fmtDateRange(app.flexFromDate, app.flexToDate),
+        timePart || 'Flexible schedule',
+      ].filter(Boolean).join(' · ');
 
   const locationDisplay = [detail?.landmark ?? app.landmark, detail?.city ?? app.city]
     .filter(Boolean).join(', ');
@@ -176,14 +185,6 @@ export default function ProjectDetailModal({ visible, application, onClose, onSc
                 {/* Date / schedule */}
                 {dateDisplay ? (
                   <InfoRow icon="📅" text={dateDisplay} />
-                ) : null}
-
-                {/* Date range for recurring */}
-                {app.scheduleTypeCode === 'RECURRING' && app.recurStart ? (
-                  <InfoRow
-                    icon="📆"
-                    text={`${fmtDate(app.recurStart)} – ${fmtDate(app.recurEnd)}`}
-                  />
                 ) : null}
 
                 {/* Location */}

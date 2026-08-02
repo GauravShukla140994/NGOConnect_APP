@@ -17,10 +17,11 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { getMyImpact, getMyBadges, getMyApplications, withdrawApplication } from '../../api/user.api';
-import type { UserImpact, UserBadge, UserApplication } from '../../types/api.types';
-import QRScannerModal    from './QRScannerModal';
+import { getImpactSummary, withdrawApplication } from '../../api/user.api';
+import type { ImpactSummary, UserApplication, UserBadge } from '../../types/api.types';
+import QRScannerModal     from './QRScannerModal';
 import ProjectDetailModal from './ProjectDetailModal';
+import CertificateModal   from '../common/CertificateModal';
 
 const C = AppConfig.COLORS;
 
@@ -83,19 +84,32 @@ const abbrevDays = (days?: string) => {
 };
 
 function scheduleOneLiner(app: UserApplication) {
-  const time  = (app.sessionStartTime && app.sessionEndTime)
+  const time = (app.sessionStartTime && app.sessionEndTime)
     ? `${fmtTime(app.sessionStartTime)} – ${fmtTime(app.sessionEndTime)}`
-    : '';
-  const loc   = app.city ?? app.landmark ?? '';
+    : app.sessionStartTime ? fmtTime(app.sessionStartTime) : '';
+  const loc  = [app.city, app.landmark].filter(Boolean).join(', ');
 
   if (app.scheduleTypeCode === 'ONE_TIME') {
-    return [fmtShort(app.recurStart), time, loc].filter(Boolean).join(' · ');
+    // oneTimeDate is the correct field; recurStart is a fallback for older API responses
+    const date = fmtShort(app.oneTimeDate ?? app.recurStart);
+    return [date, time, loc].filter(Boolean).join(' · ');
   }
   if (app.scheduleTypeCode === 'RECURRING') {
+    const dateRange = app.recurStart
+      ? app.recurEnd
+        ? `${fmtShort(app.recurStart)} – ${fmtShort(app.recurEnd)}`
+        : fmtShort(app.recurStart)
+      : '';
     const days = abbrevDays(app.recurDays);
-    return [days, time, loc].filter(Boolean).join(' · ');
+    return [dateRange, days, time, loc].filter(Boolean).join(' · ');
   }
-  return ['Flexible', loc].filter(Boolean).join(' · ');
+  // FLEXIBLE
+  const dateRange = app.flexFromDate
+    ? app.flexToDate
+      ? `${fmtShort(app.flexFromDate)} – ${fmtShort(app.flexToDate)}`
+      : fmtShort(app.flexFromDate)
+    : '';
+  return ['Flexible', dateRange, loc].filter(Boolean).join(' · ');
 }
 
 function appliedDateLine(app: UserApplication) {
@@ -254,24 +268,28 @@ function UpcomingCard({
 
 // ─── Completed Card ───────────────────────────────────────────────────────────
 
-function CompletedCard({ app }: { app: UserApplication }) {
+function CompletedCard({ app, onPress, onCertPress }: { app: UserApplication; onPress: () => void; onCertPress?: () => void }) {
+  // Reuse the shared helper so date display is consistent across all card types
+  const scheduleLine = scheduleOneLiner(app) ? `📅 ${scheduleOneLiner(app)}` : null;
+
   return (
-    <View style={s.projectCard}>
+    <TouchableOpacity style={[s.projectCard, { borderLeftColor: '#059669' }]} onPress={onPress} activeOpacity={0.85}>
       {/* Top row */}
       <View style={s.cardRow}>
         <Text style={s.projectName} numberOfLines={1}>{app.projectName}</Text>
-        <View style={[s.typeChip, { backgroundColor: '#FEF3C7' }]}>
-          <Text style={[s.typeChipText, { color: '#D97706' }]}>📋 Certificate</Text>
+        <View style={[s.chip, { backgroundColor: '#D1FAE5' }]}>
+          <Text style={[s.chipText, { color: '#059669' }]}>✓ Completed</Text>
         </View>
       </View>
-      <Text style={s.orgNameGray}>
-        {app.orgName} · {fmtShort(app.statusUpdatedAt ?? app.createdAt)}
-      </Text>
+      <Text style={s.orgName}>{app.orgName}</Text>
+      {scheduleLine ? <Text style={s.scheduleLine}>{scheduleLine}</Text> : null}
+
+      <View style={s.divider} />
 
       {/* Hours / Impact row */}
-      <View style={[s.cardRow, { marginTop: 10 }]}>
+      <View style={[s.cardRow, { marginBottom: app.skillRatings?.length ? 10 : 0 }]}>
         <View style={{ flex: 1 }}>
-          <Text style={s.metaLabel}>Hours</Text>
+          <Text style={s.metaLabel}>Hours Volunteered</Text>
           <Text style={s.metaValue}>{app.hoursLogged ? `${app.hoursLogged}h` : '—'}</Text>
         </View>
         {app.impactNote ? (
@@ -280,11 +298,15 @@ function CompletedCard({ app }: { app: UserApplication }) {
             <Text style={[s.metaValue, { color: C.TEAL }]}>{app.impactNote}</Text>
           </View>
         ) : null}
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={s.metaLabel}>Completed On</Text>
+          <Text style={[s.metaValue, { fontSize: 12 }]}>{fmtShort(app.statusUpdatedAt ?? app.createdAt)}</Text>
+        </View>
       </View>
 
       {/* Skill ratings */}
       {app.skillRatings?.length ? (
-        <View style={{ marginTop: 10 }}>
+        <View style={{ marginBottom: 10 }}>
           <Text style={s.metaLabel}>Skill ratings received</Text>
           <View style={[s.cardRow, { flexWrap: 'wrap', marginTop: 6, gap: 8 }]}>
             {app.skillRatings.map((sr, i) => (
@@ -298,22 +320,52 @@ function CompletedCard({ app }: { app: UserApplication }) {
         </View>
       ) : null}
 
-      <View style={s.divider} />
-
-      {/* Bottom row */}
+      {/* Footer */}
       <View style={s.cardRow}>
-        <View style={[s.chip, { backgroundColor: '#D1FAE5' }]}>
-          <Text style={[s.chipText, { color: '#059669' }]}>✓ Completed</Text>
-        </View>
-        <TouchableOpacity
-          style={s.downloadBtn}
-          onPress={() => Alert.alert('Certificate', 'Download coming soon.')}
-          activeOpacity={0.85}
-        >
-          <Text style={s.downloadBtnText}>Download Certificate</Text>
-        </TouchableOpacity>
+        <Text style={[s.appliedLine, { color: C.TEXT3 }]}>Tap to view project details</Text>
+        {!!app.hasCertificate && !!onCertPress && (
+          <TouchableOpacity
+            style={s.downloadBtn}
+            onPress={(e) => { e.stopPropagation(); onCertPress(); }}
+            activeOpacity={0.85}
+          >
+            <Text style={s.downloadBtnText}>📄 Certificate</Text>
+          </TouchableOpacity>
+        )}
       </View>
-    </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Cancelled Card ───────────────────────────────────────────────────────────
+
+function CancelledCard({ app, onPress }: { app: UserApplication; onPress: () => void }) {
+  const reason =
+    app.statusCode === 'REJECTED'
+      ? { label: '✕ Rejected by Admin', color: '#DC2626', bg: '#FEE2E2', border: '#DC2626' }
+    : app.statusCode === 'WITHDRAWN'
+      ? { label: 'Withdrawn by You',    color: '#6B7280', bg: '#F3F4F6', border: C.BORDER }
+    : app.projectStatusCode === 'CANCELLED'
+      ? { label: 'Project Cancelled',   color: '#D97706', bg: '#FEF3C7', border: '#D97706' }
+      : { label: 'Project Expired',     color: '#9CA3AF', bg: '#F3F4F6', border: C.BORDER };
+
+  const scheduleLine = scheduleOneLiner(app) ? `📅 ${scheduleOneLiner(app)}` : null;
+
+  return (
+    <TouchableOpacity style={[s.projectCard, { borderLeftColor: reason.border }]} onPress={onPress} activeOpacity={0.85}>
+      <View style={s.cardRow}>
+        <Text style={s.projectName} numberOfLines={1}>{app.projectName}</Text>
+        <View style={[s.chip, { backgroundColor: reason.bg }]}>
+          <Text style={[s.chipText, { color: reason.color }]}>{reason.label}</Text>
+        </View>
+      </View>
+      <Text style={s.orgName}>{app.orgName}</Text>
+      {scheduleLine ? <Text style={s.scheduleLine}>{scheduleLine}</Text> : null}
+      <View style={s.divider} />
+      <Text style={[s.appliedLine, { color: C.TEXT3 }]}>
+        Applied {fmtShort(app.createdAt)}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -347,17 +399,29 @@ function StatPill({ value, label, color, compact }: { value: number | string; la
   );
 }
 
+const BADGE_META: Record<string, { emoji: string; color: string }> = {
+  STAR_VOL:    { emoji: '⭐', color: '#D97706' },
+  TEAM_PLAYER: { emoji: '🤝', color: '#2563EB' },
+  TOP_PERFORM: { emoji: '🏆', color: '#7C3AED' },
+};
+
 function BadgeCard({ badge }: { badge: UserBadge }) {
-  const tier  = badge.tier ?? 'Helper';
-  const color = RANK_COLORS[tier] ?? '#B45309';
+  const meta  = BADGE_META[badge.badgeCode] ?? { emoji: '🏅', color: '#B45309' };
+  const date  = badge.awardedAt
+    ? new Date(badge.awardedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : null;
   return (
-    <View style={[s.badgeCard, { borderTopColor: color }]}>
-      <View style={[s.badgeIconWrap, { backgroundColor: color + '20' }]}>
-        <Text style={{ fontSize: 24 }}>{badge.emoji ?? '🏅'}</Text>
+    <View style={[s.badgeCard, { borderLeftColor: meta.color, borderLeftWidth: 3 }]}>
+      {/* Left: emoji bubble */}
+      <View style={[s.badgeIconWrap, { backgroundColor: meta.color + '20' }]}>
+        <Text style={{ fontSize: 24 }}>{meta.emoji}</Text>
       </View>
-      <Text style={s.badgeName} numberOfLines={2}>{badge.badgeName}</Text>
-      <View style={[s.chip, { backgroundColor: color + '20', marginTop: 4 }]}>
-        <Text style={[s.chipText, { color }]}>{tier}</Text>
+      {/* Right: details */}
+      <View style={{ flex: 1, marginLeft: 10 }}>
+        <Text style={s.badgeName} numberOfLines={1}>{badge.badgeName}</Text>
+        {!!badge.orgName    && <Text style={s.badgeMeta} numberOfLines={1}>🏢 {badge.orgName}</Text>}
+        {!!badge.projectName && <Text style={s.badgeMeta} numberOfLines={1}>📋 {badge.projectName}</Text>}
+        {!!date             && <Text style={s.badgeDate}>{date}</Text>}
       </View>
     </View>
   );
@@ -383,8 +447,8 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
 
 // ─── Tab bar ──────────────────────────────────────────────────────────────────
 
-type TabKey = 'Applied' | 'Upcoming' | 'Completed';
-const TABS: TabKey[] = ['Applied', 'Upcoming', 'Completed'];
+type TabKey = 'Applied' | 'Upcoming' | 'Completed' | 'Cancelled';
+const TABS: TabKey[] = ['Applied', 'Upcoming', 'Completed', 'Cancelled'];
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -396,12 +460,10 @@ export default function ImpactScreen() {
   const scrollY = useRef(new Animated.Value(0)).current;
   const [heroH, setHeroH] = useState(400); // updated by onLayout after first render
 
-  const [impact,       setImpact]       = useState<UserImpact | null>(null);
-  const [badges,       setBadges]       = useState<UserBadge[]>([]);
-  const [applications, setApplications] = useState<UserApplication[]>([]);
-  const [activeTab,    setActiveTab]    = useState<TabKey>('Applied');
-  const [loading,      setLoading]      = useState(true);
-  const [refreshing,   setRefreshing]   = useState(false);
+  const [summary,    setSummary]    = useState<ImpactSummary | null>(null);
+  const [activeTab,  setActiveTab]  = useState<TabKey>('Applied');
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Modals
   const [qrVisible,      setQrVisible]      = useState(false);
@@ -409,6 +471,11 @@ export default function ImpactScreen() {
   const [qrProjectName,  setQrProjectName]  = useState('');
   const [detailVisible,  setDetailVisible]  = useState(false);
   const [detailApp,      setDetailApp]      = useState<UserApplication | null>(null);
+  const [certVisible,    setCertVisible]    = useState(false);
+  const [certProjectId,  setCertProjectId]  = useState<number | null>(null);
+  const [certProjName,   setCertProjName]   = useState('');
+
+  const TAB_LIMIT = 5;
 
   // ── Swipe to change tab ──────────────────────────────────────────────────────
   const swipeState = useRef({ tab: 'Applied' as TabKey, setTab: (_t: TabKey) => {} });
@@ -427,13 +494,11 @@ export default function ImpactScreen() {
   ).current;
   swipeState.current = { tab: activeTab, setTab: setActiveTab };
 
-  // ── Load ──
+  // ── Load — single summary call (replaces 3 separate calls) ──
   const load = useCallback(async () => {
     try {
-      const [ir, br, ar] = await Promise.all([getMyImpact(), getMyBadges(), getMyApplications()]);
-      if (ir.data?.isSuccess) setImpact(ir.data.data);
-      if (br.data?.isSuccess) setBadges(br.data.data ?? []);
-      if (ar.data?.isSuccess) setApplications(ar.data.data ?? []);
+      const res = await getImpactSummary();
+      if (res.data?.isSuccess) setSummary(res.data.data);
     } catch { /* silent */ }
   }, []);
 
@@ -447,27 +512,34 @@ export default function ImpactScreen() {
     setRefreshing(true); await load(); setRefreshing(false);
   }, [load]);
 
-  // ── Tab filters ──
-  const isCompleted  = (a: UserApplication) =>
-    ['COMPLETED', 'EXPIRED'].includes(a.projectStatusCode ?? '');
-  const isUpcoming   = (a: UserApplication) =>
-    a.statusCode === 'APPROVED' && ['UPCOMING', 'ACTIVE'].includes(a.projectStatusCode ?? '');
-  const isApplied    = (a: UserApplication) => !isCompleted(a);
-
+  // ── Tab data — server-side filtered and limited; no client-side filtering needed ──
   const tabApps: Record<TabKey, UserApplication[]> = {
-    Applied:   applications.filter(isApplied),
-    Upcoming:  applications.filter(isUpcoming),
-    Completed: applications.filter(isCompleted),
+    Applied:   (summary?.applied   ?? []) as UserApplication[],
+    Upcoming:  (summary?.upcoming  ?? []) as UserApplication[],
+    Completed: (summary?.completed ?? []) as UserApplication[],
+    Cancelled: (summary?.cancelled ?? []) as UserApplication[],
+  };
+  // Full DB counts — used for tab badge numbers and "View N more" buttons
+  const tabTotals: Record<TabKey, number> = {
+    Applied:   summary?.totalApplied   ?? 0,
+    Upcoming:  summary?.totalUpcoming  ?? 0,
+    Completed: summary?.totalCompleted ?? 0,
+    Cancelled: summary?.totalCancelled ?? 0,
   };
 
   // ── Rank ──
-  const score     = impact?.impactScore ?? 0;
-  const rankName  = impact?.rankName ?? 'Newcomer';
+  const score     = summary?.impactScore ?? 0;
+  const rankName  = summary?.rankName ?? 'Newcomer';
   const rankColor = RANK_COLORS[rankName] ?? '#9CA3AF';
   const { next: nextRank, progress } = getRankMeta(score);
-  const fullName  = [impact?.firstName, impact?.lastName].filter(Boolean).join(' ') || 'Volunteer';
+  const fullName  = [summary?.firstName, summary?.lastName].filter(Boolean).join(' ') || 'Volunteer';
 
   const openDetail = (app: UserApplication) => { setDetailApp(app); setDetailVisible(true); };
+  const openCert   = (app: UserApplication) => {
+    setCertProjectId(app.projectId);
+    setCertProjName(app.projectName);
+    setCertVisible(true);
+  };
 
   const handleWithdraw = (app: UserApplication) => {
     Alert.alert(
@@ -482,14 +554,12 @@ export default function ImpactScreen() {
             try {
               const res = await withdrawApplication(app.applicationId);
               if (res.data?.isSuccess === 1) {
-                // Update local state immediately — mark as WITHDRAWN
-                setApplications(prev =>
-                  prev.map(a =>
-                    a.applicationId === app.applicationId
-                      ? { ...a, statusCode: 'WITHDRAWN', status: 'Withdrawn' }
-                      : a,
-                  ),
-                );
+                // Remove from applied list; decrement total (SP filters PENDING-only)
+                setSummary(prev => prev ? {
+                  ...prev,
+                  applied:      prev.applied.filter(a => a.applicationId !== app.applicationId),
+                  totalApplied: Math.max(0, prev.totalApplied - 1),
+                } : null);
                 Alert.alert('Withdrawn', 'Your application has been withdrawn.');
               } else {
                 Alert.alert('Could not withdraw', res.data?.message ?? 'Please try again.');
@@ -580,17 +650,37 @@ export default function ImpactScreen() {
           <View style={s.section}>
             <View style={s.sectionHdr}>
               <Text style={s.sectionTitle}>Badges Earned</Text>
-              {badges.length > 0 && (
-                <View style={s.countChip}><Text style={s.countChipTxt}>{badges.length}</Text></View>
-              )}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {(summary?.totalBadges ?? 0) > 0 && (
+                  <View style={s.countChip}><Text style={s.countChipTxt}>{summary!.totalBadges}</Text></View>
+                )}
+                {(summary?.totalBadges ?? 0) > 0 && (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => nav.navigate('AllBadges', { badges: summary!.badges })}
+                  >
+                    <Text style={s.viewAllTxt}>View All</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-            {badges.length === 0
+            {(summary?.badges ?? []).length === 0
               ? <EmptyState icon="🎖" text="Complete projects to earn your first badge!" />
               : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 10, paddingRight: 16 }}>
-                  {badges.map((b, i) => <BadgeCard key={i} badge={b} />)}
-                </ScrollView>
+                <View style={{ gap: 8 }}>
+                  {summary!.badges.map((b: any, i: number) => <BadgeCard key={b.userBadgeId ?? i} badge={b} />)}
+                  {(summary?.totalBadges ?? 0) > summary!.badges.length && (
+                    <TouchableOpacity
+                      style={s.viewAllBadgesBtn}
+                      activeOpacity={0.7}
+                      onPress={() => nav.navigate('AllBadges', { badges: summary!.badges })}
+                    >
+                      <Text style={s.viewAllBadgesBtnTxt}>
+                        View all {summary!.totalBadges} badges →
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
           </View>
 
@@ -598,7 +688,10 @@ export default function ImpactScreen() {
           <View style={s.section} {...panResponder.panHandlers}>
             <View style={s.sectionHdr}>
               <Text style={s.sectionTitle}>Events &amp; Projects</Text>
-              <TouchableOpacity activeOpacity={0.7} onPress={() => nav.navigate('MyProjects' as never)}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => nav.navigate('MyProjects' as never, { initialTab: activeTab.toLowerCase() })}
+              >
                 <Text style={s.viewAllTxt}>View All</Text>
               </TouchableOpacity>
             </View>
@@ -606,7 +699,7 @@ export default function ImpactScreen() {
             {/* Tabs */}
             <View style={s.tabBar}>
               {TABS.map(tab => {
-                const cnt = tabApps[tab].length;
+                const cnt = tabTotals[tab]; // show full DB count, not just visible slice
                 return (
                   <TouchableOpacity
                     key={tab}
@@ -631,9 +724,20 @@ export default function ImpactScreen() {
                 <InfoBanner text="Applications pending admin approval will appear here. Once approved they move to Upcoming." />
                 {tabApps.Applied.length === 0
                   ? <EmptyState icon="📝" text="No applications yet. Explore projects to apply!" />
-                  : tabApps.Applied.map((app, i) => (
-                      <AppliedCard key={i} app={app} onPress={() => openDetail(app)} onWithdraw={handleWithdraw} />
-                    ))
+                  : <>
+                      {tabApps.Applied.slice(0, TAB_LIMIT).map((app, i) => (
+                        <AppliedCard key={i} app={app} onPress={() => openDetail(app)} onWithdraw={handleWithdraw} />
+                      ))}
+                      {tabTotals.Applied > TAB_LIMIT && (
+                        <TouchableOpacity
+                          style={s.viewMoreBtn}
+                          onPress={() => nav.navigate('MyProjects' as never, { initialTab: 'applied' })}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={s.viewMoreBtnTxt}>View {tabTotals.Applied - TAB_LIMIT} more →</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
                 }
               </>
             )}
@@ -642,23 +746,74 @@ export default function ImpactScreen() {
             {activeTab === 'Upcoming' && (
               tabApps.Upcoming.length === 0
                 ? <EmptyState icon="📅" text="No upcoming projects. Approved projects appear here." />
-                : tabApps.Upcoming.map((app, i) => (
-                    <UpcomingCard
-                      key={i}
-                      app={app}
-                      onPress={() => openDetail(app)}
-                      onScanQR={() => openQR(app)}
-                    />
-                  ))
+                : <>
+                    {tabApps.Upcoming.slice(0, TAB_LIMIT).map((app, i) => (
+                      <UpcomingCard
+                        key={i}
+                        app={app}
+                        onPress={() => openDetail(app)}
+                        onScanQR={() => openQR(app)}
+                      />
+                    ))}
+                    {tabTotals.Upcoming > TAB_LIMIT && (
+                      <TouchableOpacity
+                        style={s.viewMoreBtn}
+                        onPress={() => nav.navigate('MyProjects' as never, { initialTab: 'upcoming' })}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={s.viewMoreBtnTxt}>View {tabTotals.Upcoming - TAB_LIMIT} more →</Text>
+                      </TouchableOpacity>
+                    )}
+                  </>
             )}
 
             {/* Completed tab */}
             {activeTab === 'Completed' && (
               tabApps.Completed.length === 0
                 ? <EmptyState icon="✅" text="No completed projects yet. Keep volunteering!" />
-                : tabApps.Completed.map((app, i) => (
-                    <CompletedCard key={i} app={app} />
-                  ))
+                : <>
+                    {tabApps.Completed.slice(0, TAB_LIMIT).map((app, i) => (
+                      <CompletedCard
+                        key={i}
+                        app={app}
+                        onPress={() => openDetail(app)}
+                        onCertPress={() => openCert(app)}
+                      />
+                    ))}
+                    {tabTotals.Completed > TAB_LIMIT && (
+                      <TouchableOpacity
+                        style={s.viewMoreBtn}
+                        onPress={() => nav.navigate('MyProjects' as never, { initialTab: 'completed' })}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={s.viewMoreBtnTxt}>View {tabTotals.Completed - TAB_LIMIT} more →</Text>
+                      </TouchableOpacity>
+                    )}
+                  </>
+            )}
+
+            {/* Cancelled tab */}
+            {activeTab === 'Cancelled' && (
+              <>
+                <InfoBanner text="Applications rejected by admin, withdrawn by you, or projects that expired or were cancelled." />
+                {tabApps.Cancelled.length === 0
+                  ? <EmptyState icon="📭" text="No rejected or cancelled applications." />
+                  : <>
+                      {tabApps.Cancelled.slice(0, TAB_LIMIT).map((app, i) => (
+                        <CancelledCard key={i} app={app} onPress={() => openDetail(app)} />
+                      ))}
+                      {tabTotals.Cancelled > TAB_LIMIT && (
+                        <TouchableOpacity
+                          style={s.viewMoreBtn}
+                          onPress={() => nav.navigate('MyProjects' as never, { initialTab: 'cancelled' })}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={s.viewMoreBtnTxt}>View {tabTotals.Cancelled - TAB_LIMIT} more →</Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
+                }
+              </>
             )}
           </View>
 
@@ -682,7 +837,7 @@ export default function ImpactScreen() {
         >
           {/* Compact bar — overlays top COMPACT_H pixels; purely visual */}
           <Animated.View style={[s.compactBar, { opacity: compactOpacity }]} pointerEvents="none">
-            <Avatar photo={impact?.profilePhoto} name={fullName} compact />
+            <Avatar photo={summary?.profilePhoto} name={fullName} compact />
             <View style={{ flex: 1, marginLeft: 10 }}>
               <Text style={s.compactName} numberOfLines={1}>{fullName}</Text>
               <Text style={s.compactScore} numberOfLines={1}>
@@ -700,10 +855,10 @@ export default function ImpactScreen() {
 
             {/* Row 1: Avatar  |  Name / Member Since / Rank badge */}
             <View style={s.heroIdentityRow}>
-              <Avatar photo={impact?.profilePhoto} name={fullName} />
+              <Avatar photo={summary?.profilePhoto} name={fullName} />
               <View style={s.heroIdentityInfo}>
                 <Text style={s.userName} numberOfLines={1}>{fullName}</Text>
-                <Text style={s.memberSince}>Member since {fmtMonthYear(impact?.memberSince)}</Text>
+                <Text style={s.memberSince}>Member since {fmtMonthYear(summary?.memberSince)}</Text>
                 <View style={[s.rankBadge, { backgroundColor: rankColor }]}>
                   <Text style={s.rankBadgeText}>{RANK_EMOJI[rankName] ?? '🌱'} {rankName}</Text>
                 </View>
@@ -715,9 +870,9 @@ export default function ImpactScreen() {
               <Text style={s.scoreNum}>{score.toLocaleString()}</Text>
               <View style={s.scoreMeta}>
                 <Text style={s.scoreLabel}>Impact Score</Text>
-                {(impact?.rankNumber ?? 0) > 0 && (
+                {(summary?.rankNumber ?? 0) > 0 && (
                   <Text style={s.rankPos}>
-                    #{impact!.rankNumber} of {(impact!.totalRanked ?? 0).toLocaleString()} volunteers
+                    #{summary!.rankNumber} of {(summary!.totalRanked ?? 0).toLocaleString()} volunteers
                   </Text>
                 )}
               </View>
@@ -735,15 +890,15 @@ export default function ImpactScreen() {
 
           {/* Primary stats card — all 5 KPIs in one row */}
           <View style={s.statsCardHero}>
-            <StatPill compact value={impact?.projectsCompleted ?? 0}              label="Projects"    color={C.TEAL} />
+            <StatPill compact value={summary?.projectsCompleted ?? 0}            label="Projects"    color={C.TEAL} />
             <View style={s.statDiv} />
-            <StatPill compact value={impact?.ngosJoined ?? 0}                    label="NGOs"        color={C.ORANGE} />
+            <StatPill compact value={summary?.ngosJoined ?? 0}                   label="NGOs"        color={C.ORANGE} />
             <View style={s.statDiv} />
-            <StatPill compact value={`${impact?.reliabilityPct ?? 0}%`}          label="Reliability" color={C.TEAL} />
+            <StatPill compact value={`${summary?.reliabilityPct ?? 0}%`}         label="Reliability" color={C.TEAL} />
             <View style={s.statDiv} />
-            <StatPill compact value={impact?.badgeCount ?? 0}                    label="Badges"      color={C.YELLOW} />
+            <StatPill compact value={summary?.badgeCount ?? 0}                   label="Badges"      color={C.YELLOW} />
             <View style={s.statDiv} />
-            <StatPill compact value={impact?.certificateCount ?? 0}              label="Certs"       color={C.ORANGE} />
+            <StatPill compact value={summary?.certificateCount ?? 0}             label="Certs"       color={C.ORANGE} />
           </View>
         </Animated.View>
 
@@ -768,6 +923,13 @@ export default function ImpactScreen() {
           setQrVisible(false);
           onRefresh();
         }}
+      />
+
+      <CertificateModal
+        visible={certVisible}
+        projectId={certProjectId}
+        projectName={certProjName}
+        onClose={() => setCertVisible(false)}
       />
     </SafeAreaView>
   );
@@ -840,7 +1002,7 @@ const s = StyleSheet.create({
   tabBar:         { flexDirection: 'row', backgroundColor: C.INPUT_BG, borderRadius: 10, padding: 4, marginBottom: 12 },
   tab:            { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: 8, gap: 4 },
   tabActive:      { backgroundColor: C.CARD, ...AppConfig.SHADOW.CARD_SM },
-  tabTxt:         { fontSize: 12, color: C.TEXT2, fontWeight: '500' },
+  tabTxt:         { fontSize: 11, color: C.TEXT2, fontWeight: '500' },
   tabTxtActive:   { color: C.PRIMARY, fontWeight: '700' },
   tabBadge:       { minWidth: 18, height: 18, borderRadius: 9, backgroundColor: C.BORDER, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   tabBadgeActive: { backgroundColor: C.PRIMARY_LIGHT },
@@ -896,9 +1058,31 @@ const s = StyleSheet.create({
   downloadBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
   // Badges
-  badgeCard:      { width: 110, backgroundColor: C.CARD, borderRadius: 12, padding: 12, alignItems: 'center', borderTopWidth: 3, ...AppConfig.SHADOW.CARD_SM },
-  badgeIconWrap:  { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  badgeName:      { fontSize: 11, fontWeight: '600', color: C.TEXT, textAlign: 'center' },
+  viewMoreBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: C.INPUT_BG,
+    borderWidth: 1,
+    borderColor: C.BORDER,
+    marginBottom: 8,
+  },
+  viewMoreBtnTxt: { fontSize: 13, fontWeight: '700', color: C.PRIMARY },
+
+  viewAllBadgesBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: C.INPUT_BG,
+    borderWidth: 1,
+    borderColor: C.BORDER,
+  },
+  viewAllBadgesBtnTxt: { fontSize: 13, fontWeight: '700', color: C.PRIMARY },
+  badgeCard:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.CARD, borderRadius: 12, padding: 12, borderLeftWidth: 3, ...AppConfig.SHADOW.CARD_SM },
+  badgeIconWrap:  { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  badgeName:      { fontSize: 13, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  badgeMeta:      { fontSize: 11, color: C.TEXT2, marginTop: 1 },
+  badgeDate:      { fontSize: 10, color: C.TEXT2, marginTop: 3, fontStyle: 'italic' },
 
   // Empty state
   emptyState:     { alignItems: 'center', paddingVertical: 28, paddingHorizontal: 16 },

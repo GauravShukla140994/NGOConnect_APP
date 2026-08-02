@@ -120,6 +120,7 @@ function ProjectCard({
   p:         AdminProject;
   tab:       Tab;
   onManage?: () => void;
+  // label is derived from tab inside the component
 }) {
   const C = AppConfig.COLORS;
 
@@ -249,12 +250,14 @@ function ProjectCard({
         </>
       ) : null}
 
-      {/* ── Manage footer (Active / Upcoming only) ── */}
+      {/* ── Footer link — Manage for upcoming, View Details for completed/cancelled ── */}
       {onManage ? (
         <View style={[s.cardFooterRow, { marginTop: 10 }]}>
           <View />
           <TouchableOpacity onPress={onManage}>
-            <Text style={s.manageLink}>Manage ›</Text>
+            <Text style={s.manageLink}>
+              {tab === 'UPCOMING' ? 'Manage ›' : 'View Details ›'}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -630,11 +633,7 @@ export default function AdminProjectsScreen() {
     <ProjectCard
       p={item}
       tab={activeTab}
-      onManage={
-        activeTab === 'UPCOMING'
-          ? () => nav.navigate('AdminProjectDetail', { projectId: item.projectId, orgId: activeOrgId })
-          : undefined
-      }
+      onManage={() => nav.navigate('AdminProjectDetail', { projectId: item.projectId, orgId: activeOrgId })}
     />
   );
 

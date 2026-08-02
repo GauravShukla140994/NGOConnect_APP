@@ -148,9 +148,12 @@ export interface UserApplication {
   // Project schedule info (for card display)
   scheduleTypeCode?: string; // ONE_TIME | RECURRING | FLEXIBLE
   scheduleTypeName?: string;
-  recurStart?: string;
-  recurEnd?: string;
+  oneTimeDate?: string;      // ONE_TIME date (YYYY-MM-DD)
+  recurStart?: string;       // RECURRING start date
+  recurEnd?: string;         // RECURRING end date
   recurDays?: string;        // comma-separated day names e.g. "Monday,Wednesday,Friday"
+  flexFromDate?: string;     // FLEXIBLE from date
+  flexToDate?: string;       // FLEXIBLE to date
   sessionStartTime?: string;
   sessionEndTime?: string;
   landmark?: string;
@@ -164,6 +167,8 @@ export interface UserApplication {
   hoursLogged?: number;
   impactNote?: string;
   skillRatings?: { skillName: string; rating: number }[];
+  // Certificate status — 1 if cert issued, 0/undefined otherwise (from HasCertificate column)
+  hasCertificate?: number;
 }
 
 export interface UserBadge {
@@ -177,6 +182,62 @@ export interface UserBadge {
   tier?: string;       // Gold | Silver | Bronze | Platinum
   emoji?: string;
   awardedOn?: string;  // formatted display date
+}
+
+// ── User Certificate (GET /certificates) ─────────────────────────────────────
+export interface UserCert {
+  certificateId: number;
+  certCode: string;
+  projectId: number;
+  projectTitle: string;
+  orgId: number;
+  orgName: string;
+  totalHours?: number;
+  certificateUrl?: string;
+  issuedAt: string;
+  // Encrypted public verify link (e.g. ripplehub.app/verify/{token}) — build share
+  // links from this, never from certCode (a plain incrementing counter, guessable).
+  verifyUrl?: string;
+}
+
+// ── Impact Summary (GET /user/impact-summary) ────────────────────────────────
+// Single-call replacement for getMyImpact + getMyBadges + getMyApplications.
+// Lists are server-limited (5 apps per tab, 3 badges).
+// Total* fields hold full DB counts for "View N more" buttons.
+export interface ImpactSummary {
+  // Tab lists (server-side limited, 5 items each)
+  applied:        UserApplication[];
+  upcoming:       UserApplication[];
+  completed:      UserApplication[];
+  cancelled:      UserApplication[];
+  // Badge list (server-side limited, 3 items)
+  badges:         UserBadge[];
+  // Full DB counts
+  totalApplied:   number;
+  totalUpcoming:  number;
+  totalCompleted: number;
+  totalCancelled: number;
+  totalBadges:    number;
+  // Impact stats (same as UserImpact)
+  impactScore:          number;
+  reliabilityPct:       number;
+  projectsCompleted:    number;
+  totalHours:           number;
+  badgeCount:           number;
+  skillCount:           number;
+  projectsApplied:      number;
+  certificateCount:     number;
+  memberSince:          string;
+  rankName:             string;
+  rankNumber:           number;
+  totalRanked:          number;
+  ngosJoined:           number;
+  pendingApplications:  number;
+  approvedApplications: number;
+  firstName?:           string;
+  lastName?:            string;
+  profilePhoto?:        string;
+  bio?:                 string;
 }
 
 export interface UserSkill {

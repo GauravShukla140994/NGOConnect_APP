@@ -1,5 +1,5 @@
 import apiClient from './apiClient';
-import {ApiResponse, PagedResult, UserProfile, UserImpact, UserBadge, UserSkill, UserInterest, UserDocument, SafetyPrefs, Organisation, UserApplication} from '../types/api.types';
+import {ApiResponse, PagedResult, UserProfile, UserImpact, UserBadge, UserSkill, UserInterest, UserDocument, SafetyPrefs, Organisation, UserApplication, UserCert, ImpactSummary} from '../types/api.types';
 
 export const userApi = {
   getMyProfile: () =>
@@ -20,8 +20,20 @@ export const userApi = {
   getMyApplications: () =>
     apiClient.get<ApiResponse<UserApplication[]>>('/user/applications'),
 
+  getImpactSummary: () =>
+    apiClient.get<ApiResponse<ImpactSummary>>('/user/impact-summary'),
+
   withdrawApplication: (applicationId: number) =>
     apiClient.delete<ApiResponse<null>>(`/applications/${applicationId}/withdraw`),
+
+  getMyCertificates: () =>
+    apiClient.get<ApiResponse<UserCert[]>>('/certificates'),
+
+  getCertificate: (certCode: string) =>
+    apiClient.get<ApiResponse<UserCert>>(`/certificates/${certCode}`),
+
+  issueCertificate: (data: { projectId: number; userId: number; orgId: number; totalHours?: number }) =>
+    apiClient.post<ApiResponse<any>>('/certificates/issue', data),
 
   getMySkills: () =>
     apiClient.get<ApiResponse<UserSkill[]>>('/user/skills'),
@@ -73,6 +85,10 @@ export const getMyImpact          = () => userApi.getMyImpact();
 export const getMyBadges          = () => userApi.getMyBadges();
 export const getMyApplications    = () => userApi.getMyApplications();
 export const withdrawApplication  = (applicationId: number) => userApi.withdrawApplication(applicationId);
+export const getImpactSummary     = () => userApi.getImpactSummary();
+export const getMyCertificates    = () => userApi.getMyCertificates();
+export const getCertificate       = (certCode: string) => userApi.getCertificate(certCode);
+export const issueCertificate     = (data: { projectId: number; userId: number; orgId: number; totalHours?: number }) => userApi.issueCertificate(data);
 export const getMySkills       = () => userApi.getMySkills();
 export const addSkill          = (data: {skillName: string}) => userApi.addSkill(data.skillName);
 export const removeSkill       = (userSkillId: number) => userApi.removeSkill(userSkillId);

@@ -23,6 +23,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { projectApi } from '../../api/project.api';
 import { awardBadge } from '../../api/org.api';
+import { issueCertificate } from '../../api/user.api';
 
 type ProjectSkill = { id: number; name: string };
 import { lookupApi } from '../../api/lookup.api';
@@ -212,10 +213,11 @@ function AttendedCard({
   app, projectSkills, skillRatings, onRateSkill, onSubmitRatings,
   submittingRatings, submittedRatings,
   awardedBadges, onAwardBadge, awardingBadge,
+  isCompleted, hasCertificate, onIssueCertificate, issuingCert,
 }: {
   app: any;
   projectSkills: ProjectSkill[];
-  skillRatings: Record<number, number>;    // projectSkillId → star count
+  skillRatings: Record<number, number>;
   onRateSkill: (skillId: number, val: number) => void;
   onSubmitRatings: () => void;
   submittingRatings: boolean;
@@ -223,6 +225,10 @@ function AttendedCard({
   awardedBadges: string[];
   onAwardBadge: (key: string) => void;
   awardingBadge: string | null;
+  isCompleted: boolean;
+  hasCertificate: boolean;
+  onIssueCertificate: () => void;
+  issuingCert: boolean;
 }) {
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
   const checkinDt   = app.checkedInAt ? new Date(app.checkedInAt) : null;
@@ -323,6 +329,26 @@ function AttendedCard({
           );
         })}
       </View>
+
+      {/* Issue Certificate — only shown for COMPLETED projects; ATTENDED volunteers only */}
+      {isCompleted && (
+        <TouchableOpacity
+          style={[
+            s.issueCertBtn,
+            hasCertificate && s.issueCertBtnIssued,
+            issuingCert && s.btnDisabled,
+          ]}
+          onPress={hasCertificate ? undefined : onIssueCertificate}
+          disabled={hasCertificate || issuingCert}
+          activeOpacity={0.85}
+        >
+          {issuingCert
+            ? <ActivityIndicator size="small" color="#fff" />
+            : hasCertificate
+              ? <Text style={s.issueCertBtnIssuedText}>✓  Certificate Issued</Text>
+              : <Text style={s.issueCertBtnText}>📄  Issue Certificate</Text>}
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -391,7 +417,10 @@ export default function ParticipantsScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
 
-  const { projectId, orgId } = route.params ?? {};
+  const { projectId, orgId, projectStatus } = route.params ?? {};
+  const isCompleted  = projectStatus === 'COMPLETED';
+  const isCancelled  = projectStatus === 'CANCELLED';
+  const isReadOnly   = isCompleted || isCancelled;
 
   const [apps,          setApps]          = useState<any[]>([]);
   const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
@@ -411,6 +440,11 @@ export default function ParticipantsScreen() {
   const [awardedBadges, setAwardedBadges] = useState<Record<number, string[]>>({});
   // Which badge (ValueCode) is currently being awarded for each appId (null = idle)
   const [awardingBadge, setAwardingBadge] = useState<Record<number, string | null>>({});
+
+  // Certificate issuance state: appId → true if cert issued (pre-populated from server + updated locally)
+  const [issuedCerts, setIssuedCerts] = useState<Record<number, boolean>>({});
+  // appId currently being cert-issued (null = idle)
+  const [issuingCertFor, setIssuingCertFor] = useState<number | null>(null);
 
   // BADGE_TYPE lookup: ValueCode → LookupValueId (needed to call the API)
   const [badgeLkpMap, setBadgeLkpMap] = useState<Record<string, number>>({});
@@ -443,12 +477,17 @@ export default function ParticipantsScreen() {
         setApps(loaded);
         // Pre-populate already-awarded badges
         const initBadges: Record<number, string[]> = {};
+        const initCerts: Record<number, boolean> = {};
         for (const app of loaded) {
           if (app.awardedBadgeCodes) {
             initBadges[app.applicationId] = (app.awardedBadgeCodes as string).split(',').filter(Boolean);
           }
+          if (app.hasCertificate) {
+            initCerts[app.applicationId] = true;
+          }
         }
         setAwardedBadges(initBadges);
+        setIssuedCerts(initCerts);
       }
 
       if (skillsRes.status === 'fulfilled' && skillsRes.value.data?.isSuccess) {
@@ -635,6 +674,36 @@ export default function ParticipantsScreen() {
     ]);
   }, [awardedBadges, badgeLkpMap, orgId, projectId]);
 
+  // ── Issue Certificate ──
+  const handleIssueCertificate = useCallback((app: any) => {
+    const name = app.applicantName ?? app.fullName ?? 'Volunteer';
+    Alert.alert('Issue Certificate?', `Issue a volunteer certificate to ${name} for this project?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Issue Certificate',
+        onPress: async () => {
+          setIssuingCertFor(app.applicationId);
+          try {
+            const res = await issueCertificate({
+              projectId, userId: app.userId, orgId,
+              totalHours: app.hoursLogged ?? undefined,
+            });
+            if (res.data?.isSuccess) {
+              setIssuedCerts(prev => ({ ...prev, [app.applicationId]: true }));
+              Alert.alert('Certificate Issued! 📄', `Certificate issued to ${name} successfully.`);
+            } else {
+              Alert.alert('Error', res.data?.message ?? 'Could not issue certificate.');
+            }
+          } catch {
+            Alert.alert('Error', 'Could not issue certificate. Check your connection.');
+          } finally {
+            setIssuingCertFor(null);
+          }
+        },
+      },
+    ]);
+  }, [projectId, orgId]);
+
   // ── Derived sections (ALL statuses covered — no member ever disappears) ──
   const pendingApps  = apps.filter(a => a.statusCode === 'PENDING');
   const approvedApps = apps.filter(a => a.statusCode === 'APPROVED');
@@ -679,8 +748,8 @@ export default function ParticipantsScreen() {
       {/* ── KPI strip ── */}
       <View style={s.kpiStrip}>
         {[
-          { val: counts.approved, lbl: 'Approved', color: C.PRIMARY  },
-          { val: counts.pending,  lbl: 'Pending',  color: '#D97706'  },
+          { val: counts.approved, lbl: isReadOnly ? 'Not marked' : 'Approved', color: C.PRIMARY },
+          ...(isReadOnly ? [] : [{ val: counts.pending, lbl: 'Pending', color: '#D97706' }]),
           { val: counts.noShow,   lbl: 'No shows', color: '#EF4444'  },
           { val: counts.attended, lbl: 'Attended', color: '#2563EB'  },
         ].map((k, i) => (
@@ -703,7 +772,7 @@ export default function ParticipantsScreen() {
         onRefresh={() => load(true)}
       >
         {/* ── PENDING APPLICATIONS ── */}
-        {pendingApps.length > 0 && (
+        {pendingApps.length > 0 && !isReadOnly && (
           <>
             <SectionHeader title={`PENDING APPLICATIONS (${pendingApps.length})`} />
             {pendingApps.map(app => (
@@ -724,10 +793,12 @@ export default function ParticipantsScreen() {
           </>
         )}
 
-        {/* ── APPROVED — UPCOMING ── */}
+        {/* ── APPROVED — UPCOMING / NOT MARKED ── */}
         {approvedApps.length > 0 && (
           <>
-            <SectionHeader title={`APPROVED — UPCOMING (${approvedApps.length})`} />
+            <SectionHeader title={isReadOnly
+              ? `APPROVED — NOT MARKED (${approvedApps.length})`
+              : `APPROVED — UPCOMING (${approvedApps.length})`} />
             {approvedApps.map(app => (
               <ApprovedCard
                 key={app.applicationId}
@@ -740,10 +811,12 @@ export default function ParticipantsScreen() {
           </>
         )}
 
-        {/* ── ATTENDED — LAST SESSION ── */}
+        {/* ── ATTENDED ── */}
         {attendedApps.length > 0 && (
           <>
-            <SectionHeader title={`ATTENDED — LAST SESSION${lastSessionLabel ? ` (${lastSessionLabel})` : ''}`} />
+            <SectionHeader title={isReadOnly
+              ? `ATTENDED (${attendedApps.length})`
+              : `ATTENDED — LAST SESSION${lastSessionLabel ? ` (${lastSessionLabel})` : ''}`} />
             {attendedApps.map(app => (
               <AttendedCard
                 key={app.applicationId}
@@ -757,15 +830,19 @@ export default function ParticipantsScreen() {
                 awardedBadges={awardedBadges[app.applicationId] ?? []}
                 onAwardBadge={key => handleAwardBadge(app, key)}
                 awardingBadge={awardingBadge[app.applicationId] ?? null}
+                isCompleted={isCompleted}
+                hasCertificate={issuedCerts[app.applicationId] ?? false}
+                onIssueCertificate={() => handleIssueCertificate(app)}
+                issuingCert={issuingCertFor === app.applicationId}
               />
             ))}
           </>
         )}
 
-        {/* ── NO SHOWS — LAST SESSION ── */}
+        {/* ── NO SHOWS ── */}
         {noShowApps.length > 0 && (
           <>
-            <SectionHeader title="NO SHOWS — LAST SESSION" />
+            <SectionHeader title={isReadOnly ? `NO SHOWS (${noShowApps.length})` : 'NO SHOWS — LAST SESSION'} />
             {noShowApps.map(app => (
               <NoShowCard
                 key={app.applicationId}
@@ -895,6 +972,12 @@ const s = StyleSheet.create({
   badgeBtnAwarded: { borderColor: C.PRIMARY, backgroundColor: `${C.PRIMARY}10` },
   badgeBtnIcon:    { fontSize: 19, color: C.TEXT2 },
   badgeBtnLabel:   { fontSize: 10, fontWeight: '600', color: C.TEXT2, textAlign: 'center' },
+
+  // Issue certificate button
+  issueCertBtn:          { marginTop: 8, backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  issueCertBtnIssued:    { backgroundColor: '#D1FAE5', borderColor: '#059669', borderWidth: 1 },
+  issueCertBtnText:      { color: '#fff', fontSize: 13, fontWeight: '700' },
+  issueCertBtnIssuedText: { color: '#059669', fontSize: 13, fontWeight: '700' },
 
   // No show card
   noShowSubtitle: { fontSize: 11, color: '#EF4444', marginTop: 2, fontWeight: '500' },
