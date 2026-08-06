@@ -278,7 +278,9 @@ export default function CommunityScreen() {
   // ── Search state ──────────────────────────────────────────────────────────────
   const [showSearch,  setShowSearch]  = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const searchRef = useRef<TextInput>(null);
+  const searchRef    = useRef<TextInput>(null);
+  const flatListRef  = useRef<any>(null);
+  const [focusedCommunityPostId, setFocusedCommunityPostId] = useState<number | null>(null);
 
   // ── Feed / SOS state ──────────────────────────────────────────────────────────
   const [posts,       setPosts]       = useState<CommunityPost[]>([]);
@@ -560,6 +562,22 @@ export default function CommunityScreen() {
       )
     : posts;
 
+  // ── Notification deep-link: scroll to a specific community post ───────────
+  // Runs when COMMUNITY_POST_LIKED / COMMUNITY_POST_COMMENTED notification is tapped.
+  useEffect(() => {
+    const focusId = route.params?.focusCommunityPostId as number | undefined;
+    if (!focusId || displayedPosts.length === 0) return;
+    const idx = displayedPosts.findIndex(p => p.communityPostId === focusId);
+    if (idx < 0) return;
+    const timer = setTimeout(() => {
+      flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
+      setFocusedCommunityPostId(focusId);
+      setTimeout(() => setFocusedCommunityPostId(null), 2500);
+    }, 350);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.focusCommunityPostId, displayedPosts.length]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
 
@@ -667,6 +685,7 @@ export default function CommunityScreen() {
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={displayedPosts}
           keyExtractor={(p) => String(p.communityPostId)}
           contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 100 }]}
@@ -726,13 +745,15 @@ export default function CommunityScreen() {
             </>
           }
           renderItem={({ item }) => (
-            <CommunityPostCard
-              item={item}
-              onLike={handleLike}
-              onAck={handleAck}
-              onVote={handleVote}
-              onComment={handleComment}
-            />
+            <View style={item.communityPostId === focusedCommunityPostId ? styles.focusedPostHighlight : undefined}>
+              <CommunityPostCard
+                item={item}
+                onLike={handleLike}
+                onAck={handleAck}
+                onVote={handleVote}
+                onComment={handleComment}
+              />
+            </View>
           )}
           onRefresh={() => { fetchFeed(1, true); fetchSosAlerts(); }}
           refreshing={refreshing}
@@ -890,6 +911,7 @@ const styles = StyleSheet.create({
   searchClear:          { fontSize: 13, color: C.TEXT3, paddingHorizontal: 4 },
 
   listContent:          { padding: 10 },
+  focusedPostHighlight: { borderWidth: 2, borderColor: C.PRIMARY, borderRadius: 12, marginHorizontal: 2 },
   sosSection:           { fontSize: 12, fontWeight: '800', color: '#EF4444', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8, marginTop: 2 },
   historyHeader:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, marginTop: 2 },
   historyChevron:       { fontSize: 10, color: '#9CA3AF', paddingRight: 2 },

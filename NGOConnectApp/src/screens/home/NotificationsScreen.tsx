@@ -38,10 +38,14 @@ function notifMeta(type: string): { emoji: string; color: string } {
     case 'SOS_RESOLVED':            return { emoji: '✅', color: '#2ECC71' };
     case 'DONATION_CONFIRMED':      return { emoji: '💚', color: '#16A34A' };
     case 'DONATION_RECEIVED_ADMIN': return { emoji: '💰', color: '#16A34A' };
-    case 'NEW_FEED_POST':           return { emoji: '📝', color: C.PRIMARY };
-    case 'CAMPAIGN':                return { emoji: '📣', color: '#7C3AED' };
-    case 'COMMUNITY_POST':          return { emoji: '📢', color: C.PRIMARY };
-    case 'NEW_POLL':                return { emoji: '📊', color: C.TEAL };
+    case 'NEW_FEED_POST':              return { emoji: '📝', color: C.PRIMARY };
+    case 'POST_LIKED':                 return { emoji: '❤️', color: '#E74C3C' };
+    case 'POST_COMMENTED':             return { emoji: '💬', color: C.PRIMARY };
+    case 'CAMPAIGN':                   return { emoji: '📣', color: '#7C3AED' };
+    case 'COMMUNITY_POST':             return { emoji: '📢', color: C.PRIMARY };
+    case 'NEW_POLL':                   return { emoji: '📊', color: C.TEAL };
+    case 'COMMUNITY_POST_LIKED':       return { emoji: '❤️', color: '#E74C3C' };
+    case 'COMMUNITY_POST_COMMENTED':   return { emoji: '💬', color: C.PRIMARY };
     case 'BADGE_AWARDED':           return { emoji: '🏅', color: '#D97706' };
     case 'SKILL_RATING':            return { emoji: '⭐', color: '#F59E0B' };
     case 'PROFILE_VERIFIED':        return { emoji: '✅', color: '#2ECC71' };
@@ -83,11 +87,21 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
       return refId ? { screen: 'NgoProfile', params: { orgId: refId } } : { screen: 'MyOrgs' };
     case 'NEW_FEED_POST':
       return { screen: 'Home' };
+    case 'POST_LIKED':
+    case 'POST_COMMENTED':
+      return refId
+        ? { screen: 'Home', params: { focusPostId: refId } }
+        : { screen: 'Home' };
     // CAMPAIGN: deep link handled separately in onPressNotif; no screen fallback needed here
     // because tapping a CAMPAIGN row with no deepLink is a no-op (unusual but safe).
     case 'COMMUNITY_POST':
     case 'NEW_POLL':
       return { screen: 'Community' };
+    case 'COMMUNITY_POST_LIKED':
+    case 'COMMUNITY_POST_COMMENTED':
+      return refId
+        ? { screen: 'Community', params: { focusCommunityPostId: refId } }
+        : { screen: 'Community' };
     case 'BADGE_AWARDED':
     case 'SKILL_RATING':
     case 'PROFILE_VERIFIED':

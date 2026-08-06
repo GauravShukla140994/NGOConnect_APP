@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { fmtDate, fmtTime, fmtDateTime } from '../../utils/dateUtils';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
@@ -807,6 +807,7 @@ const PostCard = React.memo(function PostCard({
 /* ─── Main Screen ───────────────────────────────────────────────────────────── */
 export default function HomeScreen() {
   const nav         = useNavigation<any>();
+  const route       = useRoute<any>();
   const insets      = useSafeAreaInsets();
   const { user } = useAuthStore();
   const { setActiveOrg, activeOrg: storeActiveOrg } = useAdminStore();
@@ -816,6 +817,29 @@ export default function HomeScreen() {
   // globalMuted:  single mute state shared by all videos (Instagram behaviour)
   const [activePostId,   setActivePostId]   = useState<string | null>(null);
   const [globalMuted,    setGlobalMuted]    = useState(true);
+
+  // ── Notification deep-link: scroll to a specific post ───────────────────
+  // When opened via POST_LIKED / POST_COMMENTED notification, route.params.focusPostId
+  // is set. We scroll to that post and briefly highlight it.
+  const flatListRef      = useRef<any>(null);
+  const [focusedPostId, setFocusedPostId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const focusPostId = route.params?.focusPostId as number | undefined;
+    if (!focusPostId || feed.length === 0) return;
+    const idx = feed.findIndex(p => p.postId === focusPostId);
+    if (idx < 0) return;
+    // Short delay so the list has painted before scrolling
+    const timer = setTimeout(() => {
+      flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
+      setFocusedPostId(focusPostId);
+      // Clear highlight after 2.5 s
+      setTimeout(() => setFocusedPostId(null), 2500);
+    }, 350);
+    return () => clearTimeout(timer);
+  // Re-run whenever the route param or feed changes (feed loads async after navigate)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.focusPostId, feed.length]);
 
   // Viewability handler MUST be a stable ref — FlatList freezes it on mount.
   // Never pass an inline arrow function here or video auto-play breaks on scroll.
@@ -1324,6 +1348,7 @@ export default function HomeScreen() {
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={feed}
           keyExtractor={item => String(item.postId)}
           refreshControl={
@@ -1427,14 +1452,16 @@ export default function HomeScreen() {
             </>
           }
           renderItem={({ item }) => (
-            <PostCard
-              post={item}
-              onLike={handleLike}
-              onCommentPress={handleCommentPress}
-              isActive={String(item.postId) === activePostId}
-              globalMuted={globalMuted}
-              onToggleMute={toggleMute}
-            />
+            <View style={item.postId === focusedPostId ? styles.focusedPostHighlight : undefined}>
+              <PostCard
+                post={item}
+                onLike={handleLike}
+                onCommentPress={handleCommentPress}
+                isActive={String(item.postId) === activePostId}
+                globalMuted={globalMuted}
+                onToggleMute={toggleMute}
+              />
+            </View>
           )}
           ListFooterComponent={
             hasMore ? <ActivityIndicator style={{ margin: 20 }} color={C.PRIMARY} /> : null
@@ -1678,6 +1705,7 @@ const styles = StyleSheet.create({
   sectionRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   sectionTitle:    { fontSize: 14, fontWeight: '700', color: C.TEXT },
   viewAll:         { fontSize: 13, color: C.PRIMARY, fontWeight: '600' },
+  focusedPostHighlight: { borderWidth: 2, borderColor: C.PRIMARY, borderRadius: 12, marginHorizontal: 2 },
   feedDivider:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   feedDividerLine: { flex: 1, height: 1, backgroundColor: C.BORDER },
   feedLabel:       { fontSize: 10, fontWeight: '700', color: C.TEXT3, letterSpacing: 1.5 },

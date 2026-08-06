@@ -76,6 +76,11 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
       return { screen: 'AdminWithdrawal' };
     case 'NEW_FEED_POST':
       return { screen: 'Home' };
+    case 'POST_LIKED':
+    case 'POST_COMMENTED':
+      return refId
+        ? { screen: 'Home', params: { focusPostId: refId } }
+        : { screen: 'Home' };
     // CAMPAIGN: if deepLink is present the caller handles it before resolveScreen.
     // This fallback fires only when there is no deepLink.
     case 'CAMPAIGN':
@@ -83,6 +88,11 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
     case 'COMMUNITY_POST':
     case 'NEW_POLL':
       return { screen: 'Community' };
+    case 'COMMUNITY_POST_LIKED':
+    case 'COMMUNITY_POST_COMMENTED':
+      return refId
+        ? { screen: 'Community', params: { focusCommunityPostId: refId } }
+        : { screen: 'Community' };
     case 'BADGE_AWARDED':
     case 'SKILL_RATING':
       // refId = projectId — open the project directly; fall back to Impact tab
