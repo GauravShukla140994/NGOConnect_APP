@@ -47,10 +47,14 @@ const SOS_STATUS_META: Record<string, { label: string; dot: string; pillBg: stri
   CANCELLED: { label: 'CANCELLED', dot: '✕', pillBg: '#F3F4F6', dotColor: '#6B7280', textColor: '#6B7280' },
 };
 
-// Server returns UTC datetimes without 'Z'. Without this, JS treats them as local
-// time causing wrong "time ago" on every timezone. Appending 'Z' forces UTC parse.
+// Server returns UTC datetimes as "YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD HH:mm:ss"
+// (no timezone suffix). new Date() in Hermes treats these as LOCAL time, causing a
+// 5.5h "time ago" error for IST users. Fix: normalise space→T, then append Z so JS
+// always parses as UTC. "2026-08-07 12:00:00" → "2026-08-07T12:00:00Z" = correct UTC.
 function asUtc(iso: string): Date {
-  return new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+  if (!iso) { return new Date(NaN); }
+  const s = iso.replace(' ', 'T');    // space separator → T (ISO 8601 compliance)
+  return new Date(s.endsWith('Z') || s.includes('+') ? s : s + 'Z');
 }
 
 function timeAgoShort(iso: string | undefined): string {

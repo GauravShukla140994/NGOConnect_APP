@@ -27,10 +27,38 @@ const TYPE_META: Record<string, { emoji: string; color: string }> = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// MySQL returns datetimes as "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DDTHH:mm:ss" — both
+// without timezone info. new Date() treats these as LOCAL time in Hermes (React Native),
+// but the server stores UTC. Fix: normalise space→T then append Z so JS always parses as UTC.
+function asUtc(iso: string): Date {
+  if (!iso) { return new Date(NaN); }
+  const s = iso.replace(' ', 'T');    // "YYYY-MM-DD HH:mm:ss" → "YYYY-MM-DDTHH:mm:ss"
+  return new Date(s.endsWith('Z') || s.includes('+') ? s : s + 'Z');
+}
+
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/**
+ * Format a server UTC ISO datetime as local "dd-MMM-yyyy hh:mm AM/PM"
+ * e.g. "2026-08-07T12:00:00" (UTC) on an IST device → "07-Aug-2026 05:30 PM"
+ */
+function formatLocalDateTime(iso: string | undefined): string {
+  if (!iso) { return ''; }
+  const d    = asUtc(iso);                                // parse as UTC, getters return local
+  const day  = String(d.getDate()).padStart(2, '0');
+  const mon  = MONTHS_SHORT[d.getMonth()];
+  const yr   = d.getFullYear();
+  const h    = d.getHours();
+  const m    = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${day}-${mon}-${yr} ${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
 function useTimer(createdAt: string | undefined, endAt?: string | null) {
   // When endAt is set (resolved/cancelled), compute a fixed duration — no interval needed.
   const fixedElapsed = (createdAt && endAt)
-    ? Math.max(0, Math.floor((new Date(endAt).getTime() - new Date(createdAt).getTime()) / 1000))
+    ? Math.max(0, Math.floor((asUtc(endAt).getTime() - asUtc(createdAt).getTime()) / 1000))
     : null;
 
   const [elapsed, setElapsed] = useState(fixedElapsed ?? 0);
@@ -39,7 +67,7 @@ function useTimer(createdAt: string | undefined, endAt?: string | null) {
     // If end time is already known, freeze immediately — no tick needed.
     if (fixedElapsed !== null) { setElapsed(fixedElapsed); return; }
     if (!createdAt) { return; }
-    const start = new Date(createdAt).getTime();
+    const start = asUtc(createdAt).getTime();
     const id = setInterval(() => { setElapsed(Math.floor((Date.now() - start) / 1000)); }, 1000);
     return () => clearInterval(id);
   }, [createdAt, fixedElapsed]);
@@ -51,21 +79,11 @@ function useTimer(createdAt: string | undefined, endAt?: string | null) {
 
 function respondedAgo(iso: string | undefined): string {
   if (!iso) { return ''; }
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const diff = Math.floor((Date.now() - asUtc(iso).getTime()) / 1000);
   if (diff < 60)    { return 'Just now'; }
   if (diff < 3600)  { return `${Math.floor(diff / 60)}m ago`; }
   if (diff < 86400) { return `${Math.floor(diff / 3600)}h ago`; }
   return `${Math.floor(diff / 86400)}d ago`;
-}
-
-function formatTime(iso: string | undefined): string {
-  if (!iso) { return ''; }
-  const d = new Date(iso);
-  const h = d.getHours();
-  const m = d.getMinutes();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12  = h === 0 ? 12 : h > 12 ? h - 12 : h;
-  return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 // ── Responder row ─────────────────────────────────────────────────────────────
@@ -522,7 +540,7 @@ export default function SosActiveScreen() {
               <Text style={styles.alertTypeName}>{incident.alertTypeName ?? 'SOS Alert'}</Text>
               <Text style={styles.alertMeta} numberOfLines={1}>
                 {[
-                  'Sent at ' + formatTime(incident.createdAt),
+                  'Sent at ' + formatLocalDateTime(incident.createdAt),
                   incident.approxLocation,
                 ].filter(Boolean).join('  ·  ')}
               </Text>
@@ -559,12 +577,6 @@ export default function SosActiveScreen() {
           )}
         </View>
 
-        {/* ── Admin notification note ─────────────────────────────────────────── */}
-        <View style={styles.adminNote}>
-          <Text style={styles.adminNoteTxt}>
-            ℹ️  If no one responds in 10 mins, the NGO admin will be notified automatically.
-          </Text>
-        </View>
       </ScrollView>
 
       {/* ── Victim action bar ───────────────────────────────────────────────────── */}
@@ -651,10 +663,6 @@ const styles = StyleSheet.create({
   noResponders:     { alignItems: 'center', paddingVertical: 28, paddingHorizontal: 24 },
   noRespEmoji:      { fontSize: 30, marginBottom: 10 },
   noRespText:       { fontSize: 13, color: 'rgba(255,255,255,0.4)', textAlign: 'center', lineHeight: 20 },
-
-  // ── Admin note ───────────────────────────────────────────────────────────────
-  adminNote:        { marginHorizontal: 14, marginTop: 10, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)' },
-  adminNoteTxt:     { fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 17 },
 
   // ── Action bar ───────────────────────────────────────────────────────────────
   actionBar:        { backgroundColor: '#0F172A', paddingHorizontal: 16, paddingTop: 12, gap: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' },

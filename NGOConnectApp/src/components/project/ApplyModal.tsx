@@ -131,14 +131,22 @@ export default function ApplyModal({ visible, project, onClose, onSuccess, onPro
 
   if (!project) return null;
 
-  const isRecurring = (project.scheduleType ?? '').toUpperCase() === 'RECURRING';
+  // Project_GetNearbyFeed exposes the schedule type as projectTypeCode
+  // (ONE_TIME | RECURRING | FLEXIBLE). scheduleType is the preferred field
+  // from Project_GetById and the patched GetNearbyFeed; projectTypeCode is
+  // the fallback for any older cached responses.
+  const p = project as any;
+  const effectiveScheduleType: string =
+    project.scheduleType ?? project.scheduleTypeCode ?? p.projectTypeCode ?? '';
+
+  const isRecurring = effectiveScheduleType.toUpperCase() === 'RECURRING';
   const sessionOptions = isRecurring ? buildSessionOptions(project) : [];
 
   const max       = project.maxVolunteers ?? project.maxParticipants ?? 0;
   const approved  = project.approvedCount ?? project.currentParticipants ?? 0;
   const spotsLeft = max > 0 ? Math.max(0, max - approved) : null;
   const pct       = max > 0 ? Math.min(Math.round((approved / max) * 100), 100) : 0;
-  const badge     = scheduleTypeBadge(project.scheduleType);
+  const badge     = scheduleTypeBadge(effectiveScheduleType);
 
   // Spot bar color
   const barColor = spotsLeft !== null && spotsLeft <= 3
