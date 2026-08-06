@@ -41,7 +41,7 @@ function initials(name: string) {
 // Renders org logo if URL is valid + loads successfully, else colour-coded initials.
 // Uses local state so a broken image falls back gracefully without re-rendering the list.
 function OrgAvatar({ org }: { org: Organisation }) {
-  const name    = org.orgName ?? (org as any).name ?? 'NGO';
+  const name    = org.orgName ?? (org as any).name ?? 'Org';
   const col     = avatarColor(name);
   const hasLogo = typeof org.logoUrl === 'string' && org.logoUrl.trim().startsWith('http');
   const [imgErr, setImgErr] = React.useState(false);
@@ -185,7 +185,7 @@ export default function AdminDashboardScreen() {
     setRefreshing(false);
   }, [selectedOrg, loadDashboard]);
 
-  const orgName  = selectedOrg?.orgName ?? (selectedOrg as any)?.name ?? 'Select NGO';
+  const orgName  = selectedOrg?.orgName ?? (selectedOrg as any)?.name ?? 'Select Organisation';
   const orgColor = selectedOrg ? avatarColor(orgName) : C.PRIMARY;
   const orgInit  = initials(orgName);
 
@@ -245,7 +245,7 @@ export default function AdminDashboardScreen() {
           <Text style={{ fontSize: 40, marginBottom: 12 }}>{'🏢'}</Text>
           <Text style={styles.emptyTitle}>No Admin Access</Text>
           <Text style={styles.emptyText}>
-            {'You are not an admin or founder of any NGO.\nCreate one to get started.'}
+            {'You are not an admin or founder of any Organisation.\nCreate one to get started.'}
           </Text>
           <TouchableOpacity style={styles.createBtn} onPress={handleCreateOrg}>
             <Text style={styles.createBtnText}>+ Create Organisation</Text>
@@ -299,7 +299,7 @@ export default function AdminDashboardScreen() {
           contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         >
           <View style={styles.titleRow}>
-            <Text style={styles.pageTitle}>NGO Dashboard</Text>
+            <Text style={styles.pageTitle}>Organisation Dashboard</Text>
             <View style={styles.livePill}>
               <Text style={styles.liveDot}>{'●'}</Text>
               <Text style={styles.liveText}>Live</Text>
@@ -449,7 +449,7 @@ export default function AdminDashboardScreen() {
               keyboardShouldPersistTaps="handled"
             >
               {adminOrgs.map((org) => {
-                const name     = org.orgName ?? (org as any).name ?? 'NGO';
+                const name     = org.orgName ?? (org as any).name ?? 'Org';
                 const isActive = selectedOrg?.orgId === org.orgId;
                 return (
                   <TouchableOpacity

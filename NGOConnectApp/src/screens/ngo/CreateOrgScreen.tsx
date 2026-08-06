@@ -474,8 +474,8 @@ export default function CreateOrgScreen() {
   // Validate current step
   const validateStep = (): string | null => {
     if (step === 1) {
-      if (!form.orgName.trim())              return 'NGO Name is required.';
-      if (!form.orgTypeLkpId)                return 'Please select an NGO Type.';
+      if (!form.orgName.trim())              return 'Organisation Name is required.';
+      if (!form.orgTypeLkpId)                return 'Please select an Organisation Type.';
       if (!form.registrationNumber.trim())   return 'Registration Number is required.';
       if (!form.categoryLkpId)               return 'Please select a Category.';
     }
@@ -763,11 +763,11 @@ export default function CreateOrgScreen() {
           {step === 1 && (
             <>
               <Field
-                label="NGO Name" required value={form.orgName}
+                label="Organisation Name" required value={form.orgName}
                 onChange={v => set('orgName', v)} placeholder="e.g., Green Earth Foundation"
               />
               <DropdownPicker
-                label="NGO Type" placeholder="Select type"
+                label="Organisation Type" placeholder="Select type"
                 items={orgTypes} selectedId={form.orgTypeLkpId}
                 onSelect={(id) => set('orgTypeLkpId', id)}
               />
@@ -936,8 +936,8 @@ export default function CreateOrgScreen() {
           {step === 5 && (
             <>
               <ReviewSection title="Basic Information">
-                <ReviewRow label="NGO Name"            value={form.orgName} />
-                <ReviewRow label="NGO Type"            value={orgTypes.find(t => t.lookupValueId === form.orgTypeLkpId)?.valueName} />
+                <ReviewRow label="Organisation Name"    value={form.orgName} />
+                <ReviewRow label="Organisation Type"   value={orgTypes.find(t => t.lookupValueId === form.orgTypeLkpId)?.valueName} />
                 <ReviewRow label="Registration No."   value={form.registrationNumber} />
                 <ReviewRow label="Category"            value={categories.find(c => c.lookupValueId === form.categoryLkpId)?.valueName} />
               </ReviewSection>
