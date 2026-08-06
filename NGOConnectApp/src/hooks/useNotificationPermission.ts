@@ -87,6 +87,22 @@ export function useNotificationPermission(isAuthenticated: boolean) {
     storage.set(KEY_SYSTEM_ASKED, true);
 
     try {
+      // On Android 13+: if the permission is already DENIED (e.g. auto-blocked
+      // by device policy or previously denied), requestPermission() returns
+      // immediately without showing the OS dialog.  We detect this by checking
+      // the status BEFORE calling requestPermission — if it is already DENIED,
+      // skip the OS dialog and open App Settings directly so the user can
+      // manually enable notifications.
+      const currentStatus = await messaging().hasPermission();
+      const alreadyDenied =
+        currentStatus === messaging.AuthorizationStatus.DENIED;
+
+      if (alreadyDenied) {
+        setPermState('denied'); // close modal
+        openSettings();         // go straight to App Settings
+        return;
+      }
+
       const status = await messaging().requestPermission();
       const granted =
         status === messaging.AuthorizationStatus.AUTHORIZED ||
@@ -95,7 +111,10 @@ export function useNotificationPermission(isAuthenticated: boolean) {
       if (granted) {
         await registerToken();
       } else {
-        setPermState('show_nudge');
+        // OS dialog was shown but user denied it — open Settings as the next step
+        // so they have a clear path to change their mind without hunting for it.
+        setPermState('denied'); // close modal
+        openSettings();
       }
     } catch {
       setPermState('denied');

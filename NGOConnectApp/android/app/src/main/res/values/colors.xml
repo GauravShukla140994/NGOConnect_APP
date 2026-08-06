@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accent colour shown in the notification drawer on Android 5+ -->
+    <color name="notification_color">#4C6EF5</color>
+</resources>

@@ -518,7 +518,7 @@ const PostCard = React.memo(function PostCard({
                 label: isFollowingOrg ? 'Unfollow NGO' : 'Follow NGO',
                 onPress: handleFollowNGO,
               }] : []),
-              { icon: '↗️', label: 'Share',                                    onPress: () => setShowMenu(false) },
+              // Share — hidden for now, will be added later
               { icon: '🔖', label: bookmarked ? 'Unsave' : 'Save',           onPress: handleSaveToggle },
             ].map(item => (
               <TouchableOpacity key={item.label} style={styles.menuRow} onPress={item.onPress}>
@@ -818,28 +818,9 @@ export default function HomeScreen() {
   const [activePostId,   setActivePostId]   = useState<string | null>(null);
   const [globalMuted,    setGlobalMuted]    = useState(true);
 
-  // ── Notification deep-link: scroll to a specific post ───────────────────
-  // When opened via POST_LIKED / POST_COMMENTED notification, route.params.focusPostId
-  // is set. We scroll to that post and briefly highlight it.
+  // ── Notification deep-link refs (effect is placed after `feed` state below) ──
   const flatListRef      = useRef<any>(null);
   const [focusedPostId, setFocusedPostId] = useState<number | null>(null);
-
-  useEffect(() => {
-    const focusPostId = route.params?.focusPostId as number | undefined;
-    if (!focusPostId || feed.length === 0) return;
-    const idx = feed.findIndex(p => p.postId === focusPostId);
-    if (idx < 0) return;
-    // Short delay so the list has painted before scrolling
-    const timer = setTimeout(() => {
-      flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
-      setFocusedPostId(focusPostId);
-      // Clear highlight after 2.5 s
-      setTimeout(() => setFocusedPostId(null), 2500);
-    }, 350);
-    return () => clearTimeout(timer);
-  // Re-run whenever the route param or feed changes (feed loads async after navigate)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.params?.focusPostId, feed.length]);
 
   // Viewability handler MUST be a stable ref — FlatList freezes it on mount.
   // Never pass an inline arrow function here or video auto-play breaks on scroll.
@@ -855,6 +836,25 @@ export default function HomeScreen() {
   const toggleMute = useCallback(() => setGlobalMuted(m => !m), []);
 
   const [feed,           setFeed]           = useState<Post[]>([]);
+
+  // ── Notification deep-link: scroll to a specific post ───────────────────
+  // Placed here (after `feed` state) so `feed` is defined when the dependency
+  // array is evaluated — TypeScript compiles const→var and hoists it undefined
+  // if the useEffect appears before the useState call that declares feed.
+  useEffect(() => {
+    const focusPostId = route.params?.focusPostId as number | undefined;
+    if (!focusPostId || feed.length === 0) return;
+    const idx = feed.findIndex(p => p.postId === focusPostId);
+    if (idx < 0) return;
+    const timer = setTimeout(() => {
+      flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2, viewOffset: 0 });
+      setFocusedPostId(focusPostId);
+      setTimeout(() => setFocusedPostId(null), 2500);
+    }, 350);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.focusPostId, feed.length]);
+
   const [projects,       setProjects]       = useState<Project[]>([]);
   const [userOrgs,       setUserOrgs]       = useState<Organisation[]>([]);
   // Cursor-based pagination — replaces page number for personalised feed
@@ -1356,6 +1356,7 @@ export default function HomeScreen() {
           }
           onEndReached={onEndReached}
           onEndReachedThreshold={0.3}
+          onScrollToIndexFailed={() => {/* item not yet rendered — ignore */}}
           // ── Video auto-play ─────────────────────────────────────────────────
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}

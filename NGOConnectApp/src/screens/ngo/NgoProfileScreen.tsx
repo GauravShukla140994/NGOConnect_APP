@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Dimensions,
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
   Linking,
   Modal,
@@ -17,7 +19,7 @@ import Video from 'react-native-video';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { fmtDate } from '../../utils/dateUtils';
+import { fmtDate, isProjectExpired } from '../../utils/dateUtils';
 import apiClient from '../../api/apiClient';
 import { getProfile, orgApi } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
@@ -28,6 +30,10 @@ import type { ApiResponse, Organisation, Post, Project, PagedResult } from '../.
 const C = AppConfig.COLORS;
 
 const TABS = ['About', 'Projects', 'Volunteer', 'Gallery'] as const;
+
+// tabContent padding (14) + galleryPostCard padding (12) on each side
+const SCREEN_W      = Dimensions.get('window').width;
+const CARD_MEDIA_W  = SCREEN_W - 2 * 14 - 2 * 12;   // width available inside the gallery card
 type Tab = (typeof TABS)[number];
 
 const CATEGORY_COLOR: Record<string, string> = {
@@ -183,6 +189,12 @@ function ProjectDetailModal({
 
   const alreadyApproved = p?.applicationStatusCode === 'APPROVED';
   const alreadyPending  = p?.applicationStatusCode === 'PENDING';
+  // Same fix as volunteer/ProjectDetailScreen.tsx — this modal is reached from
+  // the NGO profile's Projects tab, which also lists "Past Projects" (completed)
+  // and can surface expired/cancelled ones, so the Apply button needs the same
+  // status + expiry gate there.
+  const isClosed = ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(p?.statusCode ?? '')
+    || isProjectExpired(p ?? {});
 
   return (
     <Modal
@@ -290,8 +302,8 @@ function ProjectDetailModal({
               ) : null}
             </View>
 
-            {/* Session picker for recurring */}
-            {(p.scheduleType ?? '').toUpperCase() === 'RECURRING' && timeLine ? (
+            {/* Session picker for recurring — hidden when project is closed */}
+            {!isClosed && (p.scheduleType ?? '').toUpperCase() === 'RECURRING' && timeLine ? (
               <View style={mdStyles.sessionCard}>
                 <Text style={mdStyles.sessionTitle}>Choose your sessions</Text>
                 <Text style={mdStyles.sessionSub}>Select which sessions you can attend</Text>
@@ -326,6 +338,10 @@ function ProjectDetailModal({
             ) : applied ? (
               <View style={[mdStyles.applyBtn, { backgroundColor: '#10B981' }]}>
                 <Text style={mdStyles.applyBtnText}>✓ Application Submitted</Text>
+              </View>
+            ) : isClosed ? (
+              <View style={[mdStyles.applyBtn, { backgroundColor: C.BORDER }]}>
+                <Text style={[mdStyles.applyBtnText, { color: C.TEXT2 }]}>Applications Closed</Text>
               </View>
             ) : isFull ? (
               <View style={[mdStyles.applyBtn, { backgroundColor: C.BORDER }]}>
@@ -382,14 +398,65 @@ function GalleryPostCard({ post }: { post: Post }) {
   const mediaTypes: string[] = typeof rawTypes === 'string' && rawTypes
     ? rawTypes.split(',').map((t: string) => t.trim())
     : [];
-  const firstIsVideo = (mediaTypes[0] ?? 'IMAGE') === 'VIDEO';
+  const isVideo = (i: number) => (mediaTypes[i] ?? 'IMAGE') === 'VIDEO';
 
-  // Play / mute state for the first media item when it is a video
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [muted,     setMuted]     = useState(true);
+  // Per-slide play/mute state (video items only)
+  const [playingSlide, setPlayingSlide] = useState<number | null>(null);
+  const [muted,        setMuted]        = useState(true);
+  const [activeSlide,  setActiveSlide]  = useState(0);
+
+  const renderSlide = (url: string, i: number) => {
+    if (isVideo(i)) {
+      const playing = playingSlide === i;
+      return (
+        <TouchableOpacity
+          key={i}
+          style={styles.galleryMediaSlide}
+          onPress={() => setPlayingSlide(playing ? null : i)}
+          activeOpacity={1}
+          accessibilityLabel={playing ? 'Pause video' : 'Play video'}
+        >
+          <Video
+            source={{ uri: url }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+            paused={!playing}
+            muted={muted}
+            repeat={true}
+            controls={false}
+          />
+          {!playing && (
+            <View style={styles.galleryVideoCircle}>
+              <Text style={styles.galleryVideoIcon}>▶</Text>
+            </View>
+          )}
+          {playing && (
+            <TouchableOpacity
+              style={styles.galleryMuteBtn}
+              onPress={e => { e.stopPropagation(); setMuted(m => !m); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel={muted ? 'Unmute' : 'Mute'}
+            >
+              <Text style={styles.galleryMuteBtnText}>{muted ? '🔇' : '🔊'}</Text>
+            </TouchableOpacity>
+          )}
+        </TouchableOpacity>
+      );
+    }
+    // Image — square aspect ratio, full width, no crop on height
+    return (
+      <Image
+        key={i}
+        source={{ uri: url }}
+        style={styles.galleryMediaSlide}
+        resizeMode="cover"
+      />
+    );
+  };
 
   return (
     <View style={styles.galleryPostCard}>
+      {/* Header */}
       <View style={styles.galleryPostHeader}>
         {post.profilePhoto
           ? <Image source={{ uri: post.profilePhoto }} style={styles.galleryAvatar} />
@@ -405,49 +472,52 @@ function GalleryPostCard({ post }: { post: Post }) {
         </View>
         <Text style={styles.galleryPostTime}>{post.timeAgo ?? ''}</Text>
       </View>
+
+      {/* Content */}
       <Text style={styles.galleryPostContent} numberOfLines={5}>{post.content}</Text>
 
+      {/* Media carousel — parent is now a FlatList so this horizontal ScrollView
+           captures swipe gestures correctly, matching the home screen pattern exactly. */}
       {mediaUrls.length > 0 && (
-        firstIsVideo ? (
-          /* ── Video: tap to play/pause, mute toggle while playing ── */
-          <TouchableOpacity
-            style={styles.galleryVideoWrap}
-            onPress={() => setIsPlaying(p => !p)}
-            activeOpacity={1}
-            accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
-          >
-            <Video
-              source={{ uri: mediaUrls[0] }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-              paused={!isPlaying}
-              muted={muted}
-              repeat={true}
-              controls={false}
-            />
-            {/* Play button — centered by galleryVideoWrap flex (Video is absoluteFill → out of flow) */}
-            {!isPlaying && (
-              <View style={styles.galleryVideoCircle}>
-                <Text style={styles.galleryVideoIcon}>▶</Text>
-              </View>
-            )}
-            {isPlaying && (
-              <TouchableOpacity
-                style={styles.galleryMuteBtn}
-                onPress={e => { e.stopPropagation(); setMuted(m => !m); }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
-              >
-                <Text style={styles.galleryMuteBtnText}>{muted ? '🔇' : '🔊'}</Text>
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-        ) : (
-          /* ── Image ─────────────────────────────────────────────── */
-          <Image source={{ uri: mediaUrls[0] }} style={styles.galleryPostImage} resizeMode="cover" />
-        )
+        <View style={styles.galleryMediaWrap}>
+          {mediaUrls.length === 1 ? (
+            renderSlide(mediaUrls[0], 0)
+          ) : (
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              scrollEventThrottle={16}
+              onScroll={e => {
+                const slide = Math.round(e.nativeEvent.contentOffset.x / CARD_MEDIA_W);
+                setActiveSlide(slide);
+                if (playingSlide !== null && playingSlide !== slide) setPlayingSlide(null);
+              }}
+            >
+              {mediaUrls.map((url, i) => renderSlide(url, i))}
+            </ScrollView>
+          )}
+
+          {/* Page dots */}
+          {mediaUrls.length > 1 && (
+            <View style={styles.galleryDots}>
+              {mediaUrls.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.galleryDot,
+                    i === activeSlide && styles.galleryDotActive,
+                    isVideo(i) && styles.galleryDotVideo,
+                  ]}
+                />
+              ))}
+            </View>
+          )}
+        </View>
       )}
 
+      {/* Footer */}
       <View style={styles.galleryPostFooter}>
         <Text style={styles.galleryPostMeta}>❤️ {post.likeCount ?? 0}  · 💬 {post.commentCount ?? 0}</Text>
       </View>
@@ -693,10 +763,22 @@ export default function NgoProfileScreen() {
         }
       </View>
 
-      <ScrollView
+      {/* FlatList is the primary scroll container (mirrors home screen architecture).
+           Gallery post cards are list *items* so their inner horizontal ScrollView
+           correctly captures swipe gestures before the vertical parent can steal them.
+           Non-gallery tab content lives in ListHeaderComponent; data=[] for those tabs
+           so only the header renders. */}
+      <FlatList
+        data={tab === 'Gallery' && !feedLoading && feedPosts.length > 0 ? feedPosts : []}
+        keyExtractor={(post: Post) => String(post.postId)}
+        renderItem={({ item: post }: { item: Post }) => (
+          <View style={{ paddingHorizontal: 14 }}>
+            <GalleryPostCard post={post} />
+          </View>
+        )}
         contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
         showsVerticalScrollIndicator={false}
-      >
+        ListHeaderComponent={<>
         {/* Hero */}
         <View style={styles.hero}>
           {org.logoUrl || org.orgLogoUrl
@@ -930,15 +1012,12 @@ export default function NgoProfileScreen() {
                 <Text style={{ fontSize: 36, marginBottom: 10 }}>📭</Text>
                 <Text style={styles.emptyText}>No posts from this NGO yet.</Text>
               </View>
-            ) : (
-              feedPosts.map(post => (
-                <GalleryPostCard key={post.postId} post={post} />
-              ))
-            )
+            ) : null  /* posts render as FlatList items below ListHeaderComponent */
           )}
 
         </View>
-      </ScrollView>
+        </>}
+      />
     </SafeAreaView>
   );
 }
@@ -1080,12 +1159,17 @@ const styles = StyleSheet.create({
   galleryPostRole:      { fontSize: 11, color: C.TEXT3 },
   galleryPostTime:      { fontSize: 11, color: C.TEXT3 },
   galleryPostContent:   { fontSize: 13, color: C.TEXT2, lineHeight: 19, marginBottom: 8 },
-  galleryPostImage:     { width: '100%', height: 180, borderRadius: 10, marginBottom: 8 },
-  galleryVideoWrap:     { width: '100%', height: 180, borderRadius: 10, marginBottom: 8, overflow: 'hidden', backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  galleryVideoOverlay:  { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' }, // unused — kept for safety
+  // Media carousel — square slides, matches CARD_MEDIA_W computed above
+  galleryMediaWrap:     { marginBottom: 8 },
+  galleryMediaSlide:    { width: CARD_MEDIA_W, height: CARD_MEDIA_W, borderRadius: 10, overflow: 'hidden', backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
   galleryVideoCircle:   { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
   galleryVideoIcon:     { color: '#fff', fontSize: 18, marginLeft: 3 },
   galleryMuteBtn:       { position: 'absolute', bottom: 8, right: 8, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  // Page dots
+  galleryDots:          { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5, paddingTop: 6 },
+  galleryDot:           { width: 6, height: 6, borderRadius: 3, backgroundColor: '#ccc' },
+  galleryDotActive:     { backgroundColor: '#555', width: 8, height: 8, borderRadius: 4 },
+  galleryDotVideo:      { backgroundColor: '#aaa' },
   galleryMuteBtnText:   { fontSize: 16 },
   galleryPostFooter:    { borderTopWidth: 1, borderTopColor: C.BORDER, paddingTop: 8 },
   galleryPostMeta:      { fontSize: 12, color: C.TEXT3 },

@@ -31,7 +31,7 @@ import { WebView } from 'react-native-webview';
 import AppConfig from '../../config/AppConfig';
 import { get, apply } from '../../api/project.api';
 import type { Project } from '../../types/api.types';
-import { fmtDate, fmtDateRange, fmtTime, fmtTimeRange } from '../../utils/dateUtils';
+import { fmtDate, fmtDateRange, fmtTime, fmtTimeRange, isProjectExpired } from '../../utils/dateUtils';
 
 const C = AppConfig.COLORS;
 
@@ -246,6 +246,10 @@ export default function ProjectDetailScreen() {
   const spotColor  = isFull ? '#EF4444' : (spots !== null && spots <= 5 ? '#F59E0B' : C.TEAL);
   const isApproved = project.applicationStatusCode === 'APPROVED';
   const isPending  = project.applicationStatusCode === 'PENDING';
+  // Projects reached via Explore > NGO profile > Projects/Volunteer tabs include
+  // past/inactive ones (history), but applying only makes sense on a live project.
+  const isClosed   = ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(project.statusCode ?? '')
+    || isProjectExpired(project as any);
 
   const hasMap = !!(project.latitude && project.longitude);
   const distKm = hasMap && userCoords
@@ -424,6 +428,10 @@ export default function ProjectDetailScreen() {
         ) : applied ? (
           <View style={[s.footerBtn, { backgroundColor: C.TEAL }]}>
             <Text style={s.footerBtnText}>✓ Application Submitted</Text>
+          </View>
+        ) : isClosed ? (
+          <View style={[s.footerBtn, { backgroundColor: C.BORDER }]}>
+            <Text style={[s.footerBtnText, { color: C.TEXT2 }]}>Applications Closed</Text>
           </View>
         ) : isFull ? (
           <View style={[s.footerBtn, { backgroundColor: C.BORDER }]}>

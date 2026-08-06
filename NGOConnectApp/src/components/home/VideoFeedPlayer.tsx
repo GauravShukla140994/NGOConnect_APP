@@ -225,12 +225,18 @@ export default function VideoFeedPlayer({
         </View>
       )}
 
-      {/* ── Paused play-button hint ───────────────────────────────── */}
+      {/* ── Dim overlay when not active (fill only, no flex centering) ── */}
       {!isActive && (
-        <View style={styles.pausedHint} pointerEvents="none">
-          <View style={styles.pausedPlayBtn}>
-            <Text style={styles.pausedPlayIcon}>▶</Text>
-          </View>
+        <View style={styles.pausedDimOverlay} pointerEvents="none" />
+      )}
+
+      {/* ── Play button — direct flex child so container centers it ──── */}
+      {/* Video is absoluteFill → out of flex flow, play circle gets      */}
+      {/* centered by container's alignItems/justifyContent (same pattern */}
+      {/* as SavedPostsScreen's singleVideoWrap).                         */}
+      {!isActive && (
+        <View style={styles.pausedPlayBtn} pointerEvents="none">
+          <Text style={styles.pausedPlayIcon}>▶</Text>
         </View>
       )}
 
@@ -269,6 +275,9 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: '#000',
     overflow: 'hidden',
+    // Centers the play button when paused (Video is absoluteFill → out of flex flow)
+    alignItems:     'center',
+    justifyContent: 'center',
   },
 
   // Progress bar
@@ -378,13 +387,13 @@ const styles = StyleSheet.create({
     zIndex:    20,
   },
 
-  // Paused play hint (when off-screen / not yet active)
-  pausedHint: {
+  // Dim overlay — fills the frame when not active (no flex centering here)
+  pausedDimOverlay: {
     ...StyleSheet.absoluteFillObject,
-    alignItems:     'center',
-    justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.18)',
   },
+  // Play button — direct flex child of container, centered by container's
+  // alignItems/justifyContent (same pattern as SavedPostsScreen)
   pausedPlayBtn: {
     width:           52,
     height:          52,

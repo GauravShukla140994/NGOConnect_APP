@@ -759,6 +759,7 @@ export default function CommunityScreen() {
           refreshing={refreshing}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
+          onScrollToIndexFailed={() => {/* item not yet rendered — ignore */}}
           ListFooterComponent={
             loadingMore
               ? <ActivityIndicator size="small" color={C.PRIMARY} style={{ marginVertical: 12 }} />

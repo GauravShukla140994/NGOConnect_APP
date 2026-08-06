@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- File download: write to Downloads folder on Android 9 and below (API 28-) -->
@@ -22,6 +23,20 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+
+      <!-- FCM: use our white monochrome icon for the status bar (not the coloured launcher icon).
+           tools:replace overrides the default declared by react-native-firebase_messaging. -->
+      <meta-data
+          android:name="com.google.firebase.messaging.default_notification_icon"
+          android:resource="@drawable/ic_notification"
+          tools:replace="android:resource" />
+      <!-- FCM: accent colour shown in the notification drawer on Android 5+.
+           tools:replace overrides @color/white declared by react-native-firebase_messaging. -->
+      <meta-data
+          android:name="com.google.firebase.messaging.default_notification_color"
+          android:resource="@color/notification_color"
+          tools:replace="android:resource" />
+
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
