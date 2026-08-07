@@ -108,6 +108,9 @@ export const projectApi = {
   qrCheckIn: (projectId: number, qrToken: string) =>
     apiClient.post<ApiResponse<null>>(`/project/${projectId}/sessions/checkin`, { qrToken }),
 
+  selfCheckIn: (projectId: number) =>
+    apiClient.post<ApiResponse<null>>(`/project/${projectId}/self-checkin`),
+
   // Applications
   apply: (projectId: number, payload?: { motivation?: string; requestedSessions?: string }) =>
     apiClient.post<ApiResponse<{ applicationId: number }>>(`/project/${projectId}/apply`, payload ?? {}),

@@ -72,7 +72,7 @@ const LOCATION_TYPES: Array<{ code: LocationTypeCode; label: string; icon: strin
 
 const DEFAULT_FORM: ProjectForm = {
   title: '', categoryName: '', description: '',
-  maxVolunteers: '', isPublic: true, requiresApproval: false,
+  maxVolunteers: '', isPublic: true, requiresApproval: true,
   scheduleType: 'ONE_TIME',
   date: '', startTime: '', endTime: '',
   startDate: '', endDate: '',
@@ -135,6 +135,19 @@ function formatHM(d: Date): string {
     String(d.getHours()).padStart(2, '0'),
     String(d.getMinutes()).padStart(2, '0'),
   ].join(':');
+}
+
+/** Midnight today (local) — used as minimumDate for date pickers. */
+function todayMidnight(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/** True if the "DD-MM-YYYY" string is strictly before today's date. */
+function isDateInPast(ddmmyyyy: string): boolean {
+  if (!ddmmyyyy) return false;
+  return parseDMY(ddmmyyyy) < todayMidnight();
 }
 
 // ---------------------------------------------------------------------------
@@ -591,14 +604,33 @@ export default function CreateProjectScreen() {
       if (!form.categoryName)    { Alert.alert('Required', 'Please select a category.');      return false; }
     }
     if (step === 2) {
-      if (form.scheduleType === 'ONE_TIME' && !form.date) {
-        Alert.alert('Required', 'Please enter the project date.'); return false;
+      if (form.scheduleType === 'ONE_TIME') {
+        if (!form.date)      { Alert.alert('Required', 'Please enter the project date.');   return false; }
+        if (!isEdit && isDateInPast(form.date)) {
+          Alert.alert('Invalid Date', 'Project date cannot be in the past.'); return false;
+        }
+        if (!form.startTime) { Alert.alert('Required', 'Please select a start time.');      return false; }
+        if (!form.endTime)   { Alert.alert('Required', 'Please select an end time.');       return false; }
       }
-      if (form.scheduleType === 'RECURRING' && (!form.startDate || !form.endDate || form.activeDays.length === 0)) {
-        Alert.alert('Required', 'Please fill all recurring schedule fields.'); return false;
+      if (form.scheduleType === 'RECURRING') {
+        if (!form.startDate || !form.endDate || form.activeDays.length === 0) {
+          Alert.alert('Required', 'Please fill all recurring schedule fields.'); return false;
+        }
+        if (!isEdit && isDateInPast(form.startDate)) {
+          Alert.alert('Invalid Date', 'Start date cannot be in the past.'); return false;
+        }
+        if (!form.startTime) { Alert.alert('Required', 'Please select a start time.');      return false; }
+        if (!form.endTime)   { Alert.alert('Required', 'Please select an end time.');       return false; }
       }
-      if (form.scheduleType === 'FLEXIBLE' && (!form.startDate || !form.endDate)) {
-        Alert.alert('Required', 'Please enter the availability window.'); return false;
+      if (form.scheduleType === 'FLEXIBLE') {
+        if (!form.startDate || !form.endDate) {
+          Alert.alert('Required', 'Please enter the availability window.'); return false;
+        }
+        if (!isEdit && isDateInPast(form.startDate)) {
+          Alert.alert('Invalid Date', 'Available from date cannot be in the past.'); return false;
+        }
+        if (!form.startTime) { Alert.alert('Required', 'Please select a start time.');      return false; }
+        if (!form.endTime)   { Alert.alert('Required', 'Please select an end time.');       return false; }
       }
     }
     return true;
@@ -679,6 +711,7 @@ export default function CreateProjectScreen() {
           value={pickerDate}
           mode={pickerMode}
           display="default"
+          minimumDate={pickerMode === 'date' ? todayMidnight() : undefined}
           onChange={onPickerChange}
         />
       );
@@ -704,6 +737,7 @@ export default function CreateProjectScreen() {
               value={pickerDate}
               mode={pickerMode}
               display="spinner"
+              minimumDate={pickerMode === 'date' ? todayMidnight() : undefined}
               onChange={onPickerChange}
               style={{ height: 200 }}
             />
@@ -797,11 +831,11 @@ export default function CreateProjectScreen() {
               onPress={() => openDatePicker('date')} />
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <View style={{ flex: 1 }}>
-                <TimePickerButton label="Start Time"
+                <TimePickerButton label="Start Time *"
                   value={form.startTime} onPress={() => openTimePicker('startTime')} />
               </View>
               <View style={{ flex: 1 }}>
-                <TimePickerButton label="End Time"
+                <TimePickerButton label="End Time *"
                   value={form.endTime} onPress={() => openTimePicker('endTime')} />
               </View>
             </View>
@@ -832,11 +866,11 @@ export default function CreateProjectScreen() {
             </View>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <View style={{ flex: 1 }}>
-                <TimePickerButton label="Start Time"
+                <TimePickerButton label="Start Time *"
                   value={form.startTime} onPress={() => openTimePicker('startTime')} />
               </View>
               <View style={{ flex: 1 }}>
-                <TimePickerButton label="End Time"
+                <TimePickerButton label="End Time *"
                   value={form.endTime} onPress={() => openTimePicker('endTime')} />
               </View>
             </View>
@@ -856,6 +890,17 @@ export default function CreateProjectScreen() {
                   onPress={() => openDatePicker('endDate')} />
               </View>
             </View>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <TimePickerButton label="Start Time *"
+                  value={form.startTime} onPress={() => openTimePicker('startTime')} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <TimePickerButton label="End Time *"
+                  value={form.endTime} onPress={() => openTimePicker('endTime')} />
+              </View>
+            </View>
+            {dur ? <Text style={s.durationBadge}>{dur}</Text> : null}
             <FormInput label="Minimum Hours" value={form.minHours}
               onChangeText={v => set('minHours', v)} placeholder="e.g., 4"
               keyboardType="number-pad" />
@@ -1018,8 +1063,12 @@ export default function CreateProjectScreen() {
           {form.skills.map(sk => (
             <View key={sk} style={[s.chip, { backgroundColor: C.PRIMARY + '18', borderColor: C.PRIMARY }]}>
               <Text style={[s.chipText, { color: C.PRIMARY }]}>{sk}</Text>
-              <TouchableOpacity onPress={() => removeSkill(sk)} style={{ marginLeft: 4 }}>
-                <Text style={{ color: C.PRIMARY, fontSize: 14, fontWeight: '700' }}>x</Text>
+              <TouchableOpacity
+                onPress={() => removeSkill(sk)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={{ marginLeft: 6, padding: 4 }}
+              >
+                <Text style={{ color: C.PRIMARY, fontSize: 16, fontWeight: '700', lineHeight: 18 }}>×</Text>
               </TouchableOpacity>
             </View>
           ))}

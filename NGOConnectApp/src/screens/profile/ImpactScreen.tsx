@@ -18,6 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getImpactSummary, withdrawApplication } from '../../api/user.api';
+import { projectApi } from '../../api/project.api';
 import type { ImpactSummary, UserApplication, UserBadge } from '../../types/api.types';
 import QRScannerModal     from './QRScannerModal';
 import ProjectDetailModal from './ProjectDetailModal';
@@ -211,8 +212,8 @@ function AppliedCard({
 // ─── Upcoming Card ────────────────────────────────────────────────────────────
 
 function UpcomingCard({
-  app, onPress, onScanQR,
-}: { app: UserApplication; onPress: () => void; onScanQR: () => void }) {
+  app, onPress, onScanQR, onSelfCheckIn,
+}: { app: UserApplication; onPress: () => void; onScanQR: () => void; onSelfCheckIn: () => void }) {
   const typeLabel = app.scheduleTypeCode === 'RECURRING' ? 'Recurring' : 'Event';
 
   return (
@@ -232,7 +233,7 @@ function UpcomingCard({
         <Text style={s.scheduleLine}>{scheduleOneLiner(app)}</Text>
       </View>
 
-      {/* QR hint + scan button — only shown when QR attendance is required and not yet checked in */}
+      {/* QR hint + scan button — shown when admin approval required */}
       {app.requiresApproval && !app.isCheckedIn && (
         <>
           <View style={s.hintBox}>
@@ -248,7 +249,23 @@ function UpcomingCard({
         </>
       )}
 
-      {/* Attendance confirmed — shown after successful QR scan */}
+      {/* Self check-in button — shown for open-signup projects (no QR required) */}
+      {!app.requiresApproval && !app.isCheckedIn && (
+        <>
+          <View style={s.hintBox}>
+            <Text style={s.hintText}>
+              At the venue? Tap below during the session window to mark your attendance.
+            </Text>
+          </View>
+          <View style={[s.cardRow, { alignItems: 'center', gap: 8 }]}>
+            <TouchableOpacity style={s.scanQrBtn} onPress={onSelfCheckIn} activeOpacity={0.85}>
+              <Text style={s.scanQrBtnText}>✅  Mark My Attendance</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {/* Attendance confirmed — shown after successful check-in */}
       {app.isCheckedIn && (
         <View style={[s.hintBox, { backgroundColor: '#D1FAE5', borderColor: '#059669' }]}>
           <Text style={[s.hintText, { color: '#059669', fontWeight: '600' }]}>
@@ -578,6 +595,20 @@ export default function ImpactScreen() {
     setQrVisible(true);
   };
 
+  const handleSelfCheckIn = async (app: UserApplication) => {
+    try {
+      const res = await projectApi.selfCheckIn(app.projectId);
+      if (res.data?.isSuccess === 1) {
+        Alert.alert('Attendance Marked', res.data.message ?? 'Your attendance has been recorded. Thank you!');
+        onRefresh();
+      } else {
+        Alert.alert('Check-in Failed', res.data?.message ?? 'Please try again.');
+      }
+    } catch (err: any) {
+      Alert.alert('Check-in Failed', err?.response?.data?.message ?? 'Please check your connection.');
+    }
+  };
+
   const onShare = useCallback(async () => {
     try {
       await Share.share({
@@ -753,6 +784,7 @@ export default function ImpactScreen() {
                         app={app}
                         onPress={() => openDetail(app)}
                         onScanQR={() => openQR(app)}
+                        onSelfCheckIn={() => handleSelfCheckIn(app)}
                       />
                     ))}
                     {tabTotals.Upcoming > TAB_LIMIT && (
