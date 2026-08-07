@@ -316,16 +316,18 @@ const PostCard = React.memo(function PostCard({
   post,
   onLike,
   onCommentPress,
+  onDelete,
   isActive,
   globalMuted,
   onToggleMute,
 }: {
   post: Post;
-  onLike: (id: number, liked: boolean) => void;
+  onLike:         (id: number, liked: boolean) => void;
   onCommentPress: (post: Post) => void;
-  isActive:      boolean;
-  globalMuted:   boolean;
-  onToggleMute:  () => void;
+  onDelete?:      (postId: number) => void;   // undefined = no delete option shown
+  isActive:       boolean;
+  globalMuted:    boolean;
+  onToggleMute:   () => void;
 }) {
   const nav    = useNavigation<any>();
   const insets = useSafeAreaInsets();
@@ -431,6 +433,31 @@ const PostCard = React.memo(function PostCard({
     setTimeout(() => setShowReport(true), 350);
   };
 
+  const handleDeletePost = useCallback(() => {
+    setShowMenu(false);
+    setTimeout(() => {
+      Alert.alert(
+        'Delete Post',
+        'Are you sure you want to delete this post? This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await feedApi.deletePost(post.postId!);
+                onDelete?.(post.postId!);
+              } catch {
+                Alert.alert('Error', 'Could not delete post. Please try again.');
+              }
+            },
+          },
+        ],
+      );
+    }, 350);
+  }, [post.postId, onDelete]);
+
   const submitReport = async () => {
     if (!selectedReason) return;
     setReportSubmitting(true);
@@ -526,6 +553,12 @@ const PostCard = React.memo(function PostCard({
                 <Text style={styles.menuLabel}>{item.label}</Text>
               </TouchableOpacity>
             ))}
+            {!!user?.userId && Number(user.userId) === Number(post.userId) && (
+              <TouchableOpacity style={[styles.menuRow, styles.menuRowReport]} onPress={handleDeletePost}>
+                <Text style={styles.menuIcon}>🗑️</Text>
+                <Text style={[styles.menuLabel, { color: '#DC2626' }]}>Delete Post</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={[styles.menuRow, styles.menuRowReport]} onPress={openReport}>
               <Text style={styles.menuIcon}>🚩</Text>
               <Text style={[styles.menuLabel, { color: '#DC2626' }]}>Report</Text>
@@ -1150,6 +1183,10 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const handleDeletePost = useCallback((postId: number) => {
+    setFeed(prev => prev.filter(p => p.postId !== postId));
+  }, []);
+
   // Derive active-org values BEFORE the FAB callback — required so activeOrg
   // is in scope when useCallback evaluates its dependency array.
   // An org is active-eligible only when BOTH the user's membership AND the org itself are approved
@@ -1458,6 +1495,7 @@ export default function HomeScreen() {
                 post={item}
                 onLike={handleLike}
                 onCommentPress={handleCommentPress}
+                onDelete={handleDeletePost}
                 isActive={String(item.postId) === activePostId}
                 globalMuted={globalMuted}
                 onToggleMute={toggleMute}

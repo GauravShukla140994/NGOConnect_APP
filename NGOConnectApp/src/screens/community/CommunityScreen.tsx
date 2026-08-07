@@ -16,7 +16,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Geolocation from '@react-native-community/geolocation';
 import AppConfig from '../../config/AppConfig';
-import { getCommunityFeed, acknowledgePost, voteOnPoll, likePost } from '../../api/community.api';
+import { getCommunityFeed, acknowledgePost, voteOnPoll, likePost, deleteCommunityPost } from '../../api/community.api';
 import { feedApi } from '../../api/feed.api';
 import { sosApi } from '../../api/sos.api';
 import { getMyOrgs } from '../../api/user.api';
@@ -501,6 +501,19 @@ export default function CommunityScreen() {
     setCommentPostId(postId);
   }, []);
 
+  const handleDeleteCommunityPost = useCallback(async (communityPostId: number) => {
+    // Optimistic removal — post disappears immediately
+    setPosts((prev) => prev.filter((p) => p.communityPostId !== communityPostId));
+    try {
+      await deleteCommunityPost(communityPostId);
+    } catch {
+      // If the API fails, just show an error — we don't restore the post
+      // to avoid a confusing re-appearance. User can refresh to see correct state.
+      Alert.alert('Error', 'Could not delete the post. Please try again.');
+      fetchFeed(1, true);   // refresh to restore correct list
+    }
+  }, [fetchFeed]);
+
   const handleCommentCountChange = useCallback((postId: number, delta: number) => {
     setPosts((prev) => prev.map((p) =>
       p.communityPostId === postId
@@ -756,6 +769,8 @@ export default function CommunityScreen() {
                 onAck={handleAck}
                 onVote={handleVote}
                 onComment={handleComment}
+                onDelete={handleDeleteCommunityPost}
+                currentUserId={user?.userId}
               />
             </View>
           )}

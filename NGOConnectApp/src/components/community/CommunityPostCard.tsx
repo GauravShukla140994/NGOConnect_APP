@@ -22,10 +22,14 @@ import { UserAvatar } from '../ui';
 const C = AppConfig.COLORS;
 
 // ── UTC-safe time helper ──────────────────────────────────────────────────────
-// MySQL DATETIME has no timezone suffix — JS parses without 'Z' as LOCAL time.
-// Same pattern as FeedCommentsModal / CommunityScreen.
+// MySQL DATETIME may come as "YYYY-MM-DD HH:mm:ss" (space, no T, no Z).
+// Appending 'Z' to a space-separated string gives invalid ISO 8601 — Hermes
+// ignores the Z and parses as local, creating a 5.5h offset for IST users.
+// Fix: normalise space→T first, THEN append Z. Same pattern as CommunityScreen.
 function asUtc(iso: string): Date {
-  return new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
+  if (!iso) { return new Date(NaN); }
+  const s = iso.replace(' ', 'T');   // "2026-08-07 12:00:00" → "2026-08-07T12:00:00"
+  return new Date(s.endsWith('Z') || s.includes('+') ? s : s + 'Z');
 }
 function timeAgoStr(iso: string | undefined | null): string {
   if (!iso) { return ''; }
@@ -89,7 +93,11 @@ const ROLE_CHIP: Record<string, { bg: string; color: string }> = {
   Member:    { bg: '#F0FDF4', color: '#15803D' },
 };
 
-function AuthorRow({ item, rightSlot }: { item: CommunityPost; rightSlot?: React.ReactNode }) {
+function AuthorRow({ item, rightSlot, onMorePress }: {
+  item: CommunityPost;
+  rightSlot?:   React.ReactNode;
+  onMorePress?: () => void;       // when provided, shows ••• button (own-post delete)
+}) {
   const name = item.authorName ?? item.fullName ?? 'Member';
   const rc = item.roleName ? (ROLE_CHIP[item.roleName] ?? ROLE_CHIP.Member) : null;
   return (
@@ -107,6 +115,16 @@ function AuthorRow({ item, rightSlot }: { item: CommunityPost; rightSlot?: React
         <Text style={css.timeAgo}>{timeAgoStr(item.createdAt)}</Text>
       </View>
       {rightSlot}
+      {onMorePress ? (
+        <TouchableOpacity
+          onPress={onMorePress}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityLabel="Delete post"
+          style={{ paddingLeft: 8 }}
+        >
+          <Text style={css.moreBtnTxt}>🗑️</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -144,11 +162,12 @@ function CardFooter({
 // ══════════════════════════════════════════════════════════════════════════════
 // 1. ANNOUNCEMENT
 // ══════════════════════════════════════════════════════════════════════════════
-function AnnouncementCard({ item, onLike, onAck, onComment }: {
+function AnnouncementCard({ item, onLike, onAck, onComment, onMorePress }: {
   item: CommunityPost;
-  onLike: (id: number) => void;
-  onAck:  (id: number) => void;
-  onComment: (id: number) => void;
+  onLike:      (id: number) => void;
+  onAck:       (id: number) => void;
+  onComment:   (id: number) => void;
+  onMorePress?: () => void;
 }) {
   const acked = item.isAcknowledgedByMe ?? item.isAcknowledged ?? false;
   return (
@@ -162,7 +181,7 @@ function AnnouncementCard({ item, onLike, onAck, onComment }: {
         ) : null}
       </View>
       <View style={css.body}>
-        <AuthorRow item={item} />
+        <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
         {item.content ? <Text style={css.content}>{item.content}</Text> : null}
         <View style={css.ackRow}>
@@ -184,16 +203,17 @@ function AnnouncementCard({ item, onLike, onAck, onComment }: {
 // ══════════════════════════════════════════════════════════════════════════════
 // 2. QUESTION
 // ══════════════════════════════════════════════════════════════════════════════
-function QuestionCard({ item, onLike, onComment }: {
+function QuestionCard({ item, onLike, onComment, onMorePress }: {
   item: CommunityPost;
-  onLike:    (id: number) => void;
-  onComment: (id: number) => void;
+  onLike:      (id: number) => void;
+  onComment:   (id: number) => void;
+  onMorePress?: () => void;
 }) {
   return (
     <View style={css.card}>
       <TypeChip typeCode="QUESTION" />
       <View style={css.body}>
-        <AuthorRow item={item} />
+        <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
         {item.content ? <Text style={css.content}>{item.content}</Text> : null}
 
@@ -236,11 +256,12 @@ function QuestionCard({ item, onLike, onComment }: {
 // ══════════════════════════════════════════════════════════════════════════════
 // 3. POLL
 // ══════════════════════════════════════════════════════════════════════════════
-function PollCard({ item, onLike, onVote, onComment }: {
+function PollCard({ item, onLike, onVote, onComment, onMorePress }: {
   item: CommunityPost;
-  onLike:    (id: number) => void;
-  onVote:    (pid: number, oid: number) => void;
-  onComment: (id: number) => void;
+  onLike:      (id: number) => void;
+  onVote:      (pid: number, oid: number) => void;
+  onComment:   (id: number) => void;
+  onMorePress?: () => void;
 }) {
   const opts     = item.pollOptions ?? [];
   const total    = opts.reduce((s, o) => s + o.voteCount, 0);
@@ -271,6 +292,7 @@ function PollCard({ item, onLike, onVote, onComment }: {
       <View style={css.body}>
         <AuthorRow
           item={item}
+          onMorePress={onMorePress}
           rightSlot={
             expiryLabel ? (
               <View style={[css.expiryPill, pollClosed && { backgroundColor: '#FEE2E2' }]}>
@@ -345,10 +367,11 @@ function PollCard({ item, onLike, onVote, onComment }: {
 // ══════════════════════════════════════════════════════════════════════════════
 // 4. EVENT UPDATE
 // ══════════════════════════════════════════════════════════════════════════════
-function EventUpdateCard({ item, onLike, onComment }: {
+function EventUpdateCard({ item, onLike, onComment, onMorePress }: {
   item: CommunityPost;
-  onLike:    (id: number) => void;
-  onComment: (id: number) => void;
+  onLike:      (id: number) => void;
+  onComment:   (id: number) => void;
+  onMorePress?: () => void;
 }) {
   const [rsvped, setRsvped] = useState(item.isRsvped ?? false);
 
@@ -362,7 +385,7 @@ function EventUpdateCard({ item, onLike, onComment }: {
     <View style={css.card}>
       <TypeChip typeCode="EVENT_UPDATE" />
       <View style={css.body}>
-        <AuthorRow item={item} />
+        <AuthorRow item={item} onMorePress={onMorePress} />
 
         {/* Change badge — what changed + which event */}
         {(changeLabel || eventName) ? (
@@ -397,10 +420,11 @@ function EventUpdateCard({ item, onLike, onComment }: {
 // ══════════════════════════════════════════════════════════════════════════════
 // 5. VOLUNTEER REQUEST
 // ══════════════════════════════════════════════════════════════════════════════
-function VolRequestCard({ item, onLike, onComment }: {
+function VolRequestCard({ item, onLike, onComment, onMorePress }: {
   item: CommunityPost;
-  onLike:    (id: number) => void;
-  onComment: (id: number) => void;
+  onLike:      (id: number) => void;
+  onComment:   (id: number) => void;
+  onMorePress?: () => void;
 }) {
   const [volunteered, setVolunteered] = useState(item.isVolunteered ?? false);
   const filled = item.filledCount ?? 0;
@@ -413,7 +437,7 @@ function VolRequestCard({ item, onLike, onComment }: {
     <View style={css.card}>
       <TypeChip typeCode="VOL_REQUEST" />
       <View style={css.body}>
-        <AuthorRow item={item} />
+        <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
         {/* content = skills text entered in the form */}
         {item.content ? <Text style={css.content}>{item.content}</Text> : null}
@@ -462,9 +486,10 @@ function VolRequestCard({ item, onLike, onComment }: {
 const TASK_STATUSES = ['Open', 'In Progress', 'Completed'] as const;
 type TaskStatus = typeof TASK_STATUSES[number];
 
-function TaskCard({ item, onComment }: {
+function TaskCard({ item, onComment, onMorePress }: {
   item: CommunityPost;
-  onComment: (id: number) => void;
+  onComment:   (id: number) => void;
+  onMorePress?: () => void;
 }) {
   const [status, setStatus] = useState<TaskStatus>((item.taskStatus as TaskStatus) ?? 'Open');
 
@@ -490,6 +515,7 @@ function TaskCard({ item, onComment }: {
       <View style={css.body}>
         <AuthorRow
           item={item}
+          onMorePress={onMorePress}
           rightSlot={
             <View style={[css.statusPill, { backgroundColor: active.bg }]}>
               <Text style={[css.statusPillTxt, { color: active.color }]}>{status}</Text>
@@ -578,10 +604,11 @@ function getMimeType(fileName: string): string {
   return 'application/octet-stream';
 }
 
-function ResourceCard({ item, onLike, onComment }: {
+function ResourceCard({ item, onLike, onComment, onMorePress }: {
   item: CommunityPost;
-  onLike:    (id: number) => void;
-  onComment: (id: number) => void;
+  onLike:      (id: number) => void;
+  onComment:   (id: number) => void;
+  onMorePress?: () => void;
 }) {
   const [dlState, setDlState] = useState<Record<number, DlState>>({});
 
@@ -624,7 +651,7 @@ function ResourceCard({ item, onLike, onComment }: {
     <View style={css.card}>
       <TypeChip typeCode="RESOURCE" />
       <View style={css.body}>
-        <AuthorRow item={item} />
+        <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
         {item.content ? <Text style={css.content}>{item.content}</Text> : null}
 
@@ -671,16 +698,17 @@ function ResourceCard({ item, onLike, onComment }: {
 // ══════════════════════════════════════════════════════════════════════════════
 // 8. DISCUSSION
 // ══════════════════════════════════════════════════════════════════════════════
-function DiscussionCard({ item, onLike, onComment }: {
+function DiscussionCard({ item, onLike, onComment, onMorePress }: {
   item: CommunityPost;
-  onLike:    (id: number) => void;
-  onComment: (id: number) => void;
+  onLike:      (id: number) => void;
+  onComment:   (id: number) => void;
+  onMorePress?: () => void;
 }) {
   return (
     <View style={css.card}>
       <TypeChip typeCode="DISCUSSION" />
       <View style={css.body}>
-        <AuthorRow item={item} />
+        <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
         {item.content ? <Text style={css.content}>{item.content}</Text> : null}
 
@@ -730,34 +758,53 @@ function DiscussionCard({ item, onLike, onComment }: {
 // MAIN EXPORT — switchboard
 // ══════════════════════════════════════════════════════════════════════════════
 export interface CommunityPostCardProps {
-  item:      CommunityPost;
-  onLike:    (id: number) => void;
-  onAck:     (id: number) => void;
-  onVote:    (pid: number, oid: number) => void;
-  onComment: (id: number) => void;
+  item:           CommunityPost;
+  onLike:         (id: number) => void;
+  onAck:          (id: number) => void;
+  onVote:         (pid: number, oid: number) => void;
+  onComment:      (id: number) => void;
+  /** Pass to enable the ••• delete option — only shown when currentUserId === item.userId */
+  onDelete?:      (communityPostId: number) => void;
+  currentUserId?: number;
 }
 
-export default function CommunityPostCard({ item, onLike, onAck, onVote, onComment }: CommunityPostCardProps) {
+export default function CommunityPostCard({
+  item, onLike, onAck, onVote, onComment, onDelete, currentUserId,
+}: CommunityPostCardProps) {
   const typeCode = (item.postTypeLkpCode ?? item.postType ?? 'DISCUSSION').toUpperCase();
+
+  // 🗑️ button: only the post's own author sees it
+  const handleMorePress = (onDelete && !!currentUserId && Number(currentUserId) === Number(item.userId))
+    ? () => {
+        Alert.alert(
+          'Delete Post',
+          'Are you sure you want to delete this post? This cannot be undone.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => onDelete(item.communityPostId) },
+          ],
+        );
+      }
+    : undefined;
 
   switch (typeCode) {
     case 'ANNOUNCEMENT':
-      return <AnnouncementCard item={item} onLike={onLike} onAck={onAck} onComment={onComment} />;
+      return <AnnouncementCard item={item} onLike={onLike} onAck={onAck} onComment={onComment} onMorePress={handleMorePress} />;
     case 'QUESTION':
-      return <QuestionCard item={item} onLike={onLike} onComment={onComment} />;
+      return <QuestionCard item={item} onLike={onLike} onComment={onComment} onMorePress={handleMorePress} />;
     case 'POLL':
-      return <PollCard item={item} onLike={onLike} onVote={onVote} onComment={onComment} />;
+      return <PollCard item={item} onLike={onLike} onVote={onVote} onComment={onComment} onMorePress={handleMorePress} />;
     case 'EVENT_UPDATE':
-      return <EventUpdateCard item={item} onLike={onLike} onComment={onComment} />;
+      return <EventUpdateCard item={item} onLike={onLike} onComment={onComment} onMorePress={handleMorePress} />;
     case 'VOL_REQUEST':
-      return <VolRequestCard item={item} onLike={onLike} onComment={onComment} />;
+      return <VolRequestCard item={item} onLike={onLike} onComment={onComment} onMorePress={handleMorePress} />;
     case 'TASK':
-      return <TaskCard item={item} onComment={onComment} />;
+      return <TaskCard item={item} onComment={onComment} onMorePress={handleMorePress} />;
     case 'RESOURCE':
-      return <ResourceCard item={item} onLike={onLike} onComment={onComment} />;
+      return <ResourceCard item={item} onLike={onLike} onComment={onComment} onMorePress={handleMorePress} />;
     case 'DISCUSSION':
     default:
-      return <DiscussionCard item={item} onLike={onLike} onComment={onComment} />;
+      return <DiscussionCard item={item} onLike={onLike} onComment={onComment} onMorePress={handleMorePress} />;
   }
 }
 
@@ -788,6 +835,7 @@ const css = StyleSheet.create({
   rolePill:       { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   rolePillTxt:    { fontSize: 9, fontWeight: '700' },
   timeAgo:        { fontSize: 10, color: C.TEXT3, marginTop: 1 },
+  moreBtnTxt:     { fontSize: 16 },
   expiryPill:     { backgroundColor: '#F0FDF4', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   expiryTxt:      { fontSize: 10, color: '#0D9488', fontWeight: '600' },
 
