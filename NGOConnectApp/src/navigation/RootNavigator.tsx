@@ -78,9 +78,13 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
       return { screen: 'Home' };
     case 'POST_LIKED':
     case 'POST_COMMENTED':
+    case 'POST_REPORTED':
       return refId
         ? { screen: 'Home', params: { focusPostId: refId } }
         : { screen: 'Home' };
+    // Sent to org admins — open Posts tab filtered to Reported sub-tab
+    case 'POST_REPORTED_ADMIN':
+      return { screen: 'AdminVolunteers', params: { initialTab: 'posts', initialPostsTab: 'reported' } };
     // CAMPAIGN: if deepLink is present the caller handles it before resolveScreen.
     // This fallback fires only when there is no deepLink.
     case 'CAMPAIGN':

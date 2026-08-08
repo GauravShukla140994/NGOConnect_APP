@@ -52,6 +52,10 @@ export const communityApi = {
   pinPost: (communityPostId: number, isPinned: boolean) =>
     apiClient.patch<ApiResponse<null>>(`/community/post/${communityPostId}/pin`, { isPinned }),
 
+  // Admin-only: toggles IsPinned via POST /org/{orgId}/community-posts/{postId}/pin
+  pinAdminPost: (orgId: number, communityPostId: number) =>
+    apiClient.post<ApiResponse<null>>(`/org/${orgId}/community-posts/${communityPostId}/pin`),
+
   deletePost: (communityPostId: number) =>
     apiClient.delete<ApiResponse<null>>(`/community/post/${communityPostId}`),
 
@@ -73,7 +77,8 @@ export const createCommunityPost = (data: CreatePostPayload) => communityApi.cre
 export const createCommunityPoll = (data: CreatePollPayload) => communityApi.createPoll(data);
 export const acknowledgePost     = (communityPostId: number) => communityApi.acknowledgePost(communityPostId);
 export const voteOnPoll          = (pollId: number, pollOptionId: number) => communityApi.voteOnPoll(pollId, pollOptionId);
-export const pinCommunityPost    = (communityPostId: number, isPinned: boolean) => communityApi.pinPost(communityPostId, isPinned);
+export const pinCommunityPost      = (communityPostId: number, isPinned: boolean) => communityApi.pinPost(communityPostId, isPinned);
+export const pinAdminCommunityPost = (orgId: number, communityPostId: number) => communityApi.pinAdminPost(orgId, communityPostId);
 export const deleteCommunityPost = (communityPostId: number) => communityApi.deletePost(communityPostId);
 export const likePost            = (communityPostId: number) => communityApi.likePost(communityPostId);
 export const getComments         = (communityPostId: number) => communityApi.getComments(communityPostId);

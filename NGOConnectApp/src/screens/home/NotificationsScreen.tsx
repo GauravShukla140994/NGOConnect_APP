@@ -41,6 +41,8 @@ function notifMeta(type: string): { emoji: string; color: string } {
     case 'NEW_FEED_POST':              return { emoji: '📝', color: C.PRIMARY };
     case 'POST_LIKED':                 return { emoji: '❤️', color: '#E74C3C' };
     case 'POST_COMMENTED':             return { emoji: '💬', color: C.PRIMARY };
+    case 'POST_REPORTED':              return { emoji: '⚠️', color: '#D97706' };
+    case 'POST_REPORTED_ADMIN':        return { emoji: '🚨', color: '#DC2626' };
     case 'CAMPAIGN':                   return { emoji: '📣', color: '#7C3AED' };
     case 'COMMUNITY_POST':             return { emoji: '📢', color: C.PRIMARY };
     case 'NEW_POLL':                   return { emoji: '📊', color: C.TEAL };
@@ -89,9 +91,13 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
       return { screen: 'Home' };
     case 'POST_LIKED':
     case 'POST_COMMENTED':
+    case 'POST_REPORTED':
       return refId
         ? { screen: 'Home', params: { focusPostId: refId } }
         : { screen: 'Home' };
+    // Sent to org admins — open Posts tab on Reported sub-tab
+    case 'POST_REPORTED_ADMIN':
+      return { screen: 'AdminVolunteers', params: { initialTab: 'posts', initialPostsTab: 'reported' } };
     // CAMPAIGN: deep link handled separately in onPressNotif; no screen fallback needed here
     // because tapping a CAMPAIGN row with no deepLink is a no-op (unusual but safe).
     case 'COMMUNITY_POST':

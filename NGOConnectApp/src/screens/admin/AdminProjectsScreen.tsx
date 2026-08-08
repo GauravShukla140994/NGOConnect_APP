@@ -641,7 +641,10 @@ export default function AdminProjectsScreen() {
     <SafeAreaView style={s.container} edges={['top']}>
       {/* Header */}
       <View style={s.header}>
-        <Text style={s.headerTitle}>Projects</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={s.headerTitle}>Projects</Text>
+          <Text style={s.headerSub}>Admin · {selectedOrg?.orgName ?? ''}</Text>
+        </View>
         <TouchableOpacity
           style={s.newBtn}
           onPress={() => nav.navigate('CreateProject', { orgId: activeOrgId })}
@@ -869,7 +872,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 14,
     backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
   },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#1e293b' },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: '#1e293b' },
+  headerSub:   { fontSize: 11, color: '#64748b', marginTop: 1 },
   newBtn: {
     backgroundColor: C_CONST.PRIMARY + '18', borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 7,

@@ -243,11 +243,10 @@ export default function AdminOrgScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => nav.goBack()} style={styles.headerBtn} accessibilityLabel="Back">
-            <Text style={styles.backIcon}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Organisation Profile</Text>
-          <View style={{ width: 80 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Organisation Profile</Text>
+            <Text style={styles.headerSub}>Admin · {orgName || ''}</Text>
+          </View>
         </View>
         <View style={styles.center}><ActivityIndicator size="large" color={C.PRIMARY} /></View>
       </SafeAreaView>
@@ -259,10 +258,10 @@ export default function AdminOrgScreen() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => nav.goBack()} style={styles.headerBtn} accessibilityLabel="Back">
-          <Text style={styles.backIcon}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Organisation Profile</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Organisation Profile</Text>
+          <Text style={styles.headerSub}>Admin · {orgName || ''}</Text>
+        </View>
         <TouchableOpacity
           style={styles.previewBtn}
           onPress={() => nav.navigate('NgoProfile', { orgId })}
@@ -400,11 +399,10 @@ const styles = StyleSheet.create({
 
   // Header
   header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                 paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.CARD,
+                 paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.CARD,
                  borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  headerBtn:   { minWidth: 70, height: 36, justifyContent: 'center' },
-  backIcon:    { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: C.TEXT, flex: 1, textAlign: 'center' },
+  headerTitle: { fontSize: 16, fontWeight: '800', color: C.TEXT },
+  headerSub:   { fontSize: 11, color: C.TEXT2, marginTop: 1 },
   previewBtn:  { backgroundColor: C.PRIMARY + '15', borderRadius: 20, paddingHorizontal: 12,
                  paddingVertical: 6, borderWidth: 1.5, borderColor: C.PRIMARY + '40' },
   previewBtnText:{ fontSize: 12, fontWeight: '700', color: C.PRIMARY },

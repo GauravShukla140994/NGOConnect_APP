@@ -16,7 +16,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { fmtDate } from '../../utils/dateUtils';
 import { orgApi } from '../../api/org.api';
@@ -468,12 +468,18 @@ function MemberDetailsSheet({
 // ══════════════════════════════════════════════════════════════════════════════
 export default function AdminVolunteersScreen() {
   const nav              = useNavigation<any>();
+  const route            = useRoute<any>();
   const insets           = useSafeAreaInsets();
   const { selectedOrg, setAdminOrgs, setSelectedOrg } = useAdminStore();
   const orgId = selectedOrg?.orgId ?? 0;
 
-  const [mainTab,      setMainTab]      = useState<MainTab>('pending');
-  const [postsTab,     setPostsTab]     = useState<PostsTab>('all');
+  // Support deep-link from POST_REPORTED_ADMIN notification:
+  //   navigate('AdminVolunteers', { initialTab: 'posts', initialPostsTab: 'reported' })
+  const initialTab      = (route.params?.initialTab      as MainTab  | undefined) ?? 'pending';
+  const initialPostsTab = (route.params?.initialPostsTab as PostsTab | undefined) ?? 'all';
+
+  const [mainTab,      setMainTab]      = useState<MainTab>(initialTab);
+  const [postsTab,     setPostsTab]     = useState<PostsTab>(initialPostsTab);
   const [search,       setSearch]       = useState('');
 
   const [pendingList,  setPendingList]  = useState<OrgMember[]>([]);
@@ -709,11 +715,10 @@ export default function AdminVolunteersScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => nav.goBack()} accessibilityLabel="Back" style={styles.backBtn}>
-            <Text style={styles.backIcon}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Volunteers</Text>
-          <View style={{ width: 36 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Volunteers</Text>
+            <Text style={styles.headerSub}>Admin · {selectedOrg?.orgName ?? ''}</Text>
+          </View>
         </View>
         <View style={styles.center}><ActivityIndicator size="large" color={C.PRIMARY} /></View>
       </SafeAreaView>
@@ -725,10 +730,10 @@ export default function AdminVolunteersScreen() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => nav.goBack()} accessibilityLabel="Back" style={styles.backBtn}>
-          <Text style={styles.backIcon}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Volunteers</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Volunteers</Text>
+          <Text style={styles.headerSub}>Admin · {selectedOrg?.orgName ?? ''}</Text>
+        </View>
         {/* Invite button — navigates to the invite members screen */}
         <TouchableOpacity
           style={styles.inviteBtn}
@@ -933,10 +938,9 @@ const styles = StyleSheet.create({
   emptyTxt:     { color: C.TEXT2, textAlign: 'center', fontSize: 14, lineHeight: 22, marginTop: 10 },
 
   // Header
-  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backBtn:      { minWidth: 70, height: 36, justifyContent: 'center' },
-  backIcon:     { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
-  headerTitle:  { fontSize: 17, fontWeight: '700', color: C.TEXT },
+  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.CARD, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  headerTitle:  { fontSize: 16, fontWeight: '800', color: C.TEXT },
+  headerSub:    { fontSize: 11, color: C.TEXT2, marginTop: 1 },
   inviteBtn:     { paddingHorizontal: 10, paddingVertical: 6, backgroundColor: C.PRIMARY, borderRadius: 8 },
   inviteBtnText: { fontSize: 13, fontWeight: '700', color: '#FFF' },
 
