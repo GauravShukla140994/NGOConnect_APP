@@ -152,35 +152,48 @@ function ProjectDetailModal({
   };
 
   const p = detail;
-  const catColor  = CATEGORY_COLOR[p?.categoryName ?? ''] ?? C.PRIMARY;
-  const max       = p?.maxParticipants ?? p?.maxVolunteers ?? 0;
-  const curr      = p?.currentParticipants ?? p?.approvedCount ?? 0;
-  const spotsLeft = p?.spotsLeft ?? (max > 0 ? max - curr : null);
-  const isFull    = max > 0 && (spotsLeft ?? 1) <= 0;
+  // Project_GetById SP returns camelCased column names that differ from the generic
+  // Project type used elsewhere. Aliases below bridge both naming conventions.
+  const projTitle   = p?.title       ?? p?.projectName  ?? '';
+  const catName     = p?.categoryName ?? p?.category     ?? '';
+  // scheduleTypeCode is the machine-readable ValueCode (ONE_TIME / RECURRING / FLEXIBLE)
+  // scheduleType is the human-readable ValueName — use code for branching logic
+  const schedType   = (p?.scheduleTypeCode ?? p?.scheduleType ?? '').toUpperCase().replace(/[\s-]/g, '_');
+  const catColor    = CATEGORY_COLOR[catName] ?? C.PRIMARY;
+  const max         = p?.maxParticipants ?? p?.maxVolunteers ?? 0;
+  const curr        = p?.currentParticipants ?? p?.approvedCount ?? 0;
+  const spotsLeft   = p?.spotsLeft ?? (max > 0 ? max - curr : null);
+  const isFull      = max > 0 && (spotsLeft ?? 1) <= 0;
 
   const scheduleLabel = (() => {
-    const type = (p?.scheduleType ?? '').toUpperCase().replace('-', '_');
     const days = abbrevDays(p?.recurrenceDays ?? p?.recurDays);
-    if (type === 'ONE_TIME')  return 'One-time';
-    if (type === 'RECURRING') return ['Recurring', days].filter(Boolean).join(' · ');
-    if (type === 'FLEXIBLE')  return 'Flexible';
+    if (schedType === 'ONE_TIME')  return 'One-time';
+    if (schedType === 'RECURRING') return ['Recurring', days].filter(Boolean).join(' · ');
+    if (schedType === 'FLEXIBLE')  return 'Flexible';
     return p?.scheduleType ?? '';
   })();
 
   const dateRange = (() => {
-    const type = (p?.scheduleType ?? '').toUpperCase();
-    if (type === 'ONE_TIME')   return fmtDate(p?.startDate ?? p?.oneTimeDate);
-    if (type === 'RECURRING')  {
+    if (schedType === 'ONE_TIME')  return fmtDate(p?.oneTimeDate ?? p?.startDate);
+    if (schedType === 'RECURRING') {
       const s = fmtDate(p?.recurStart ?? p?.startDate);
       const e = fmtDate(p?.recurEnd   ?? p?.endDate);
+      return [s, e].filter(Boolean).join(' – ');
+    }
+    if (schedType === 'FLEXIBLE') {
+      const s = fmtDate(p?.flexFromDate ?? p?.startDate);
+      const e = fmtDate(p?.flexToDate   ?? p?.endDate);
       return [s, e].filter(Boolean).join(' – ');
     }
     return [fmtDate(p?.startDate), fmtDate(p?.endDate)].filter(Boolean).join(' – ');
   })();
 
-  const timeLine    = [fmtTime(p?.startTime ?? p?.sessionStartTime), fmtTime(p?.endTime ?? p?.sessionEndTime)].filter(Boolean).join(' – ');
-  const durLabel    = durationHours(p?.startTime ?? p?.sessionStartTime, p?.endTime ?? p?.sessionEndTime);
-  const locationStr = [p?.locationName, p?.city].filter(Boolean).join(', ');
+  // SP returns Landmark (venue name) and AddressLine (street address)
+  const locationName = p?.locationName ?? p?.landmark    ?? '';
+  const addressLine  = p?.address      ?? p?.addressLine ?? '';
+  const timeLine     = [fmtTime(p?.startTime ?? p?.sessionStartTime), fmtTime(p?.endTime ?? p?.sessionEndTime)].filter(Boolean).join(' – ');
+  const durLabel     = durationHours(p?.startTime ?? p?.sessionStartTime, p?.endTime ?? p?.sessionEndTime);
+  const locationStr  = [locationName, p?.city].filter(Boolean).join(', ');
 
   const mapsUrl = p?.googleMapsUrl
     ?? (p?.latitude && p?.longitude
@@ -240,10 +253,10 @@ function ProjectDetailModal({
             <View style={mdStyles.card}>
               {/* Title + category */}
               <View style={mdStyles.titleRow}>
-                <Text style={mdStyles.projTitle} numberOfLines={3}>{p.title}</Text>
-                {p.categoryName ? (
+                <Text style={mdStyles.projTitle} numberOfLines={3}>{projTitle}</Text>
+                {catName ? (
                   <View style={[mdStyles.catPill, { backgroundColor: `${catColor}20` }]}>
-                    <Text style={[mdStyles.catPillText, { color: catColor }]}>{p.categoryName}</Text>
+                    <Text style={[mdStyles.catPillText, { color: catColor }]}>{catName}</Text>
                   </View>
                 ) : null}
               </View>
@@ -263,6 +276,9 @@ function ProjectDetailModal({
                 {locationStr ? (
                   <InfoRow icon="📍" text={locationStr} color="#EF4444" />
                 ) : null}
+                {addressLine && addressLine !== locationStr ? (
+                  <InfoRow icon="🏠" text={addressLine} />
+                ) : null}
                 {max > 0 ? (
                   <InfoRow icon="👥"
                     text={`${curr} of ${max} spots filled per session${isFull ? ' · FULL' : spotsLeft ? ` · ${spotsLeft} ${spotsLeft === 1 ? 'spot' : 'spots'} left` : ''}`}
@@ -281,7 +297,7 @@ function ProjectDetailModal({
                   <Text style={{ fontSize: 15 }}>📍</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={mdStyles.mapTitle}>Open in Google Maps</Text>
-                    {locationStr ? <Text style={mdStyles.mapSub} numberOfLines={1}>{p.address ?? locationStr}</Text> : null}
+                    {locationStr ? <Text style={mdStyles.mapSub} numberOfLines={1}>{addressLine || locationStr}</Text> : null}
                   </View>
                   <Text style={{ color: C.PRIMARY, fontSize: 18 }}>›</Text>
                 </TouchableOpacity>
@@ -303,7 +319,7 @@ function ProjectDetailModal({
             </View>
 
             {/* Session picker for recurring — hidden when project is closed */}
-            {!isClosed && (p.scheduleType ?? '').toUpperCase() === 'RECURRING' && timeLine ? (
+            {!isClosed && schedType === 'RECURRING' && timeLine ? (
               <View style={mdStyles.sessionCard}>
                 <Text style={mdStyles.sessionTitle}>Choose your sessions</Text>
                 <Text style={mdStyles.sessionSub}>Select which sessions you can attend</Text>
@@ -537,6 +553,7 @@ export default function NgoProfileScreen() {
 
   const [org,               setOrg]              = useState<Organisation | null>(null);
   const [activeProjects,    setActiveProjects]    = useState<Project[]>([]);
+  const [upcomingProjects,  setUpcomingProjects]  = useState<Project[]>([]);
   const [completedProjects, setCompletedProjects] = useState<Project[]>([]);
   const [openProjects,      setOpenProjects]      = useState<Project[]>([]);
   const [feedPosts,         setFeedPosts]         = useState<Post[]>([]);
@@ -577,9 +594,10 @@ export default function NgoProfileScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [orgRes, activeRes, completedRes] = await Promise.all([
+      const [orgRes, activeRes, upcomingRes, completedRes] = await Promise.all([
         getProfile(orgId),
         listProjects({ orgId, statusCode: 'ACTIVE',    pageNumber: 1, pageSize: 20 }),
+        listProjects({ orgId, statusCode: 'UPCOMING',  pageNumber: 1, pageSize: 20 }),
         listProjects({ orgId, statusCode: 'COMPLETED', pageNumber: 1, pageSize: 3  }),
       ]);
       if (orgRes.data?.isSuccess) {
@@ -587,12 +605,14 @@ export default function NgoProfileScreen() {
         setOrg(orgData);
         setIsFollowing(!!orgData?.isFollowing);
       }
-      if (activeRes.data?.isSuccess) {
-        const items = activeRes.data.data?.items ?? [];
-        setActiveProjects(items);
-        // Volunteer tab = active projects that still have spots
-        setOpenProjects(items.filter(p => (p.spotsLeft ?? 1) > 0));
-      }
+      const activeItems   = (activeRes.data?.isSuccess   ? (activeRes.data.data?.items   ?? []) : []).filter((p: Project) => !isProjectExpired(p));
+      const upcomingItems = (upcomingRes.data?.isSuccess  ? (upcomingRes.data.data?.items  ?? []) : []).filter((p: Project) => !isProjectExpired(p));
+      setActiveProjects(activeItems);
+      setUpcomingProjects(upcomingItems);
+      // Volunteer tab = active + upcoming projects that still have spots (expired excluded above)
+      setOpenProjects(
+        [...activeItems, ...upcomingItems].filter((p: Project) => (p.spotsLeft ?? 1) > 0)
+      );
       if (completedRes.data?.isSuccess) setCompletedProjects(completedRes.data.data?.items ?? []);
     } catch {
       Alert.alert('Error', 'Could not load NGO profile.');
@@ -952,19 +972,50 @@ export default function NgoProfileScreen() {
           {/* ── Projects ─────────────────────────────────────────────────── */}
           {tab === 'Projects' && (
             <>
-              <Text style={styles.sectionLabel}>Active Projects</Text>
-              {activeProjects.length === 0 ? (
-                <Text style={styles.emptyText}>No active projects at this time.</Text>
-              ) : (
-                activeProjects.map(p => (
-                  <ProjectRow
-                    key={p.projectId}
-                    project={p}
-                    onDetails={() => setModalProjectId(p.projectId)}
-                  />
-                ))
+              {/* Upcoming projects */}
+              {upcomingProjects.length > 0 && (
+                <>
+                  <Text style={styles.sectionLabel}>Upcoming Projects</Text>
+                  {upcomingProjects.map(p => (
+                    <ProjectRow
+                      key={p.projectId}
+                      project={p}
+                      onDetails={() => setModalProjectId(p.projectId)}
+                    />
+                  ))}
+                </>
               )}
 
+              {/* Active projects */}
+              {(activeProjects.length > 0 || upcomingProjects.length === 0) && (
+                <>
+                  {upcomingProjects.length > 0 && (
+                    <View style={styles.completedDivider}>
+                      <View style={styles.completedDividerLine} />
+                      <Text style={styles.completedDividerLabel}>ACTIVE PROJECTS</Text>
+                      <View style={styles.completedDividerLine} />
+                    </View>
+                  )}
+                  {!upcomingProjects.length && (
+                    <Text style={styles.sectionLabel}>Active Projects</Text>
+                  )}
+                  {activeProjects.length === 0 ? (
+                    upcomingProjects.length === 0 ? (
+                      <Text style={styles.emptyText}>No projects at this time.</Text>
+                    ) : null
+                  ) : (
+                    activeProjects.map(p => (
+                      <ProjectRow
+                        key={p.projectId}
+                        project={p}
+                        onDetails={() => setModalProjectId(p.projectId)}
+                      />
+                    ))
+                  )}
+                </>
+              )}
+
+              {/* Past projects */}
               {completedProjects.length > 0 && (
                 <>
                   <View style={styles.completedDivider}>
