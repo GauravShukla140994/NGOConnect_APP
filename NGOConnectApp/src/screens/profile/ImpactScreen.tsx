@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -473,6 +474,10 @@ export default function ImpactScreen() {
   const insets = useSafeAreaInsets();
   const nav    = useNavigation<any>();
 
+  // ── Orientation ──
+  const { width: winW, height: winH } = useWindowDimensions();
+  const isLandscape = winW > winH;
+
   // ── Animated scroll tracking ──
   const scrollY = useRef(new Animated.Value(0)).current;
   const [heroH, setHeroH] = useState(400); // updated by onLayout after first render
@@ -618,26 +623,32 @@ export default function ImpactScreen() {
   }, [rankName, score]);
 
   // ── Animation derivations ──────────────────────────────────────────────────
-  // Recomputed on render when heroH changes (acceptable — happens once after first layout)
+  // Recomputed on render when heroH or orientation changes.
   const collapsible = Math.max(heroH - COMPACT_H, 1);
 
-  // Phase 2: once content reaches the hero's top edge, the hero slides up
+  // Portrait:  Phase 1 (0 → heroH) content scrolls under fixed hero;
+  //            Phase 2 (heroH → heroH+collapsible) hero slides up to compact bar.
+  // Landscape: No Phase 1 — hero starts collapsing immediately from scroll=0,
+  //            so the limited vertical space is not wasted.
+  const collapseStart = isLandscape ? 0 : heroH;
+  const collapseEnd   = isLandscape ? collapsible : heroH + collapsible;
+
   const headerTranslateY = scrollY.interpolate({
-    inputRange:  [heroH, heroH + collapsible],
+    inputRange:  [collapseStart, collapseEnd],
     outputRange: [0, -collapsible],
     extrapolate: 'clamp',
   });
 
   // Full hero content fades out during the first 40% of the collapse
   const fullOpacity = scrollY.interpolate({
-    inputRange:  [heroH, heroH + collapsible * 0.4],
+    inputRange:  [collapseStart, collapseStart + collapsible * 0.4],
     outputRange: [1, 0],
     extrapolate: 'clamp',
   });
 
   // Compact bar fades in during the last 60% of the collapse
   const compactOpacity = scrollY.interpolate({
-    inputRange:  [heroH + collapsible * 0.4, heroH + collapsible],
+    inputRange:  [collapseStart + collapsible * 0.4, collapseEnd],
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
