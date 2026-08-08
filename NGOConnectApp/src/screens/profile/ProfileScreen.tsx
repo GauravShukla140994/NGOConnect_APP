@@ -34,7 +34,7 @@ const ACTIVITY_ITEMS = [
   { icon: '✏️', label: 'Edit Profile',       screen: 'EditProfile' },
   { icon: '🏢', label: 'Admin Dashboard',     screen: 'AdminTabs' },
   { icon: '🏛', label: 'My Organizations',   screen: 'MyOrgs' },
-  { icon: '💛', label: 'My Donations',        screen: 'MyDonations' },
+  // { icon: '💛', label: 'My Donations',        screen: 'MyDonations' },   // hidden: not yet functional
   { icon: '🔖', label: 'Saved Posts',         screen: 'SavedPosts' },
 ];
 
@@ -53,7 +53,7 @@ const SETTINGS_ITEMS = [
   { icon: '📋', label: 'Terms of Service',         screen: 'WebView',                   params: { url: 'https://www.ripplehub.app/terms',   title: 'Terms of Service' } },
   { icon: '🔐', label: 'Privacy Policy',           screen: 'WebView',                   params: { url: 'https://www.ripplehub.app/privacy', title: 'Privacy Policy'   } },
   { icon: '🆘', label: 'Help & Support',           screen: 'HelpSupport',               params: undefined },
-  { icon: '⚙',  label: 'Account Settings',         screen: 'AccountSettings',           params: undefined },
+  // { icon: '⚙',  label: 'Account Settings',         screen: 'AccountSettings',           params: undefined },   // hidden: not yet functional
   // DEV ONLY — uncomment to test push notifications, remove before Play Store release.
   // Was enabled 2026-08-01 to verify the notifee smallIcon/BigPicture fix; user confirmed
   // it worked and asked to disable again before the tester build goes out.
