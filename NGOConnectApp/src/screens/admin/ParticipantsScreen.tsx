@@ -273,9 +273,9 @@ function AttendedCard({
                     {[1, 2, 3, 4, 5].map(i => (
                       <TouchableOpacity
                         key={i}
-                        onPress={() => !submittedRatings && onRateSkill(sk.id, i)}
+                        onPress={() => !submittedRatings && !hasCertificate && onRateSkill(sk.id, i)}
                         hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
-                        disabled={submittedRatings}
+                        disabled={submittedRatings || hasCertificate}
                       >
                         <Text style={[s.star, { color: i <= (skillRatings[sk.id] ?? 0) ? '#F59E0B' : '#D1D5DB' }]}>★</Text>
                       </TouchableOpacity>
@@ -287,7 +287,7 @@ function AttendedCard({
           </View>
 
           {/* Save ratings button */}
-          {!submittedRatings && (
+          {!submittedRatings && !hasCertificate && (
             <TouchableOpacity
               style={[s.saveRatingsBtn, (!hasAnyRating || submittingRatings) && s.btnDisabled]}
               onPress={onSubmitRatings}
@@ -304,6 +304,11 @@ function AttendedCard({
               <Text style={s.ratingsSubmittedText}>✓ Ratings saved</Text>
             </View>
           )}
+          {!submittedRatings && hasCertificate && (
+            <View style={s.ratingsSubmittedRow}>
+              <Text style={[s.ratingsSubmittedText, { color: '#9CA3AF' }]}>🔒  Locked — certificate issued</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -312,7 +317,7 @@ function AttendedCard({
         {BADGE_DEFS.map(b => {
           const awarded   = awardedBadges.includes(b.key);
           const awarding  = awardingBadge === b.key;
-          const disabled  = awarded || !!awardingBadge;
+          const disabled  = awarded || !!awardingBadge || hasCertificate;
           return (
             <TouchableOpacity
               key={b.key}
@@ -488,6 +493,35 @@ export default function ParticipantsScreen() {
         }
         setAwardedBadges(initBadges);
         setIssuedCerts(initCerts);
+
+        // Pre-load existing skill ratings for attended volunteers so they persist across visits
+        const attendedApps = loaded.filter((a: any) => a.statusCode === 'ATTENDED');
+        if (attendedApps.length > 0) {
+          const ratingFetches = attendedApps.map((a: any) =>
+            projectApi.getSkillRatings(projectId, a.userId)
+              .then(res => ({ appId: a.applicationId, data: (res.data?.data as any[]) ?? [] }))
+              .catch(() => ({ appId: a.applicationId, data: [] as any[] })),
+          );
+          const ratingResults = await Promise.all(ratingFetches);
+          const initRatings: Record<number, Record<number, number>>  = {};
+          const initSubmitted: Record<number, boolean>               = {};
+          for (const { appId, data } of ratingResults) {
+            const ratingsForApp: Record<number, number> = {};
+            let hasAny = false;
+            for (const r of data) {
+              if ((r.rating ?? 0) > 0) {
+                ratingsForApp[r.projectSkillId] = Math.round(r.rating);
+                hasAny = true;
+              }
+            }
+            if (hasAny) {
+              initRatings[appId]   = ratingsForApp;
+              initSubmitted[appId] = true;
+            }
+          }
+          setSkillRatings(initRatings);
+          setSubmittedRatings(initSubmitted);
+        }
       }
 
       if (skillsRes.status === 'fulfilled' && skillsRes.value.data?.isSuccess) {

@@ -266,6 +266,7 @@ export default function LoginScreen({ navigation }: Props) {
                     onPress={handleCheckboxToggle}
                     style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}
                     activeOpacity={0.7}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                     accessibilityLabel="Accept terms and privacy policy"
                   >
                     {termsAccepted && <Text style={styles.checkmark}>✓</Text>}

@@ -109,10 +109,10 @@ export function fmtTimeRange(
  *
  * Storage convention:
  *   - Date columns (oneTimeDate, recurEnd, flexToDate) → "YYYY-MM-DD" local calendar date.
- *   - sessionEndTime → "HH:MM:SS" stored as UTC (e.g. "05:00:00" = 10:30 IST).
+ *   - sessionEndTime → "HH:MM:SS" stored in IST as entered by the admin (e.g. "12:00:00" = noon IST).
  *
- * To build the correct UTC moment:  new Date(`${datePart}T${timePart}Z`)
- * Default timePart "18:29:59" UTC = 23:59:59 IST — safe end-of-day fallback.
+ * To build the correct UTC moment: new Date(`${datePart}T${timePart}+05:30`)
+ * Default timePart "23:59:59" IST — safe end-of-day fallback.
  *
  * Works for all three project types:
  *   ONE_TIME  → oneTimeDate  + sessionEndTime
@@ -137,7 +137,7 @@ export function isProjectExpired(p: {
   if (!endDateStr) return false;
 
   const datePart = endDateStr.split('T')[0];               // "YYYY-MM-DD"
-  const timePart = p.sessionEndTime ?? '18:29:59';         // UTC; default = 23:59 IST
-  const endUTC   = new Date(`${datePart}T${timePart}Z`);
+  const timePart = p.sessionEndTime ?? '23:59:59';         // IST; default = end of day
+  const endUTC   = new Date(`${datePart}T${timePart}+05:30`);
   return !isNaN(endUTC.getTime()) && endUTC.getTime() < Date.now();
 }

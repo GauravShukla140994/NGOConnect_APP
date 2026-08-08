@@ -711,6 +711,7 @@ export default function CreateProjectScreen() {
           value={pickerDate}
           mode={pickerMode}
           display="default"
+          is24Hour={pickerMode === 'time'}
           minimumDate={pickerMode === 'date' ? todayMidnight() : undefined}
           onChange={onPickerChange}
         />
@@ -737,6 +738,7 @@ export default function CreateProjectScreen() {
               value={pickerDate}
               mode={pickerMode}
               display="spinner"
+              is24Hour={pickerMode === 'time'}
               minimumDate={pickerMode === 'date' ? todayMidnight() : undefined}
               onChange={onPickerChange}
               style={{ height: 200 }}

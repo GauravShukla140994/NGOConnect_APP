@@ -577,8 +577,8 @@ export default function AdminProjectDetailScreen() {
           <KpiBox value={counts.pending}  label="Pending"   color="#D97706"   />
         </View>
 
-        {/* ── QR Attendance — hidden for completed/cancelled projects ── */}
-        {!isReadOnly && <View style={styles.card}>
+        {/* ── QR Attendance — hidden for completed/cancelled projects and for OPEN_SIGNUP (self-check-in) projects ── */}
+        {!isReadOnly && project?.joinTypeCode?.toUpperCase() !== 'OPEN_SIGNUP' && <View style={styles.card}>
           <Text style={styles.sectionTitle}>QR Attendance</Text>
           <Text style={styles.sectionSub}>QR is only active during the session window</Text>
 

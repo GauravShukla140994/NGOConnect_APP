@@ -14,6 +14,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { fmtDate, fmtTime, fmtDateRange } from '../../utils/dateUtils';
 import { getMyApplications, withdrawApplication } from '../../api/user.api';
+import { projectApi } from '../../api/project.api';
 import type { UserApplication } from '../../types/api.types';
 import QRScannerModal    from '../../screens/profile/QRScannerModal';
 import ProjectDetailModal from '../../screens/profile/ProjectDetailModal';
@@ -189,7 +190,7 @@ function ProjectCard({
           <View style={styles.completedRow}>
             <View>
               <Text style={styles.completedLabel}>Hours</Text>
-              <Text style={styles.completedValue}>{item.hoursLogged ? `${item.hoursLogged}h` : '—'}</Text>
+              <Text style={styles.completedValue}>{(item.hoursLogged ?? 0) > 0 ? `${item.hoursLogged}h` : '—'}</Text>
             </View>
             {item.skillRatings && item.skillRatings.length > 0 && (
               <View>
@@ -334,6 +335,20 @@ export default function MyProjectsScreen() {
   };
 
   const openDetail = (app: UserApplication) => { setDetailApp(app); setDetailOpen(true); };
+
+  const handleSelfCheckIn = async (app: UserApplication) => {
+    try {
+      const res = await projectApi.selfCheckIn(app.projectId);
+      if (res.data?.isSuccess === 1) {
+        Alert.alert('Attendance Marked', res.data.message ?? 'Your attendance has been recorded. Thank you!');
+        load(true);
+      } else {
+        Alert.alert('Check-in Failed', res.data?.message ?? 'Please try again.');
+      }
+    } catch (err: any) {
+      Alert.alert('Check-in Failed', err?.response?.data?.message ?? 'Please check your connection.');
+    }
+  };
   const openCert   = (app: UserApplication) => {
     setCertProjectId(app.projectId);
     setCertProjName(app.projectName);
@@ -429,6 +444,9 @@ export default function MyProjectsScreen() {
         onScanQR={() => {
           setDetailOpen(false);
           if (detailApp) setScanTarget({ projectId: detailApp.projectId, projectName: detailApp.projectName });
+        }}
+        onSelfCheckIn={() => {
+          if (detailApp) handleSelfCheckIn(detailApp);
         }}
       />
 

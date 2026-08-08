@@ -50,10 +50,11 @@ const abbrevDays = (days?: string) => {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Props {
-  visible:     boolean;
-  application: UserApplication | null;
-  onClose:     () => void;
-  onScanQR:    () => void; // triggers QR scanner for this project
+  visible:         boolean;
+  application:     UserApplication | null;
+  onClose:         () => void;
+  onScanQR:        () => void;        // triggers QR scanner for APPROVE_REQ projects
+  onSelfCheckIn?:  () => void;        // triggers self-attendance for OPEN_SIGNUP projects
 }
 
 interface ProjectDetail {
@@ -72,7 +73,7 @@ interface ProjectDetail {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function ProjectDetailModal({ visible, application, onClose, onScanQR }: Props) {
+export default function ProjectDetailModal({ visible, application, onClose, onScanQR, onSelfCheckIn }: Props) {
   const insets = useSafeAreaInsets();
   const [detail,  setDetail]  = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -250,9 +251,19 @@ export default function ProjectDetailModal({ visible, application, onClose, onSc
               <View style={[styles.registeredChip]}>
                 <Text style={styles.registeredChipText}>✓ Already Registered</Text>
               </View>
-              <TouchableOpacity style={styles.scanBtn} onPress={() => { onClose(); onScanQR(); }} activeOpacity={0.85}>
-                <Text style={styles.scanBtnText}>📱  Scan QR to Mark Attendance</Text>
-              </TouchableOpacity>
+              {app.isCheckedIn ? (
+                <View style={[styles.scanBtn, { backgroundColor: '#D1FAE5' }]}>
+                  <Text style={[styles.scanBtnText, { color: '#059669' }]}>✅  Attendance Marked</Text>
+                </View>
+              ) : app.requiresApproval ? (
+                <TouchableOpacity style={styles.scanBtn} onPress={() => { onClose(); onScanQR(); }} activeOpacity={0.85}>
+                  <Text style={styles.scanBtnText}>📱  Scan QR to Mark Attendance</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.scanBtn} onPress={() => { onClose(); onSelfCheckIn?.(); }} activeOpacity={0.85}>
+                  <Text style={styles.scanBtnText}>✅  Mark My Attendance</Text>
+                </TouchableOpacity>
+              )}
             </>
           ) : (
             <View style={styles.registeredBtnFull}>

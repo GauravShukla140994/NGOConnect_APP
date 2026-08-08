@@ -307,7 +307,7 @@ function CompletedCard({ app, onPress, onCertPress }: { app: UserApplication; on
       <View style={[s.cardRow, { marginBottom: app.skillRatings?.length ? 10 : 0 }]}>
         <View style={{ flex: 1 }}>
           <Text style={s.metaLabel}>Hours Volunteered</Text>
-          <Text style={s.metaValue}>{app.hoursLogged ? `${app.hoursLogged}h` : '—'}</Text>
+          <Text style={s.metaValue}>{(app.hoursLogged ?? 0) > 0 ? `${app.hoursLogged}h` : '—'}</Text>
         </View>
         {app.impactNote ? (
           <View style={{ flex: 1 }}>
@@ -943,6 +943,9 @@ export default function ImpactScreen() {
         onClose={() => setDetailVisible(false)}
         onScanQR={() => {
           if (detailApp) openQR(detailApp);
+        }}
+        onSelfCheckIn={() => {
+          if (detailApp) handleSelfCheckIn(detailApp);
         }}
       />
 

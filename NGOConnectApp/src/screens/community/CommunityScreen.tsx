@@ -6,6 +6,7 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -30,6 +31,14 @@ import CommunityPostCard        from '../../components/community/CommunityPostCa
 import type { CommunityPost } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
+
+// Deterministic avatar color per org name (same palette as HomeScreen)
+const ORG_PALETTE = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A', '#7C3AED'];
+function orgColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return ORG_PALETTE[Math.abs(hash) % ORG_PALETTE.length];
+}
 
 // ── SOS Alert card (active + history) ────────────────────────────────────────
 
@@ -844,55 +853,56 @@ export default function CommunityScreen() {
               </Pressable>
             </View>
 
-            {approvedOrgs.map((org) => {
-              const oName    = org.orgName ?? org.name ?? 'NGO';
-              const isActive = org.orgId === activeOrgId;
-              const initials = oName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-              const role     = org.myRole ?? org.role ?? 'Member';
-              const members  = org.memberCount ? `${org.memberCount.toLocaleString()} members` : '';
-              const subtitle = [role, members].filter(Boolean).join(' · ');
-              return (
-                <Pressable
-                  key={org.orgId}
-                  style={[styles.orgSwitcherItem, isActive && styles.orgSwitcherItemActive]}
-                  onPress={() => {
-                    setActiveOrgId(org.orgId);
-                    setActiveOrg(org);
-                    setShowOrgSwitcher(false);
-                    // Reload feed for the new org
-                    setPosts([]);
-                    setPage(1);
-                    setTotalCount(0);
-                    fetchFeed(1);
-                    fetchSosAlerts();
-                  }}
-                  accessibilityLabel={`Switch to ${oName}`}
-                >
-                  {org.logoUrl || org.orgLogoUrl ? (
-                    <Image
-                      source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }}
-                      style={styles.orgSwitcherAvatar}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={[styles.orgSwitcherAvatar, isActive && { backgroundColor: C.PRIMARY }]}>
-                      <Text style={styles.orgSwitcherAvatarText}>{initials}</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
+              {approvedOrgs.map((org) => {
+                const oName    = org.orgName ?? org.name ?? 'NGO';
+                const isActive = org.orgId === activeOrgId;
+                const initials = oName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
+                const role     = org.myRole ?? org.role ?? 'Member';
+                const members  = org.memberCount ? `${org.memberCount.toLocaleString()} members` : '';
+                const subtitle = [role, members].filter(Boolean).join(' · ');
+                return (
+                  <Pressable
+                    key={org.orgId}
+                    style={[styles.orgSwitcherItem, isActive && styles.orgSwitcherItemActive]}
+                    onPress={() => {
+                      setActiveOrgId(org.orgId);
+                      setActiveOrg(org);
+                      setShowOrgSwitcher(false);
+                      // Reload feed for the new org
+                      setPosts([]);
+                      setPage(1);
+                      setTotalCount(0);
+                      fetchFeed(1);
+                      fetchSosAlerts();
+                    }}
+                    accessibilityLabel={`Switch to ${oName}`}
+                  >
+                    {org.logoUrl || org.orgLogoUrl ? (
+                      <Image
+                        source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }}
+                        style={styles.orgSwitcherAvatar}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={[styles.orgSwitcherAvatar, { backgroundColor: isActive ? C.PRIMARY : orgColor(oName) }]}>
+                        <Text style={styles.orgSwitcherAvatarText}>{initials}</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.orgSwitcherName, isActive && { color: C.PRIMARY }]}>{oName}</Text>
+                      {subtitle ? <Text style={styles.orgSwitcherMeta}>{subtitle}</Text> : null}
                     </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.orgSwitcherName, isActive && { color: C.PRIMARY }]}>{oName}</Text>
-                    {subtitle ? <Text style={styles.orgSwitcherMeta}>{subtitle}</Text> : null}
-                  </View>
-                  {isActive && (
-                    <View style={styles.orgSwitcherActiveBadge}>
-                      <Text style={styles.orgSwitcherActiveBadgeText}>Active</Text>
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })}
-
-            <View style={{ height: insets.bottom + 8 }} />
+                    {isActive && (
+                      <View style={styles.orgSwitcherActiveBadge}>
+                        <Text style={styles.orgSwitcherActiveBadgeText}>Active</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+              <View style={{ height: insets.bottom + 8 }} />
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
