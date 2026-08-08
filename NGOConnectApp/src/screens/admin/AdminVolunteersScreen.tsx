@@ -252,46 +252,40 @@ function MemberDetailsSheet({
     }
   }, [member]);
 
-  const savePermissions = useCallback(async () => {
+  const saveAll = useCallback(async () => {
     if (!member?.memberId || !orgId) { return; }
     setSaving(true);
     try {
-      const res = await orgApi.updateMemberPermissions(orgId, member.memberId, {
+      // 1. Save permissions (always)
+      const permRes = await orgApi.updateMemberPermissions(orgId, member.memberId, {
         canPost, canComment, canCommunityPost: canCommunity, maxPostsPerDay: maxPosts,
       });
-      if (res.data?.isSuccess) {
-        Alert.alert('Saved', 'Member permissions updated successfully.');
-      } else {
-        Alert.alert('Error', res.data?.message ?? 'Could not save permissions. Please try again.');
+      if (!permRes.data?.isSuccess) {
+        Alert.alert('Error', permRes.data?.message ?? 'Could not save permissions. Please try again.');
+        return;
       }
-    } catch {
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
-      setSaving(false);
-    }
-  }, [member, orgId, canPost, canComment, canCommunity, maxPosts]);
 
-  const saveRole = useCallback(async () => {
-    if (!member?.memberId || !orgId) { return; }
-    // FOUNDER role cannot be reassigned via this screen
-    if (member.roleCode?.toUpperCase() === 'FOUNDER') {
-      Alert.alert('Cannot Change', 'Founder role cannot be changed here.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await orgApi.updateMemberRole(orgId, { memberId: member.memberId, roleCode });
-      if (res.data?.isSuccess) {
-        Alert.alert('Saved', `Role updated to ${ROLE_LABEL[roleCode] ?? roleCode}.`);
-      } else {
-        Alert.alert('Error', res.data?.message ?? 'Could not update role. Please try again.');
+      // 2. Save role only if it changed and member is not FOUNDER
+      const originalRole = member.roleCode?.toUpperCase() ?? 'MEMBER';
+      if (roleCode !== originalRole) {
+        if (originalRole === 'FOUNDER') {
+          Alert.alert('Cannot Change', 'Founder role cannot be changed here.');
+          return;
+        }
+        const roleRes = await orgApi.updateMemberRole(orgId, { memberId: member.memberId, roleCode });
+        if (!roleRes.data?.isSuccess) {
+          Alert.alert('Permissions Saved', `Permissions saved, but role update failed: ${roleRes.data?.message ?? 'Please try again.'}`);
+          return;
+        }
       }
+
+      Alert.alert('Saved', 'Member settings updated successfully.');
     } catch {
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setSaving(false);
     }
-  }, [member, orgId, roleCode]);
+  }, [member, orgId, canPost, canComment, canCommunity, maxPosts, roleCode]);
 
   const handleDeactivate = () => {
     if (!member) { return; }
@@ -397,13 +391,6 @@ function MemberDetailsSheet({
               </View>
             </View>
 
-            {/* Save permissions */}
-            <TouchableOpacity style={styles.savePermBtn} onPress={savePermissions} disabled={saving}>
-              {saving
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={styles.savePermBtnText}>Save Permissions</Text>}
-            </TouchableOpacity>
-
             {/* Change Role */}
             <Text style={[styles.sectionLabel, { marginTop: 14, marginBottom: 6 }]}>Change Role</Text>
             <TouchableOpacity
@@ -414,10 +401,12 @@ function MemberDetailsSheet({
               <Text style={styles.roleDropdownText}>{ROLE_LABEL[roleCode] ?? roleCode}</Text>
               <Text style={{ color: C.TEXT2 }}>▾</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.savePermBtn} onPress={saveRole} disabled={saving}>
+
+            {/* Single save button — saves permissions + role together */}
+            <TouchableOpacity style={styles.savePermBtn} onPress={saveAll} disabled={saving}>
               {saving
                 ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={styles.savePermBtnText}>Save Role</Text>}
+                : <Text style={styles.savePermBtnText}>Save Permissions</Text>}
             </TouchableOpacity>
 
             {/* View Full Profile */}
