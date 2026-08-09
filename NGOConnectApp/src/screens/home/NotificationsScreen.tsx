@@ -54,6 +54,10 @@ function notifMeta(type: string): { emoji: string; color: string } {
     case 'ACCOUNT_SUSPENDED':       return { emoji: '⚠️', color: C.YELLOW };
     case 'INVITE_ACCEPTED':         return { emoji: '✅', color: '#2ECC71' };
     case 'INVITE_DECLINED':         return { emoji: '❌', color: C.RED };
+    // Reviews
+    case 'REVIEW_NEW':              return { emoji: '⭐', color: '#F59E0B' };
+    case 'REVIEW_RESPONSE':         return { emoji: '💬', color: C.PRIMARY };
+    case 'REVIEW_DELETED':          return { emoji: '🗑️', color: '#6B7280' };
     default:                        return { emoji: '🔔', color: C.PRIMARY };
   }
 }
@@ -123,6 +127,17 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
         : { screen: 'MyOrgs' };
     case 'INVITE_DECLINED':
       return { screen: 'MyOrgs' };
+    // Reviews — admin receives NEW + DELETED → open NGO reviews tab
+    //           reviewer receives RESPONSE   → open NGO profile reviews tab
+    case 'REVIEW_NEW':
+    case 'REVIEW_DELETED':
+      return notif.orgId
+        ? { screen: 'NgoProfile', params: { orgId: notif.orgId, initialTab: 'reviews' } }
+        : { screen: 'MyOrgs' };
+    case 'REVIEW_RESPONSE':
+      return notif.orgId
+        ? { screen: 'NgoProfile', params: { orgId: notif.orgId, initialTab: 'reviews' } }
+        : { screen: 'MyOrgs' };
     default:
       return null;
   }

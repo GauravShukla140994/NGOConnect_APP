@@ -25,11 +25,12 @@ import { getProfile, orgApi } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
 import { list as listProjects, projectApi, apply } from '../../api/project.api';
 import { shareApi } from '../../api/share.api';
+import ReviewsTab from './ReviewsTab';
 import type { ApiResponse, Organisation, Post, Project, PagedResult } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
 
-const TABS = ['About', 'Projects', 'Volunteer', 'Gallery'] as const;
+const TABS = ['About', 'Projects', 'Volunteer', 'Gallery', 'Reviews'] as const;
 
 // tabContent padding (14) + galleryPostCard padding (12) on each side
 const SCREEN_W      = Dimensions.get('window').width;
@@ -548,6 +549,10 @@ export default function NgoProfileScreen() {
   const insets   = useSafeAreaInsets();
   const route    = useRoute<any>();
   const orgId: number = route.params?.orgId ?? 1;
+  // initialTab lets deep-links (e.g. REVIEW_NEW notification) open a specific tab directly
+  const initialTab: Tab = (TABS as readonly string[]).includes(route.params?.initialTab)
+    ? (route.params.initialTab as Tab)
+    : 'About';
   const { user: authUser } = useAuthStore();
   const topInitials = [authUser?.firstName?.[0], authUser?.lastName?.[0]].filter(Boolean).join('').toUpperCase() || '?';
 
@@ -559,7 +564,7 @@ export default function NgoProfileScreen() {
   const [feedPosts,         setFeedPosts]         = useState<Post[]>([]);
   const [feedLoading,       setFeedLoading]       = useState(false);
   const [galleryLoaded,     setGalleryLoaded]     = useState(false);
-  const [tab,               setTab]               = useState<Tab>('About');
+  const [tab,               setTab]               = useState<Tab>(initialTab);
   const [loading,           setLoading]           = useState(true);
   const [modalProjectId,    setModalProjectId]    = useState<number | null>(null);
   const [isFollowing,       setIsFollowing]       = useState(false);
@@ -829,6 +834,22 @@ export default function NgoProfileScreen() {
               {org.memberCount ? ` · ${org.memberCount.toLocaleString('en-IN')} ${org.memberCount === 1 ? 'member' : 'members'}` : ''}
               {org.followerCount ? ` · ${org.followerCount.toLocaleString('en-IN')} followers` : ''}
             </Text>
+            {/* Rating chip — taps into Reviews tab */}
+            {rating > 0 && (
+              <TouchableOpacity
+                style={styles.ratingChip}
+                onPress={() => handleTabChange('Reviews' as any)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.ratingChipStar}>⭐</Text>
+                <Text style={styles.ratingChipValue}>{rating.toFixed(1)}</Text>
+                {org.ratingCount || org.reviewCount ? (
+                  <Text style={styles.ratingChipCount}>
+                    · {(org.ratingCount ?? org.reviewCount ?? 0).toLocaleString('en-IN')} reviews
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -1066,6 +1087,11 @@ export default function NgoProfileScreen() {
             ) : null  /* posts render as FlatList items below ListHeaderComponent */
           )}
 
+          {/* ── Reviews ──────────────────────────────────────────────────── */}
+          {tab === 'Reviews' && org && (
+            <ReviewsTab orgId={org.orgId} orgName={org.orgName} />
+          )}
+
         </View>
         </>}
       />
@@ -1145,6 +1171,10 @@ const styles = StyleSheet.create({
   orgVerifiedBadgeText: { fontSize: 11, fontWeight: '700', color: '#059669' },
   badge80GText:      { fontSize: 11, fontWeight: '700', color: '#16A34A' },
   heroMeta:          { fontSize: 12, color: C.TEXT2 },
+  ratingChip:        { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 5, alignSelf: 'flex-start', backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  ratingChipStar:    { fontSize: 12 },
+  ratingChipValue:   { fontSize: 12, fontWeight: '700', color: '#B45309' },
+  ratingChipCount:   { fontSize: 11, color: '#D97706' },
 
   // Action buttons
   actionRow:            { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingVertical: 12, backgroundColor: C.CARD, borderTopWidth: 1, borderTopColor: C.BORDER, borderBottomWidth: 1, borderBottomColor: C.BORDER },
