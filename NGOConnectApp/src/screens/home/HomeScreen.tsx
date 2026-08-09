@@ -855,11 +855,21 @@ export default function HomeScreen() {
   const flatListRef      = useRef<any>(null);
   const [focusedPostId, setFocusedPostId] = useState<number | null>(null);
 
+  // Seen-post buffer — collects postIds visible in the viewport.
+  // Lives in a ref so the frozen onViewableItemsChanged callback can still write to it.
+  const seenBufferRef = useRef<Set<number>>(new Set());
+
   // Viewability handler MUST be a stable ref — FlatList freezes it on mount.
   // Never pass an inline arrow function here or video auto-play breaks on scroll.
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     const first = viewableItems.find((v: any) => v.isViewable);
     setActivePostId(first?.item?.postId != null ? String(first.item.postId) : null);
+    // Collect all currently-visible post IDs into the seen buffer
+    viewableItems.forEach((v: any) => {
+      if (v.isViewable && v.item?.postId != null) {
+        seenBufferRef.current.add(Number(v.item.postId));
+      }
+    });
   }).current;
 
   const viewabilityConfig = useRef({
@@ -867,6 +877,23 @@ export default function HomeScreen() {
   }).current;
 
   const toggleMute = useCallback(() => setGlobalMuted(m => !m), []);
+
+  // ── Seen-post flush: every 10 s + on unmount ─────────────────────────────
+  // Drains seenBufferRef and fires POST /feed/viewed (fire-and-forget).
+  const flushSeenBuffer = useCallback(() => {
+    const ids = Array.from(seenBufferRef.current);
+    if (ids.length === 0) return;
+    seenBufferRef.current.clear();
+    feedApi.markPostsViewed(ids).catch(() => {/* fire-and-forget — errors silently discarded */});
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(flushSeenBuffer, 10_000);   // flush every 10 s
+    return () => {
+      clearInterval(interval);
+      flushSeenBuffer();   // flush on unmount (tab switch / screen exit)
+    };
+  }, [flushSeenBuffer]);
 
   const [feed,           setFeed]           = useState<Post[]>([]);
 

@@ -61,6 +61,10 @@ export const feedApi = {
 
   trackInteraction: (data: { postId: number; interactionType: string; durationMs?: number }) =>
     apiClient.post<ApiResponse<null>>('/feed/interaction', data),
+
+  /** Bulk-mark posts as viewed. Fire-and-forget from HomeScreen every ~10 s. */
+  markPostsViewed: (postIds: number[]) =>
+    apiClient.post<ApiResponse<null>>('/feed/viewed', { postIds }),
 };
 
 // Named exports
@@ -73,5 +77,6 @@ export const savePost            = (postId: number) => feedApi.savePost(postId);
 export const unsavePost          = (postId: number) => feedApi.unsavePost(postId);
 export const getSavedPosts       = (params?: { pageNumber?: number; pageSize?: number }) => feedApi.getSavedPosts(params);
 export const trackInteraction    = (data: Parameters<typeof feedApi.trackInteraction>[0]) => feedApi.trackInteraction(data);
+export const markPostsViewed     = (postIds: number[]) => feedApi.markPostsViewed(postIds);
 export const addComment          = (postId: number, content: string, parentCommentId?: number) => feedApi.addComment(postId, content, parentCommentId);
 export const getComments         = (postId: number, params: {pageNumber?: number; pageSize?: number}) => feedApi.getComments(postId, params);
