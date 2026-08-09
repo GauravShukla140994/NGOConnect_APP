@@ -6,9 +6,17 @@
  * Zoom behaviour (images only):
  *   - Pinch with two fingers → zoom in (max 5×)
  *   - When zoomed: single-finger drag pans the image
- *   - Double-tap → reset zoom to 1× instantly
- *   - Release below 1× → springs back to 1× and resets pan
+ *   - Double-tap → toggle between 1× and 2.5× zoom
+ *   - Release below 1× → springs back to 1×
  *   - At 1×: single-finger horizontal swipe is passed to the FlatList (slide navigation)
+ *
+ * Key fix notes:
+ *   - panHandlers are on the container View, NOT Animated.Image
+ *     (Animated.Image doesn't forward touches reliably on all RN versions)
+ *   - onStartShouldSetPanResponderCapture returns true for 2-finger touches
+ *     so the FlatList scroll responder never gets the pinch gesture
+ *   - FlatList scrollEnabled is toggled off while a pinch is in progress
+ *     (belt-and-suspenders fix for Android touch negotiation)
  */
 import React, { useCallback, useRef, useState } from 'react';
 import {
@@ -56,7 +64,13 @@ function pinchDistance(touches: any[]): number {
 
 // ── Zoomable image slide ───────────────────────────────────────────────────────
 
-function ZoomableImageSlide({ uri }: { uri: string }) {
+interface ZoomableProps {
+  uri:          string;
+  onPinchStart: () => void;   // tells FlatList to disable scroll
+  onPinchEnd:   () => void;   // tells FlatList to re-enable scroll
+}
+
+function ZoomableImageSlide({ uri, onPinchStart, onPinchEnd }: ZoomableProps) {
   const scale      = useRef(new Animated.Value(1)).current;
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
@@ -105,46 +119,80 @@ function ZoomableImageSlide({ uri }: { uri: string }) {
     st.ty    = 0;
   }
 
+  function zoomToScale(targetScale: number, animated = true) {
+    const { tx, ty } = clampedTranslation(st.tx, st.ty, targetScale);
+    st.scale = targetScale;
+    st.tx    = tx;
+    st.ty    = ty;
+    if (animated) {
+      Animated.parallel([
+        Animated.spring(scale,      { toValue: targetScale, useNativeDriver: true, bounciness: 3 }),
+        Animated.spring(translateX, { toValue: tx,          useNativeDriver: true, bounciness: 3 }),
+        Animated.spring(translateY, { toValue: ty,          useNativeDriver: true, bounciness: 3 }),
+      ]).start();
+    } else {
+      scale.setValue(targetScale);
+      translateX.setValue(tx);
+      translateY.setValue(ty);
+    }
+  }
+
   const panResponder = useRef(
     PanResponder.create({
-      // ── Claim move events when:
-      //   a) 2 fingers are present (pinch), OR
-      //   b) already zoomed (single-finger pan)
-      // This lets the FlatList handle single-finger horizontal swipe at scale 1.
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt) => {
-        const touches = evt.nativeEvent.touches;
-        return touches.length >= 2 || st.scale > 1.01;
-      },
-      onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponderCapture: (evt) => {
-        return evt.nativeEvent.touches.length >= 2;
-      },
+      // ── CRITICAL FIX 1: capture 2-finger start immediately ──────────────
+      // When 2 fingers land, this fires before the FlatList scroll responder
+      // gets a chance — guaranteeing we own the pinch gesture on both iOS and Android.
+      onStartShouldSetPanResponderCapture: (evt) =>
+        evt.nativeEvent.touches.length >= 2,
+
+      // Claim start for single-finger when already zoomed (enables panning)
+      onStartShouldSetPanResponder: () => st.scale > 1.01,
+
+      // Claim move when 2 fingers present OR already zoomed
+      onMoveShouldSetPanResponder: (evt) =>
+        evt.nativeEvent.touches.length >= 2 || st.scale > 1.01,
+
+      // Belt-and-suspenders capture for move as well
+      onMoveShouldSetPanResponderCapture: (evt) =>
+        evt.nativeEvent.touches.length >= 2,
 
       onPanResponderGrant: (evt) => {
         const touches = evt.nativeEvent.touches;
 
-        // Double-tap detection (single finger only, at scale 1)
-        if (touches.length === 1 && st.scale <= 1.01) {
-          const now = Date.now();
-          if (now - st.lastTap < 280) {
-            // Double-tap — nothing to reset (already at 1×), could zoom to 2× optionally
-            // For simplicity: if already at 1×, do nothing; otherwise reset.
-            resetZoom();
-          }
-          st.lastTap = now;
-        }
-
         if (touches.length >= 2) {
+          // Pinch start — disable FlatList scroll
+          onPinchStart();
           st.isPinching     = true;
           st.pinchInitDist  = pinchDistance(touches);
           st.pinchInitScale = st.scale;
         } else {
+          // Single finger
           st.isPinching = false;
           st.panStartX  = touches[0].pageX;
           st.panStartY  = touches[0].pageY;
           st.panInitTx  = st.tx;
           st.panInitTy  = st.ty;
+
+          // Double-tap detection
+          if (st.scale <= 1.01) {
+            const now = Date.now();
+            if (now - st.lastTap < 300) {
+              // Double-tap at 1× → zoom to 2.5×
+              st.lastTap = 0;
+              zoomToScale(2.5);
+            } else {
+              st.lastTap = now;
+            }
+          } else {
+            // Double-tap while zoomed → reset to 1×
+            const now = Date.now();
+            if (now - st.lastTap < 300) {
+              st.lastTap = 0;
+              resetZoom();
+            } else {
+              st.lastTap = now;
+            }
+          }
         }
       },
 
@@ -152,8 +200,9 @@ function ZoomableImageSlide({ uri }: { uri: string }) {
         const touches = evt.nativeEvent.touches;
 
         if (touches.length >= 2) {
-          // Pinch — start tracking if not already
+          // Pinch
           if (!st.isPinching) {
+            onPinchStart();
             st.isPinching     = true;
             st.pinchInitDist  = pinchDistance(touches);
             st.pinchInitScale = st.scale;
@@ -184,23 +233,24 @@ function ZoomableImageSlide({ uri }: { uri: string }) {
       },
 
       onPanResponderRelease: () => {
+        if (st.isPinching) onPinchEnd();
         st.isPinching = false;
-        // Spring back to 1× if scale somehow went below minimum
-        if (st.scale < MIN_SCALE) {
-          resetZoom(true);
-        }
+        if (st.scale < MIN_SCALE) resetZoom(true);
       },
 
       onPanResponderTerminate: () => {
+        if (st.isPinching) onPinchEnd();
         st.isPinching = false;
       },
     }),
   ).current;
 
   return (
-    <View style={slide.container}>
+    // ── CRITICAL FIX 2: panHandlers on the View, not Animated.Image ──────
+    // Animated.Image doesn't reliably forward touch events to PanResponder
+    // on all React Native versions. The container View is the correct target.
+    <View style={slide.container} {...panResponder.panHandlers}>
       <Animated.Image
-        {...panResponder.panHandlers}
         source={{ uri }}
         style={[
           slide.media,
@@ -208,7 +258,6 @@ function ZoomableImageSlide({ uri }: { uri: string }) {
         ]}
         resizeMode="contain"
       />
-      {/* Double-tap hint — fades in once then disappears */}
       <DoubleTapHint />
     </View>
   );
@@ -220,7 +269,6 @@ function DoubleTapHint() {
   const opacity = useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
-    // Show for 1.5 s then fade out
     const t = setTimeout(() => {
       Animated.timing(opacity, { toValue: 0, duration: 600, useNativeDriver: true }).start();
     }, 1500);
@@ -229,7 +277,7 @@ function DoubleTapHint() {
 
   return (
     <Animated.View style={[slide.hint, { opacity }]}>
-      <Text style={slide.hintText}>Pinch to zoom</Text>
+      <Text style={slide.hintText}>Pinch to zoom • Double-tap to zoom</Text>
     </Animated.View>
   );
 }
@@ -288,7 +336,7 @@ const slide = StyleSheet.create({
     height: SCREEN_H,
   },
   playOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems:     'center',
     justifyContent: 'center',
   },
@@ -310,11 +358,11 @@ const slide = StyleSheet.create({
     fontSize: 14,
   },
   hint: {
-    position:        'absolute',
-    bottom:          80,
-    alignSelf:       'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius:    20,
+    position:          'absolute',
+    bottom:            80,
+    alignSelf:         'center',
+    backgroundColor:   'rgba(0,0,0,0.55)',
+    borderRadius:      20,
     paddingHorizontal: 14,
     paddingVertical:   6,
   },
@@ -332,12 +380,17 @@ export default function MediaPreviewModal({
   initialIndex = 0,
   onClose,
 }: Props) {
-  const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const [activeIndex,   setActiveIndex]   = useState(initialIndex);
+  // ── CRITICAL FIX 3: disable FlatList scroll during pinch ──────────────
+  // Without this Android's scroll responder competes with and can steal the
+  // pinch gesture even after the PanResponder has claimed it.
+  const [scrollEnabled, setScrollEnabled] = useState(true);
   const listRef = useRef<FlatList>(null);
 
   React.useEffect(() => {
     if (visible) {
       setActiveIndex(initialIndex);
+      setScrollEnabled(true);
       setTimeout(() => {
         listRef.current?.scrollToIndex({ index: initialIndex, animated: false });
       }, 50);
@@ -354,6 +407,9 @@ export default function MediaPreviewModal({
   );
 
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 60 }).current;
+
+  const handlePinchStart = useCallback(() => setScrollEnabled(false), []);
+  const handlePinchEnd   = useCallback(() => setScrollEnabled(true),  []);
 
   if (!items || items.length === 0) return null;
 
@@ -387,9 +443,9 @@ export default function MediaPreviewModal({
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
+          scrollEnabled={scrollEnabled}          // disabled during pinch
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
-          // Keep sibling slides mounted so zoom state resets when you swipe away
           windowSize={3}
           getItemLayout={(_, index) => ({
             length: SCREEN_W,
@@ -400,8 +456,12 @@ export default function MediaPreviewModal({
             item.type === 'VIDEO' ? (
               <VideoSlide uri={item.uri} active={index === activeIndex} />
             ) : (
-              // Key on index so ZoomableImageSlide remounts (resets zoom) when slide changes
-              <ZoomableImageSlide key={index} uri={item.uri} />
+              <ZoomableImageSlide
+                key={index}
+                uri={item.uri}
+                onPinchStart={handlePinchStart}
+                onPinchEnd={handlePinchEnd}
+              />
             )
           }
         />

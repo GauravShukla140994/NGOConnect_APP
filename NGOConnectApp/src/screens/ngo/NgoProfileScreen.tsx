@@ -26,6 +26,7 @@ import { useAuthStore } from '../../store/authStore';
 import { list as listProjects, projectApi, apply } from '../../api/project.api';
 import { shareApi } from '../../api/share.api';
 import ReviewsTab from './ReviewsTab';
+import MediaPreviewModal, { MediaItem } from '../../components/MediaPreviewModal';
 import type { ApiResponse, Organisation, Post, Project, PagedResult } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
@@ -417,59 +418,53 @@ function GalleryPostCard({ post }: { post: Post }) {
     : [];
   const isVideo = (i: number) => (mediaTypes[i] ?? 'IMAGE') === 'VIDEO';
 
-  // Per-slide play/mute state (video items only)
-  const [playingSlide, setPlayingSlide] = useState<number | null>(null);
-  const [muted,        setMuted]        = useState(true);
-  const [activeSlide,  setActiveSlide]  = useState(0);
+  const [activeSlide, setActiveSlide] = useState(0);
 
-  const renderSlide = (url: string, i: number) => {
-    if (isVideo(i)) {
-      const playing = playingSlide === i;
-      return (
-        <TouchableOpacity
-          key={i}
-          style={styles.galleryMediaSlide}
-          onPress={() => setPlayingSlide(playing ? null : i)}
-          activeOpacity={1}
-          accessibilityLabel={playing ? 'Pause video' : 'Play video'}
-        >
+  // Content expand state
+  const postContent   = post.content ?? '';
+  const isLongContent = postContent.length > 120;
+  const [contentExpanded, setContentExpanded] = useState(false);
+
+  // Fullscreen preview state
+  const mediaItems: MediaItem[] = mediaUrls.map((uri, i) => ({
+    uri,
+    type: isVideo(i) ? 'VIDEO' : 'IMAGE',
+  }));
+  const [previewIndex,   setPreviewIndex]   = useState(0);
+  const [previewVisible, setPreviewVisible] = useState(false);
+
+  const openPreview = (i: number) => {
+    setPreviewIndex(i);
+    setPreviewVisible(true);
+  };
+
+  const renderSlide = (url: string, i: number) => (
+    <TouchableOpacity
+      key={i}
+      style={styles.galleryMediaSlide}
+      onPress={() => openPreview(i)}
+      activeOpacity={0.85}
+      accessibilityLabel="Open media fullscreen"
+    >
+      {isVideo(i) ? (
+        <>
           <Video
             source={{ uri: url }}
             style={StyleSheet.absoluteFill}
             resizeMode="cover"
-            paused={!playing}
-            muted={muted}
-            repeat={true}
-            controls={false}
+            paused={true}
+            muted={true}
+            repeat={false}
           />
-          {!playing && (
-            <View style={styles.galleryVideoCircle}>
-              <Text style={styles.galleryVideoIcon}>▶</Text>
-            </View>
-          )}
-          {playing && (
-            <TouchableOpacity
-              style={styles.galleryMuteBtn}
-              onPress={e => { e.stopPropagation(); setMuted(m => !m); }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel={muted ? 'Unmute' : 'Mute'}
-            >
-              <Text style={styles.galleryMuteBtnText}>{muted ? '🔇' : '🔊'}</Text>
-            </TouchableOpacity>
-          )}
-        </TouchableOpacity>
-      );
-    }
-    // Image — square aspect ratio, full width, no crop on height
-    return (
-      <Image
-        key={i}
-        source={{ uri: url }}
-        style={styles.galleryMediaSlide}
-        resizeMode="cover"
-      />
-    );
-  };
+          <View style={styles.galleryVideoCircle}>
+            <Text style={styles.galleryVideoIcon}>▶</Text>
+          </View>
+        </>
+      ) : (
+        <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      )}
+    </TouchableOpacity>
+  );
 
   return (
     <View style={styles.galleryPostCard}>
@@ -491,10 +486,21 @@ function GalleryPostCard({ post }: { post: Post }) {
       </View>
 
       {/* Content */}
-      <Text style={styles.galleryPostContent} numberOfLines={5}>{post.content}</Text>
+      <Text style={styles.galleryPostContent} numberOfLines={contentExpanded ? undefined : 4}>
+        {postContent}
+      </Text>
+      {isLongContent && (
+        <TouchableOpacity
+          onPress={() => setContentExpanded(e => !e)}
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+        >
+          <Text style={styles.galleryReadMore}>
+            {contentExpanded ? 'Show less' : 'Read more'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
-      {/* Media carousel — parent is now a FlatList so this horizontal ScrollView
-           captures swipe gestures correctly, matching the home screen pattern exactly. */}
+      {/* Media carousel — tap any slide to open fullscreen */}
       {mediaUrls.length > 0 && (
         <View style={styles.galleryMediaWrap}>
           {mediaUrls.length === 1 ? (
@@ -507,9 +513,8 @@ function GalleryPostCard({ post }: { post: Post }) {
               decelerationRate="fast"
               scrollEventThrottle={16}
               onScroll={e => {
-                const slide = Math.round(e.nativeEvent.contentOffset.x / CARD_MEDIA_W);
-                setActiveSlide(slide);
-                if (playingSlide !== null && playingSlide !== slide) setPlayingSlide(null);
+                const s = Math.round(e.nativeEvent.contentOffset.x / CARD_MEDIA_W);
+                setActiveSlide(s);
               }}
             >
               {mediaUrls.map((url, i) => renderSlide(url, i))}
@@ -538,6 +543,14 @@ function GalleryPostCard({ post }: { post: Post }) {
       <View style={styles.galleryPostFooter}>
         <Text style={styles.galleryPostMeta}>❤️ {post.likeCount ?? 0}  · 💬 {post.commentCount ?? 0}</Text>
       </View>
+
+      {/* Fullscreen media preview */}
+      <MediaPreviewModal
+        visible={previewVisible}
+        items={mediaItems}
+        initialIndex={previewIndex}
+        onClose={() => setPreviewVisible(false)}
+      />
     </View>
   );
 }
@@ -1239,19 +1252,18 @@ const styles = StyleSheet.create({
   galleryPostAuthor:    { fontSize: 13, fontWeight: '700', color: C.TEXT },
   galleryPostRole:      { fontSize: 11, color: C.TEXT3 },
   galleryPostTime:      { fontSize: 11, color: C.TEXT3 },
-  galleryPostContent:   { fontSize: 13, color: C.TEXT2, lineHeight: 19, marginBottom: 8 },
+  galleryPostContent:   { fontSize: 13, color: C.TEXT2, lineHeight: 19, marginBottom: 4 },
+  galleryReadMore:      { fontSize: 12, color: C.PRIMARY, fontWeight: '600', marginBottom: 8, marginTop: 2 },
   // Media carousel — square slides, matches CARD_MEDIA_W computed above
   galleryMediaWrap:     { marginBottom: 8 },
   galleryMediaSlide:    { width: CARD_MEDIA_W, height: CARD_MEDIA_W, borderRadius: 10, overflow: 'hidden', backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
   galleryVideoCircle:   { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
   galleryVideoIcon:     { color: '#fff', fontSize: 18, marginLeft: 3 },
-  galleryMuteBtn:       { position: 'absolute', bottom: 8, right: 8, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
   // Page dots
   galleryDots:          { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5, paddingTop: 6 },
   galleryDot:           { width: 6, height: 6, borderRadius: 3, backgroundColor: '#ccc' },
   galleryDotActive:     { backgroundColor: '#555', width: 8, height: 8, borderRadius: 4 },
   galleryDotVideo:      { backgroundColor: '#aaa' },
-  galleryMuteBtnText:   { fontSize: 16 },
   galleryPostFooter:    { borderTopWidth: 1, borderTopColor: C.BORDER, paddingTop: 8 },
   galleryPostMeta:      { fontSize: 12, color: C.TEXT3 },
 });

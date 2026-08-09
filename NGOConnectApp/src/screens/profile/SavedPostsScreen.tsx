@@ -29,6 +29,7 @@ import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { fmtDate } from '../../utils/dateUtils';
 import { feedApi } from '../../api/feed.api';
+import MediaPreviewModal, { MediaItem } from '../../components/MediaPreviewModal';
 import type { Post } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
@@ -56,9 +57,11 @@ function fmtSavedAt(iso?: string): string {
 function SavedPostCard({
   item,
   onUnsave,
+  onMediaPress,
 }: {
   item: Post;
   onUnsave: (postId: number) => void;
+  onMediaPress: (items: MediaItem[], index: number) => void;
 }) {
   const meta      = TYPE_META[item.postTypeLkpCode ?? 'GENERAL'] ?? TYPE_META.GENERAL;
   const initials  = (item.authorName ?? 'NA').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
@@ -84,12 +87,15 @@ function SavedPostCard({
     : [];
   const isVideo = (idx: number) => (mediaTypes[idx] ?? 'IMAGE') === 'VIDEO';
 
-  const content     = item.content ?? '';
-  const isLong      = content.length > 200;
-  const [expanded,  setExpanded]  = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);   // single-video play state
-  const [muted,     setMuted]     = useState(true);    // muted until user unmutes
-  const preview     = isLong && !expanded ? content.slice(0, 200) + '…' : content;
+  const content  = item.content ?? '';
+  const isLong   = content.length > 120;   // ~4 lines
+  const [expanded, setExpanded] = useState(false);
+
+  // Build MediaItem array for the preview modal
+  const mediaItems: MediaItem[] = mediaUrls.map((uri, i) => ({
+    uri,
+    type: isVideo(i) ? 'VIDEO' : 'IMAGE',
+  }));
 
   return (
     <View style={s.card}>
@@ -134,88 +140,85 @@ function SavedPostCard({
       {/* ── Content ────────────────────────────────────────────────── */}
       {content.length > 0 && (
         <View style={{ marginBottom: mediaUrls.length > 0 ? 8 : 0 }}>
-          <Text style={s.content}>{preview}</Text>
+          <Text style={s.content} numberOfLines={expanded ? undefined : 4}>
+            {content}
+          </Text>
           {isLong && (
-            <TouchableOpacity onPress={() => setExpanded(e => !e)}>
+            <TouchableOpacity onPress={() => setExpanded(e => !e)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               <Text style={s.readMore}>{expanded ? 'Show less' : 'Read more'}</Text>
             </TouchableOpacity>
           )}
         </View>
       )}
 
-      {/* ── Media (images + videos) ────────────────────────────────── */}
-      {mediaUrls.length > 0 && (
-        mediaUrls.length === 1 && isVideo(0) ? (
-          /* ── Single video — tap to play/pause, mute toggle when playing ── */
-          <TouchableOpacity
-            style={[s.singleVideoWrap, { height: Math.round(cardInnerWidth * 9 / 16) }]}
-            onPress={() => setIsPlaying(p => !p)}
-            activeOpacity={1}
-            accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
-          >
-            <Video
-              source={{ uri: mediaUrls[0] }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-              paused={!isPlaying}
-              muted={muted}
-              repeat={true}
-              controls={false}
-            />
-            {/* Play button shown when paused — centered by singleVideoWrap flex */}
-            {!isPlaying && (
-              <View style={s.videoPlayCircle}>
-                <Text style={s.videoPlayIcon}>▶</Text>
+      {/* ── Media — tap to open fullscreen preview ──────────────────── */}
+      {mediaUrls.length === 1 ? (
+        /* Single media — 16:9 height, fills card width */
+        <TouchableOpacity
+          style={[s.mediaSingle, { height: Math.round(cardInnerWidth * 9 / 16) }]}
+          onPress={() => onMediaPress(mediaItems, 0)}
+          activeOpacity={0.85}
+          accessibilityLabel="Open media fullscreen"
+        >
+          {isVideo(0) ? (
+            <>
+              <Video
+                source={{ uri: mediaUrls[0] }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="cover"
+                paused={true}
+                muted={true}
+                repeat={false}
+              />
+              <View style={s.videoPlayOverlay}>
+                <View style={s.videoPlayCircle}>
+                  <Text style={s.videoPlayIcon}>▶</Text>
+                </View>
               </View>
-            )}
-            {/* Mute toggle shown while playing */}
-            {isPlaying && (
-              <TouchableOpacity
-                style={s.muteBtn}
-                onPress={e => { e.stopPropagation(); setMuted(m => !m); }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
-              >
-                <Text style={s.muteBtnText}>{muted ? '🔇' : '🔊'}</Text>
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-        ) : (
-          /* ── Image(s) or multi-media thumbnail grid ────────────────── */
-          <View style={s.mediaRow}>
-            {mediaUrls.slice(0, 3).map((url, idx) => (
-              <View key={idx} style={[s.mediaThumbnail, mediaUrls.length === 1 && { flex: 1 }]}>
-                {isVideo(idx) ? (
-                  <>
-                    {/* Static first-frame preview for video in a grid thumbnail */}
-                    <Video
-                      source={{ uri: url }}
-                      style={StyleSheet.absoluteFill}
-                      resizeMode="cover"
-                      paused={true}
-                      muted={true}
-                      repeat={false}
-                    />
-                    <View style={s.videoPlayOverlay}>
-                      <View style={s.videoPlayCircle}>
-                        <Text style={s.videoPlayIcon}>▶</Text>
-                      </View>
+            </>
+          ) : (
+            <Image source={{ uri: mediaUrls[0] }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          )}
+        </TouchableOpacity>
+      ) : mediaUrls.length > 1 ? (
+        /* Multi-media — fixed-height thumbnail grid (up to 3 visible) */
+        <View style={s.mediaRow}>
+          {mediaUrls.slice(0, 3).map((url, idx) => (
+            <TouchableOpacity
+              key={idx}
+              style={s.mediaThumbnail}
+              onPress={() => onMediaPress(mediaItems, idx)}
+              activeOpacity={0.85}
+              accessibilityLabel="Open media fullscreen"
+            >
+              {isVideo(idx) ? (
+                <>
+                  <Video
+                    source={{ uri: url }}
+                    style={StyleSheet.absoluteFill}
+                    resizeMode="cover"
+                    paused={true}
+                    muted={true}
+                    repeat={false}
+                  />
+                  <View style={s.videoPlayOverlay}>
+                    <View style={s.videoPlayCircle}>
+                      <Text style={s.videoPlayIcon}>▶</Text>
                     </View>
-                  </>
-                ) : (
-                  <Image source={{ uri: url }} style={s.mediaImage} resizeMode="cover" />
-                )}
-                {/* "+N more" overlay for 4th+ items */}
-                {idx === 2 && mediaUrls.length > 3 && (
-                  <View style={s.moreOverlay}>
-                    <Text style={s.moreText}>+{mediaUrls.length - 3}</Text>
                   </View>
-                )}
-              </View>
-            ))}
-          </View>
-        )
-      )}
+                </>
+              ) : (
+                <Image source={{ uri: url }} style={s.mediaImage} resizeMode="cover" />
+              )}
+              {idx === 2 && mediaUrls.length > 3 && (
+                <View style={s.moreOverlay}>
+                  <Text style={s.moreText}>+{mediaUrls.length - 3}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
 
       {/* ── Footer: stats + saved date ─────────────────────────────── */}
       <View style={s.footer}>
@@ -240,6 +243,17 @@ export default function SavedPostsScreen() {
   const [page,        setPage]        = useState(1);
   const [totalCount,  setTotalCount]  = useState(0);
   const PAGE_SIZE = 30;
+
+  // ── Media preview modal ────────────────────────────────────────────
+  const [previewItems, setPreviewItems] = useState<MediaItem[]>([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [previewVisible, setPreviewVisible] = useState(false);
+
+  const handleMediaPress = useCallback((items: MediaItem[], index: number) => {
+    setPreviewItems(items);
+    setPreviewIndex(index);
+    setPreviewVisible(true);
+  }, []);
 
   const hasMore = posts.length < totalCount;
 
@@ -308,9 +322,9 @@ export default function SavedPostsScreen() {
   // ── Render ────────────────────────────────────────────────────────
   const renderItem = useCallback(
     ({ item }: { item: Post }) => (
-      <SavedPostCard item={item} onUnsave={handleUnsave} />
+      <SavedPostCard item={item} onUnsave={handleUnsave} onMediaPress={handleMediaPress} />
     ),
-    [handleUnsave],
+    [handleUnsave, handleMediaPress],
   );
 
   const ListEmpty = loading ? null : (
@@ -365,6 +379,14 @@ export default function SavedPostsScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      {/* ── Fullscreen media preview ──────────────────────────────── */}
+      <MediaPreviewModal
+        visible={previewVisible}
+        items={previewItems}
+        initialIndex={previewIndex}
+        onClose={() => setPreviewVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -432,7 +454,14 @@ const s = StyleSheet.create({
   content:   { fontSize: 14, color: C.TEXT, lineHeight: 20 },
   readMore:  { fontSize: 13, color: C.PRIMARY, fontWeight: '600', marginTop: 4 },
 
-  // media
+  // media — single item (16:9, full width)
+  mediaSingle: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: C.BORDER,
+    marginBottom: 4,
+  },
+  // media — multi-item thumbnail grid
   mediaRow: { flexDirection: 'row', gap: 4, marginBottom: 4, height: 120 },
   mediaThumbnail: {
     flex: 1,
@@ -442,27 +471,18 @@ const s = StyleSheet.create({
   },
   mediaImage: { width: '100%', height: '100%' },
   moreOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   moreText:  { color: '#fff', fontSize: 18, fontWeight: '700' },
 
-  // single-video playable container
-  singleVideoWrap: {
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginBottom: 4,
-    backgroundColor: '#000',
-    // centers the play circle (Video is absoluteFill → out of flex flow)
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // video play indicator (grid thumbnails use the overlay wrapper; single video uses flex centering)
+  // video play indicator
   videoPlayOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -475,20 +495,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   videoPlayIcon: { color: '#fff', fontSize: 18, marginLeft: 3 },
-
-  // mute toggle — bottom-right corner while video is playing
-  muteBtn: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  muteBtnText: { fontSize: 16 },
 
   // footer
   footer:    { flexDirection: 'row', alignItems: 'center', marginTop: 10, justifyContent: 'space-between' },

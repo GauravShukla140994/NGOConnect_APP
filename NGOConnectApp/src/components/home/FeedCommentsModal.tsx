@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Pressable,
   StyleSheet,
@@ -119,12 +118,7 @@ export default function FeedCommentsModal({ visible, post, onClose, onCommentAdd
     }
   }, [visible, post, load]);
 
-  // Scroll to end once list populates
-  useEffect(() => {
-    if (comments.length > 0) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 80);
-    }
-  }, [comments.length]);
+  // Input is pinned at top — no need to scroll to end
 
   // ── submit ────────────────────────────────────────────────────────────────────
 
@@ -154,15 +148,11 @@ export default function FeedCommentsModal({ visible, post, onClose, onCommentAdd
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        style={s.overlay}
-        behavior="padding"
-        keyboardVerticalOffset={0}
-      >
+      <View style={s.overlay}>
         {/* Tapping the backdrop closes the sheet */}
         <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
 
-        <View style={[s.sheet, { height: sheetHeight }]}>
+        <View style={[s.sheet, { height: sheetHeight, paddingBottom: Math.max(insets.bottom, 12) }]}>
 
           {/* Drag handle */}
           <View style={s.dragHandle} />
@@ -174,6 +164,33 @@ export default function FeedCommentsModal({ visible, post, onClose, onCommentAdd
             </Text>
             <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close comments">
               <Text style={s.closeBtn}>✕</Text>
+            </Pressable>
+          </View>
+
+          {/* Input row — pinned at top, YouTube-style */}
+          <View style={s.inputRow}>
+            <TextInput
+              ref={inputRef}
+              style={s.input}
+              placeholder="Add a comment…"
+              placeholderTextColor="#9CA3AF"
+              value={text}
+              onChangeText={setText}
+              multiline
+              maxLength={2000}
+              returnKeyType="default"
+              blurOnSubmit={false}
+            />
+            <Pressable
+              style={[s.sendBtn, (!text.trim() || submitting) && s.sendBtnDisabled]}
+              onPress={handleSubmit}
+              disabled={!text.trim() || submitting}
+              accessibilityLabel="Send comment"
+            >
+              {submitting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={s.sendBtnText}>Post</Text>
+              }
             </Pressable>
           </View>
 
@@ -198,35 +215,8 @@ export default function FeedCommentsModal({ visible, post, onClose, onCommentAdd
             />
           )}
 
-          {/* Input row */}
-          <View style={[s.inputRow, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-            <TextInput
-              ref={inputRef}
-              style={s.input}
-              placeholder="Write a comment…"
-              placeholderTextColor="#9CA3AF"
-              value={text}
-              onChangeText={setText}
-              multiline
-              maxLength={2000}
-              returnKeyType="default"
-              blurOnSubmit={false}
-            />
-            <Pressable
-              style={[s.sendBtn, (!text.trim() || submitting) && s.sendBtnDisabled]}
-              onPress={handleSubmit}
-              disabled={!text.trim() || submitting}
-              accessibilityLabel="Send comment"
-            >
-              {submitting
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={s.sendBtnText}>Send</Text>
-              }
-            </Pressable>
-          </View>
-
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -284,8 +274,8 @@ const s = StyleSheet.create({
 
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    paddingHorizontal: 16, paddingTop: 10,
-    borderTopWidth: 1, borderTopColor: '#F3F4F6',
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
     backgroundColor: '#fff',
   },
   input: {

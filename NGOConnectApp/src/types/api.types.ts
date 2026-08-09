@@ -538,6 +538,7 @@ export interface Post {
   saveCount?:    number;
   savedAt?:      string;           // ISO datetime when the user saved this post (Post_GetSaved only)
   shareCount?:   number;
+  viewCount?:    number;            // denormalized unique-user view count
   isEmergency?:  number | boolean;
   isEvergreen?:  number | boolean;
   feedSource?:   string;           // MY_ORG | FOLLOWED_ORG | TRENDING | EMERGENCY | INTEREST | RECENT

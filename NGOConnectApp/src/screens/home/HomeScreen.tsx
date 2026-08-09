@@ -23,6 +23,8 @@ import {
   View,
 } from 'react-native';
 import VideoFeedPlayer from '../../components/home/VideoFeedPlayer';
+import MediaPreviewModal, { type MediaItem as MediaPreviewItem } from '../../components/MediaPreviewModal';
+import FeedShortsModal from '../../components/home/FeedShortsModal';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
@@ -317,6 +319,7 @@ const PostCard = React.memo(function PostCard({
   onLike,
   onCommentPress,
   onDelete,
+  onOpenShorts,
   isActive,
   globalMuted,
   onToggleMute,
@@ -325,6 +328,7 @@ const PostCard = React.memo(function PostCard({
   onLike:         (id: number, liked: boolean) => void;
   onCommentPress: (post: Post) => void;
   onDelete?:      (postId: number) => void;   // undefined = no delete option shown
+  onOpenShorts:   () => void;                 // open FeedShortsModal at this post
   isActive:       boolean;
   globalMuted:    boolean;
   onToggleMute:   () => void;
@@ -371,16 +375,37 @@ const PostCard = React.memo(function PostCard({
     if (!post.isLiked) onLike(post.postId!, false); // false = wasLiked → like it now
   }, [triggerHeartAnim, post.isLiked, post.postId, onLike]);
 
-  // For image posts — detect double-tap timing manually
-  const handleImageTap = useCallback(() => {
+  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear pending timer if the card unmounts before the 310ms window expires
+  // (removeClippedSubviews unmounts off-screen PostCards during fast scrolling)
+  React.useEffect(() => {
+    return () => {
+      if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
+    };
+  }, []);
+
+  // index-aware tap handler:
+  //   single-tap  → open FeedShortsModal (fullscreen Shorts-style viewer)
+  //   double-tap  → heart-like animation (existing behaviour), modal stays closed
+  const handleImageTapAtIndex = useCallback((_index: number) => {
     const now = Date.now();
     if (now - lastImageTap.current < 300) {
+      // Double-tap — cancel pending single-tap and do like
       lastImageTap.current = 0;
+      if (singleTapTimer.current) {
+        clearTimeout(singleTapTimer.current);
+        singleTapTimer.current = null;
+      }
       handleDoubleTap();
     } else {
       lastImageTap.current = now;
+      singleTapTimer.current = setTimeout(() => {
+        singleTapTimer.current = null;
+        onOpenShorts();   // open Shorts viewer at this post
+      }, 310);
     }
-  }, [handleDoubleTap]);
+  }, [handleDoubleTap, onOpenShorts]);
   const [isFollowingOrg,   setIsFollowingOrg]   = useState(!!post.isFollowing);
   const [followingOrgLoad, setFollowingOrgLoad] = useState(false);
 
@@ -671,7 +696,7 @@ const PostCard = React.memo(function PostCard({
                 height={SCREEN_W}
               />
             ) : (
-              <TouchableWithoutFeedback onPress={handleImageTap}>
+              <TouchableWithoutFeedback onPress={() => handleImageTapAtIndex(0)}>
                 <Image source={{ uri: mediaUrls[0] }} style={styles.igMedia} resizeMode="cover" />
               </TouchableWithoutFeedback>
             )
@@ -701,7 +726,7 @@ const PostCard = React.memo(function PostCard({
                     height={SCREEN_W}
                   />
                 ) : (
-                  <TouchableWithoutFeedback key={i} onPress={handleImageTap}>
+                  <TouchableWithoutFeedback key={i} onPress={() => handleImageTapAtIndex(i)}>
                     <Image source={{ uri: url }} style={styles.igMedia} resizeMode="cover" />
                   </TouchableWithoutFeedback>
                 )
@@ -742,6 +767,7 @@ const PostCard = React.memo(function PostCard({
             ❤️
           </Animated.Text>
         </View>
+
       ) : null}
 
       {/* ── Action row ─────────────────────────────────────────────── */}
@@ -833,6 +859,8 @@ const PostCard = React.memo(function PostCard({
       {post.createdAt ? (
         <Text style={styles.igTimestamp}>{timeAgoStr(post.createdAt)}</Text>
       ) : null}
+
+      {/* FeedShortsModal is rendered at HomeScreen level — tap opens it at this post */}
     </View>
   );
 });  // React.memo
@@ -896,6 +924,10 @@ export default function HomeScreen() {
   }, [flushSeenBuffer]);
 
   const [feed,           setFeed]           = useState<Post[]>([]);
+
+  // ── Feed Shorts (YouTube Shorts-style fullscreen viewer) ─────────────────────
+  const [shortsOpen,      setShortsOpen]      = useState(false);
+  const [shortsPostIndex, setShortsPostIndex] = useState(0);
 
   // ── Notification deep-link: scroll to a specific post ───────────────────
   // Placed here (after `feed` state) so `feed` is defined when the dependency
@@ -1516,13 +1548,17 @@ export default function HomeScreen() {
               </View>
             </>
           }
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <View style={item.postId === focusedPostId ? styles.focusedPostHighlight : undefined}>
               <PostCard
                 post={item}
                 onLike={handleLike}
                 onCommentPress={handleCommentPress}
                 onDelete={handleDeletePost}
+                onOpenShorts={() => {
+                  setShortsPostIndex(index);
+                  setShortsOpen(true);
+                }}
                 isActive={String(item.postId) === activePostId}
                 globalMuted={globalMuted}
                 onToggleMute={toggleMute}
@@ -1561,6 +1597,17 @@ export default function HomeScreen() {
         user={user}
         activeOrg={activeOrg ?? null}
         roleLabel={activeOrg ? (activeOrg.myRole ?? (activeOrg as any).role ?? 'Member') : undefined}
+      />
+
+      {/* ── Feed Shorts (YouTube-Shorts-style fullscreen viewer) ────────── */}
+      <FeedShortsModal
+        visible={shortsOpen}
+        posts={feed}
+        initialPostIndex={shortsPostIndex}
+        onClose={() => setShortsOpen(false)}
+        onLike={handleLike}
+        onCommentPress={handleCommentPress}
+        onDelete={handleDeletePost}
       />
 
       {/* ── Comments Modal ──────────────────────────────────────────────── */}
