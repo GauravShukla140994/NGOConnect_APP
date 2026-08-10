@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   PanResponder,
   Pressable,
@@ -15,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import MediaPreviewModal, { type MediaItem as MediaPreviewItem } from '../../components/MediaPreviewModal';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
@@ -151,8 +153,31 @@ function PostCard({
   onKeep: () => void;
   onRemove: () => void;
 }) {
-  const roleColor = ROLE_COLOR[post.roleCode?.toUpperCase() ?? 'MEMBER'] ?? '#16A34A';
+  const roleColor  = ROLE_COLOR[post.roleCode?.toUpperCase() ?? 'MEMBER'] ?? '#16A34A';
   const isReported = (post.reportCount ?? 0) > 0;
+
+  // Normalise media — SP returns GROUP_CONCAT CSV; mobile may already have array
+  const rawMedia = post.mediaUrls as unknown;
+  const mediaUrls: string[] = Array.isArray(rawMedia)
+    ? (rawMedia as string[])
+    : typeof rawMedia === 'string' && rawMedia
+      ? rawMedia.split(',').map((u) => u.trim()).filter(Boolean)
+      : [];
+
+  const rawTypes = post.mediaTypes ?? '';
+  const mediaTypes: string[] = typeof rawTypes === 'string' && rawTypes
+    ? rawTypes.split(',').map((t) => t.trim())
+    : [];
+  const isVideo = (i: number) => (mediaTypes[i] ?? 'IMAGE') === 'VIDEO';
+
+  const mediaItems: MediaPreviewItem[] = mediaUrls.map((uri, i) => ({
+    uri,
+    type: isVideo(i) ? 'VIDEO' : 'IMAGE',
+  }));
+  const [previewIndex,   setPreviewIndex]   = useState(0);
+  const [previewVisible, setPreviewVisible] = useState(false);
+
+  const openPreview = (i: number) => { setPreviewIndex(i); setPreviewVisible(true); };
 
   return (
     <View style={[styles.card, isReported && { borderLeftWidth: 3, borderLeftColor: '#DC2626' }]}>
@@ -178,8 +203,35 @@ function PostCard({
         </View>
       </View>
 
-      {/* Content */}
-      <Text style={styles.postContent} numberOfLines={3}>{post.content}</Text>
+      {/* Content — no line limit so full text is visible */}
+      <Text style={styles.postContent}>{post.content}</Text>
+
+      {/* Media thumbnails */}
+      {mediaUrls.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginTop: 8 }}
+          contentContainerStyle={{ gap: 6 }}
+        >
+          {mediaUrls.map((url, i) => (
+            <TouchableOpacity
+              key={i}
+              onPress={() => openPreview(i)}
+              activeOpacity={0.85}
+              accessibilityLabel={isVideo(i) ? 'Play video' : 'View image'}
+              style={styles.mediaThumbnail}
+            >
+              <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              {isVideo(i) && (
+                <View style={styles.videoPlayOverlay}>
+                  <Text style={styles.videoPlayIcon}>▶</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
 
       {/* Stats row */}
       <Text style={styles.postStats}>
@@ -213,6 +265,14 @@ function PostCard({
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Fullscreen media preview */}
+      <MediaPreviewModal
+        visible={previewVisible}
+        items={mediaItems}
+        initialIndex={previewIndex}
+        onClose={() => setPreviewVisible(false)}
+      />
     </View>
   );
 }
@@ -1005,6 +1065,9 @@ const styles = StyleSheet.create({
   reportBadge:  { backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   reportBadgeText:{ fontSize: 10, fontWeight: '700', color: '#DC2626' },
   postContent:  { fontSize: 13, color: C.TEXT, lineHeight: 19, marginBottom: 6 },
+  mediaThumbnail: { width: 90, height: 90, borderRadius: 8, overflow: 'hidden', backgroundColor: '#E5E7EB' },
+  videoPlayOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.30)' },
+  videoPlayIcon: { fontSize: 22, color: '#fff' },
   postStats:    { fontSize: 11, color: C.TEXT2, marginBottom: 6 },
   reportWarning:{ backgroundColor: '#FEF2F2', borderRadius: 8, padding: 8, marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#DC2626' },
   reportWarningText:{ fontSize: 12, color: '#DC2626' },

@@ -137,7 +137,7 @@ function CommunityCard({
 
         {/* Content */}
         {item.content ? (
-          <Text style={styles.postContent} numberOfLines={5}>{item.content}</Text>
+          <Text style={styles.postContent}>{item.content}</Text>
         ) : null}
 
         {/* ── Poll options ─────────────────────────────────────────────────── */}

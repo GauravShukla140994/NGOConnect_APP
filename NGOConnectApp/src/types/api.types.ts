@@ -417,6 +417,8 @@ export interface AdminPost {
   isPinned?: boolean;
   createdAt: string;
   timeAgo?: string;
+  mediaUrls?: string[] | string;  // CSV from SP GROUP_CONCAT — normalize on use
+  mediaTypes?: string;            // CSV of ValueCodes matching mediaUrls e.g. "IMAGE,VIDEO"
 }
 
 export interface OrgDashboard {
