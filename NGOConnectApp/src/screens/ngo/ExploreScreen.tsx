@@ -88,7 +88,7 @@ function OrgRowCard({ org, distKm, memberStatusCode, onPress }: {
   return (
     <View style={styles.rowCard}>
       {org.logoUrl || org.orgLogoUrl
-        ? <Image source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.rowAvatar} resizeMode="cover" />
+        ? <Image key={org.logoUrl ?? org.orgLogoUrl} source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.rowAvatar} resizeMode="cover" />
         : <View style={[styles.rowAvatar, { backgroundColor: color }]}><Text style={styles.rowAvatarText}>{initials(name)}</Text></View>
       }
       <View style={{ flex: 1 }}>
@@ -121,7 +121,7 @@ function OrgGridCard({ org, memberStatusCode, onPress }: {
   return (
     <TouchableOpacity style={styles.gridCard} onPress={onPress} activeOpacity={0.8} accessibilityLabel={`View ${name}`}>
       {org.logoUrl || org.orgLogoUrl
-        ? <Image source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.gridAvatar} resizeMode="cover" />
+        ? <Image key={org.logoUrl ?? org.orgLogoUrl} source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.gridAvatar} resizeMode="cover" />
         : <View style={[styles.gridAvatar, { backgroundColor: color }]}><Text style={styles.gridAvatarText}>{initials(name)}</Text></View>
       }
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 3 }}>

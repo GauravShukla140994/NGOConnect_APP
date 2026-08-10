@@ -586,6 +586,7 @@ export default function NgoProfileScreen() {
 
   // ── Swipe gesture refs ──────────────────────────────────────────────────────
   const tabBarRef   = useRef<ScrollView>(null);
+  const flatListRef = useRef<FlatList<any>>(null);
   // Always holds the latest tab + handler so the PanResponder closure never goes stale
   const swipeState  = useRef({ tab: 'About' as Tab, handleTabChange: (_t: Tab) => {} });
 
@@ -687,6 +688,8 @@ export default function NgoProfileScreen() {
     // Scroll the tab bar so the newly-active tab is always visible
     const idx = TABS.indexOf(t);
     tabBarRef.current?.scrollTo({ x: Math.max(0, idx * 90 - 20), animated: true });
+    // Scroll content back to top so the new tab's content is always visible from the start
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [loadGallery]);
 
   // Keep swipeState ref current on every render so the PanResponder closure is never stale
@@ -810,6 +813,7 @@ export default function NgoProfileScreen() {
            Non-gallery tab content lives in ListHeaderComponent; data=[] for those tabs
            so only the header renders. */}
       <FlatList
+        ref={flatListRef}
         data={tab === 'Gallery' && !feedLoading && feedPosts.length > 0 ? feedPosts : []}
         keyExtractor={(post: Post) => String(post.postId)}
         renderItem={({ item: post }: { item: Post }) => (
@@ -823,7 +827,7 @@ export default function NgoProfileScreen() {
         {/* Hero */}
         <View style={styles.hero}>
           {org.logoUrl || org.orgLogoUrl
-            ? <Image source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={[styles.heroIcon, { overflow: 'hidden' }]} resizeMode="cover" />
+            ? <Image key={org.logoUrl ?? org.orgLogoUrl} source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={[styles.heroIcon, { overflow: 'hidden' }]} resizeMode="cover" />
             : <View style={[styles.heroIcon, { backgroundColor: color }]}><Text style={styles.heroIconText}>{ini}</Text></View>
           }
           <View style={styles.heroInfo}>

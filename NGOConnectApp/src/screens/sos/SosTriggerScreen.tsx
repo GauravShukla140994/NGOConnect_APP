@@ -17,6 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { lookupApi } from '../../api/lookup.api';
 import { sosApi } from '../../api/sos.api';
+import { getSafetyPrefs } from '../../api/user.api';
 import { useAdminStore } from '../../store/adminStore';
 
 const C   = AppConfig.COLORS;
@@ -85,8 +86,9 @@ export default function SosTriggerScreen() {
   const [locLoading,  setLocLoading]  = useState(false);
   const [locError,    setLocError]    = useState('');
   const [timeLabel,   setTimeLabel]   = useState('Updated just now');
-  const [sending,     setSending]     = useState(false);
-  const [error,       setError]       = useState('');
+  const [sending,          setSending]          = useState(false);
+  const [error,            setError]            = useState('');
+  const [visibilityLabel,  setVisibilityLabel]  = useState('Admin + Moderators');
 
   // Update "Updated X ago" label every 10s
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -121,6 +123,13 @@ export default function SosTriggerScreen() {
           const def = list.find((t) => t.valueCode === 'SOS_ALERT');
           if (def) { setSelected(def); }
         }
+      })
+      .catch(() => {});
+    // Load user's saved SOS visibility preference
+    getSafetyPrefs()
+      .then((res) => {
+        const label = res.data?.data?.emergVisibility;
+        if (label) { setVisibilityLabel(label); }
       })
       .catch(() => {});
     fetchLocation();
@@ -341,9 +350,8 @@ export default function SosTriggerScreen() {
           <Text style={styles.visibilityIcon}>ℹ️</Text>
           <Text style={styles.visibilityTxt}>
             {'Alert visible to '}
-            <Text style={{ fontWeight: '700' }}>Admin + Moderators</Text>
-            {' (per Safety Preferences). '}
-            <Text style={[styles.visibilityLink, { color: C.PRIMARY }]}>Change</Text>
+            <Text style={{ fontWeight: '700' }}>{visibilityLabel}</Text>
+            {' (per Safety Preferences).'}
           </Text>
         </View>
 
