@@ -34,6 +34,7 @@ function notifMeta(type: string): { emoji: string; color: string } {
     case 'ORG_REJECTED':            return { emoji: '❌', color: C.RED };
     case 'ORG_SUSPENDED':           return { emoji: '⚠️', color: C.YELLOW };
     case 'SOS_TRIGGERED':           return { emoji: '🆘', color: C.RED };
+    case 'SOS_RESPONDER_INCOMING':  return { emoji: '🙋', color: '#F97316' };  // victim: someone wants to help — orange urgency
     case 'SOS_RESPONDER_APPROVED':  return { emoji: '🤝', color: '#2ECC71' };
     case 'SOS_RESOLVED':            return { emoji: '✅', color: '#2ECC71' };
     case 'DONATION_CONFIRMED':      return { emoji: '💚', color: '#16A34A' };
@@ -87,6 +88,9 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
     case 'SOS_RESPONDER_APPROVED':
     case 'SOS_RESOLVED':
       return refId ? { screen: 'SosActive', params: { sosIncidentId: refId } } : null;
+    // Victim-only: must open SosActive with isVictim:true so they can Approve/Decline
+    case 'SOS_RESPONDER_INCOMING':
+      return refId ? { screen: 'SosActive', params: { sosIncidentId: refId, isVictim: true } } : null;
     case 'DONATION_CONFIRMED':
       return { screen: 'MyDonations' };
     case 'DONATION_RECEIVED_ADMIN':

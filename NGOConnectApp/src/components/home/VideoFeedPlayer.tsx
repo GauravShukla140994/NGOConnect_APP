@@ -19,6 +19,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import Video from 'react-native-video';
@@ -28,6 +29,7 @@ interface Props {
   isActive:      boolean;
   muted:         boolean;
   onToggleMute:  () => void;
+  onSingleTap?:  () => void;   // open FeedShortsModal; if absent, falls back to mute toggle
   onDoubleTap?:  () => void;
   width:         number;
   height:        number;
@@ -40,7 +42,7 @@ function fmtTime(secs: number): string {
 }
 
 export default function VideoFeedPlayer({
-  uri, isActive, muted, onToggleMute, onDoubleTap, width, height,
+  uri, isActive, muted, onToggleMute, onSingleTap, onDoubleTap, width, height,
 }: Props) {
 
   const [duration,    setDuration]    = useState(0);
@@ -114,20 +116,26 @@ export default function VideoFeedPlayer({
   const handleTap = useCallback(() => {
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
-      // Double-tap confirmed — cancel pending mute action
+      // Double-tap confirmed — cancel pending action, show heart + like
       if (tapTimer.current) { clearTimeout(tapTimer.current); tapTimer.current = null; }
       lastTapRef.current = 0;
-      triggerHeart();     // Show ❤️ inside the video layer
-      onDoubleTap?.();    // Like the post (handled by PostCard)
+      triggerHeart();
+      onDoubleTap?.();
     } else {
       lastTapRef.current = now;
       tapTimer.current = setTimeout(() => {
         tapTimer.current = null;
-        onToggleMute();
-        showMuteFlash();
-      }, 300); // 300ms matches double-tap window — never fires mid-detection
+        if (onSingleTap) {
+          // Open fullscreen Shorts viewer — mute is controllable via the corner badge
+          onSingleTap();
+        } else {
+          // Fallback (no modal handler): behave as before — toggle mute
+          onToggleMute();
+          showMuteFlash();
+        }
+      }, 300);
     }
-  }, [onToggleMute, showMuteFlash, onDoubleTap, triggerHeart]);
+  }, [onToggleMute, showMuteFlash, onSingleTap, onDoubleTap, triggerHeart]);
 
   // ── v6-compatible callbacks ────────────────────────────────────────────────
   const handleLoad = useCallback((data: any) => {
@@ -206,12 +214,9 @@ export default function VideoFeedPlayer({
         </View>
       </Animated.View>
 
-      {/* ── Corner mute badge ─────────────────────────────────────── */}
-      {isActive && (
-        <View style={styles.muteCorner} pointerEvents="none">
-          <Text style={styles.muteCornerIcon}>{muted ? '🔇' : '🔊'}</Text>
-        </View>
-      )}
+      {/* Corner mute badge moved below Pressable — rendered after it in JSX
+           so it sits ABOVE the Pressable in z-order and receives taps first.
+           Tapping the badge toggles mute; tapping anywhere else opens modal. */}
 
       {/* ── VIDEO pill (top-left) ─────────────────────────────────── */}
       <View style={styles.videoPill} pointerEvents="none">
@@ -250,8 +255,20 @@ export default function VideoFeedPlayer({
         style={StyleSheet.absoluteFill}
         onPress={handleTap}
         android_ripple={null}
-        accessibilityLabel={muted ? 'Tap to unmute' : 'Tap to mute'}
+        accessibilityLabel="Tap to view fullscreen, double-tap to like"
       />
+
+      {/* ── Corner mute badge — ABOVE Pressable so badge tap is received first ── */}
+      {isActive && (
+        <TouchableOpacity
+          style={styles.muteCorner}
+          onPress={() => { onToggleMute(); showMuteFlash(); }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
+        >
+          <Text style={styles.muteCornerIcon}>{muted ? '🔇' : '🔊'}</Text>
+        </TouchableOpacity>
+      )}
 
       {/* ── Double-tap heart — AFTER the Pressable so it renders above it ── */}
       <Animated.Text

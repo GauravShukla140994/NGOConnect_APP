@@ -162,15 +162,18 @@ function ZoomableImageSlide({ uri, onFreeze, onUnfreeze, onDoubleTap }: Zoomable
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
 
-  // Keep onDoubleTap in a ref so the panResponder (created once) always
-  // calls the LATEST version — avoids stale closure over liked/likeCount state.
+  // Keep onDoubleTap in a ref so it always calls the latest version
+  // without stale closure over liked/likeCount state.
   const onDoubleTapRef = useRef(onDoubleTap);
   React.useEffect(() => { onDoubleTapRef.current = onDoubleTap; }, [onDoubleTap]);
+
+  // Double-tap: handled via Pressable (below), NOT the PanResponder.
+  // Tracking the last tap time via a ref avoids stale closures.
+  const lastTapRef = useRef(0);
 
   const st = useRef({
     scale: 1, tx: 0, ty: 0,
     pinchInitDist: 0, pinchInitScale: 1, isPinching: false,
-    lastTap: 0,
   }).current;
 
   function clamp(newTx: number, newTy: number, s: number) {
@@ -211,8 +214,9 @@ function ZoomableImageSlide({ uri, onFreeze, onUnfreeze, onDoubleTap }: Zoomable
     onMoveShouldSetPanResponderCapture: (evt) =>
       evt.nativeEvent.touches.length >= 2,
 
-    // Single-finger: only used for double-tap detection, never for pan
-    onStartShouldSetPanResponder: () => true,
+    // Single-finger: NEVER claim — let the outer vertical FlatList handle swipes.
+    // Double-tap is handled by the Pressable overlay in the return block instead.
+    onStartShouldSetPanResponder: () => false,
 
     onPanResponderGrant: (evt) => {
       const t = evt.nativeEvent.touches;
@@ -221,15 +225,6 @@ function ZoomableImageSlide({ uri, onFreeze, onUnfreeze, onDoubleTap }: Zoomable
         st.isPinching     = true;
         st.pinchInitDist  = pinchDistance(t);
         st.pinchInitScale = st.scale;
-      } else {
-        // Single finger: double-tap detection only
-        const now = Date.now();
-        if (now - st.lastTap < 300) {
-          st.lastTap = 0;
-          onDoubleTapRef.current?.(t[0].pageX, t[0].pageY);
-        } else {
-          st.lastTap = now;
-        }
       }
     },
 
@@ -268,13 +263,32 @@ function ZoomableImageSlide({ uri, onFreeze, onUnfreeze, onDoubleTap }: Zoomable
     },
   })).current;
 
+  // Double-tap via Pressable overlay — does NOT steal swipes from outer FlatList
+  // (Pressable yields to parent scroll when movement is detected).
+  const handleTap = useCallback((evt: any) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      lastTapRef.current = 0;
+      const { pageX, pageY } = evt.nativeEvent;
+      onDoubleTapRef.current?.(pageX, pageY);
+    } else {
+      lastTapRef.current = now;
+    }
+  }, []);
+
   return (
-    // panHandlers on the View — NOT Animated.Image (Animated.Image doesn't forward touches reliably)
+    // panHandlers on the View handles pinch (2-finger capture phase).
+    // The Pressable overlay handles single-finger taps for double-tap detection.
     <View style={s.slideContainer} {...panResponder.panHandlers}>
       <Animated.Image
         source={{ uri }}
         style={[s.slideMedia, { transform: [{ scale }, { translateX }, { translateY }] }]}
         resizeMode="contain"
+      />
+      {/* Transparent overlay: captures taps for double-tap without stealing swipes */}
+      <Pressable
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        onPress={handleTap}
       />
     </View>
   );
@@ -313,12 +327,13 @@ function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
 // YouTube-style "Description" bottom sheet — opens when user taps "…more"
 
 interface DescriptionSheetProps {
-  visible:  boolean;
-  post:     Post;
-  onClose:  () => void;
+  visible:          boolean;
+  post:             Post;
+  onClose:          () => void;
+  viewCountOverride?: number;
 }
 
-function PostDescriptionSheet({ visible, post, onClose }: DescriptionSheetProps) {
+function PostDescriptionSheet({ visible, post, onClose, viewCountOverride }: DescriptionSheetProps) {
   const insets = useSafeAreaInsets();
   const name   = post.authorName ?? post.orgName ?? 'NGO';
   const bg     = avatarColor(name);
@@ -385,7 +400,7 @@ function PostDescriptionSheet({ visible, post, onClose }: DescriptionSheetProps)
                 <Text style={ds.statLabel}>Comments</Text>
               </View>
               <View style={ds.statCard}>
-                <Text style={ds.statValue}>{fmtCount((post as any).viewCount ?? 0)}</Text>
+                <Text style={ds.statValue}>{fmtCount(viewCountOverride ?? (post as any).viewCount ?? 0)}</Text>
                 <Text style={ds.statLabel}>Views</Text>
               </View>
             </View>
@@ -417,11 +432,12 @@ interface PostSlideProps {
   onDelete?:          (postId: number) => void;
   onVolunteerPress?:  (post: Post) => void;
   currentUserId?:     number;
+  viewCountOverride?: number;  // local session increment from dwell tracker
 }
 
 function PostShortsSlide({
   post, isActive, onFreeze, onUnfreeze,
-  onLike, onComment, onDelete, onVolunteerPress, currentUserId,
+  onLike, onComment, onDelete, onVolunteerPress, currentUserId, viewCountOverride,
 }: PostSlideProps) {
   const insets     = useSafeAreaInsets();
   const navigation = useNavigation<any>();
@@ -652,16 +668,12 @@ function PostShortsSlide({
           )}
         </View>
 
-        {/* Caption */}
+        {/* Caption — always tappable to open the description sheet */}
         {!!caption && (
-          <>
+          <TouchableOpacity onPress={() => setDescriptionOpen(true)} activeOpacity={0.75}>
             <Text style={s.caption} numberOfLines={2}>{caption}</Text>
-            {isLong && (
-              <TouchableOpacity onPress={() => setDescriptionOpen(true)}>
-                <Text style={s.moreLink}>…more</Text>
-              </TouchableOpacity>
-            )}
-          </>
+            {isLong && <Text style={s.moreLink}>…more</Text>}
+          </TouchableOpacity>
         )}
       </View>
 
@@ -670,6 +682,7 @@ function PostShortsSlide({
         visible={descriptionOpen}
         post={post}
         onClose={() => setDescriptionOpen(false)}
+        viewCountOverride={viewCountOverride}
       />
 
       {/* Floating heart — direct child of slide root so pageX/pageY coords are correct */}
@@ -718,6 +731,11 @@ export default function FeedShortsModal({
   const viewedBuffer  = useRef<Set<number>>(new Set());
   const dwellTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Local view-count overrides: postId → incremented count.
+  // The count from the feed load is a snapshot; this keeps the displayed
+  // number up-to-date within the session without a full feed refresh.
+  const [localViewCounts, setLocalViewCounts] = useState<Record<number, number>>({});
+
   const flushViewed = useCallback(() => {
     const ids = Array.from(viewedBuffer.current);
     if (ids.length === 0) return;
@@ -732,7 +750,16 @@ export default function FeedShortsModal({
     const post = posts[activePost];
     if (!post?.postId) return;
     dwellTimer.current = setTimeout(() => {
-      viewedBuffer.current.add(post.postId!);
+      const id = post.postId!;
+      // Only count once per session per post (mirrors server deduplication)
+      if (!viewedBuffer.current.has(id)) {
+        viewedBuffer.current.add(id);
+        // Immediately bump the displayed count so UI stays in sync
+        setLocalViewCounts(prev => ({
+          ...prev,
+          [id]: (prev[id] ?? ((post as any).viewCount ?? 0)) + 1,
+        }));
+      }
       if (viewedBuffer.current.size >= 10) flushViewed();
     }, 1500);
     return () => {
@@ -803,6 +830,7 @@ export default function FeedShortsModal({
               onComment={onCommentPress}
               onDelete={onDelete}
               onVolunteerPress={onVolunteerPress}
+              viewCountOverride={localViewCounts[item.postId!]}
             />
           )}
         />

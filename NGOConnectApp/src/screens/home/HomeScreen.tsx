@@ -691,6 +691,7 @@ const PostCard = React.memo(function PostCard({
                 isActive={isActive}
                 muted={globalMuted}
                 onToggleMute={onToggleMute}
+                onSingleTap={onOpenShorts}
                 onDoubleTap={handleDoubleTap}
                 width={SCREEN_W}
                 height={SCREEN_W}
@@ -721,6 +722,7 @@ const PostCard = React.memo(function PostCard({
                     isActive={isActive && activeSlide === i}
                     muted={globalMuted}
                     onToggleMute={onToggleMute}
+                    onSingleTap={onOpenShorts}
                     onDoubleTap={handleDoubleTap}
                     width={SCREEN_W}
                     height={SCREEN_W}
@@ -1102,9 +1104,18 @@ export default function HomeScreen() {
       }
       return p;
     }));
-    // Step 2 — refetch with GPS for correct relevance-ordered list from server
+    // Step 2 — refetch with GPS for correct distance-ordered list from server.
+    // Only replace the list if GPS returns results — never wipe with an empty array.
+    // Without this guard, a GPS fix with no nearby matches would clear a list that
+    // loaded fine on the initial no-GPS fetch (intermittent disappearing section bug).
     getNearbyFeed({ pageNumber: 1, pageSize: 5, userLat: userCoords.lat, userLon: userCoords.lon })
-      .then(r => { if (r.data?.isSuccess) setProjects((r.data.data?.items ?? []).filter(p => !isProjectExpired(p))); })
+      .then(r => {
+        if (r.data?.isSuccess) {
+          const items = (r.data.data?.items ?? []).filter(p => !isProjectExpired(p));
+          if (items.length > 0) setProjects(items);
+          // items.length === 0 → GPS found no projects within range → keep no-GPS list
+        }
+      })
       .catch(() => {});
   }, [userCoords]);
 
@@ -1161,14 +1172,13 @@ export default function HomeScreen() {
 
     await Promise.all([
       loadFeed(null, null, true),
-      getNearbyFeed({
-        pageNumber: 1, pageSize: 5,
-        ...(userCoordsRef.current
-          ? { userLat: userCoordsRef.current.lat, userLon: userCoordsRef.current.lon }
-          : {}),
-      }).then(r => {
-        if (r.data?.isSuccess) setProjects((r.data.data?.items ?? []).filter(p => !isProjectExpired(p)));
-      }).catch(() => {}),
+      // Always fetch without GPS on init — no risk of GPS returning 0 nearby and
+      // wiping the list. The GPS effect below upgrades to a GPS-filtered list once
+      // coordinates are confirmed, and only replaces the list when items.length > 0.
+      getNearbyFeed({ pageNumber: 1, pageSize: 5 })
+        .then(r => {
+          if (r.data?.isSuccess) setProjects((r.data.data?.items ?? []).filter(p => !isProjectExpired(p)));
+        }).catch(() => {}),
       getMyOrgs().then(r => {
         if (r.data?.isSuccess) {
           const orgs = r.data.data ?? [];
@@ -1518,14 +1528,14 @@ export default function HomeScreen() {
                 ))
               }
 
-              {projects.length > 0 && (
-                <View style={styles.section}>
-                  <View style={styles.sectionRow}>
-                    <Text style={styles.sectionTitle}>📍 Nearby Opportunities</Text>
-                    <TouchableOpacity onPress={() => nav.navigate('AllOpportunities')}>
-                      <Text style={styles.viewAll}>View All</Text>
-                    </TouchableOpacity>
-                  </View>
+              <View style={styles.section}>
+                <View style={styles.sectionRow}>
+                  <Text style={styles.sectionTitle}>📍 Nearby Opportunities</Text>
+                  <TouchableOpacity onPress={() => nav.navigate('AllOpportunities')}>
+                    <Text style={styles.viewAll}>View All</Text>
+                  </TouchableOpacity>
+                </View>
+                {projects.length > 0 ? (
                   <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
@@ -1539,8 +1549,18 @@ export default function HomeScreen() {
                       />
                     ))}
                   </ScrollView>
-                </View>
-              )}
+                ) : (
+                  <TouchableOpacity
+                    style={styles.nearbyEmpty}
+                    onPress={() => nav.navigate('AllOpportunities')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.nearbyEmptyIcon}>🔍</Text>
+                    <Text style={styles.nearbyEmptyText}>No opportunities near you right now</Text>
+                    <Text style={styles.nearbyEmptyLink}>Browse all opportunities →</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               <View style={styles.feedDivider}>
                 <View style={styles.feedDividerLine} />
                 <Text style={styles.feedLabel}>FEED</Text>
@@ -1818,6 +1838,10 @@ const styles = StyleSheet.create({
   sectionRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   sectionTitle:    { fontSize: 14, fontWeight: '700', color: C.TEXT },
   viewAll:         { fontSize: 13, color: C.PRIMARY, fontWeight: '600' },
+  nearbyEmpty:     { alignItems: 'center', paddingVertical: 20, paddingHorizontal: 16, backgroundColor: C.CARD, borderRadius: 12, marginTop: 2 },
+  nearbyEmptyIcon: { fontSize: 28, marginBottom: 6 },
+  nearbyEmptyText: { fontSize: 13, color: C.SUBTEXT, textAlign: 'center', marginBottom: 8 },
+  nearbyEmptyLink: { fontSize: 13, color: C.PRIMARY, fontWeight: '600' },
   focusedPostHighlight: { borderWidth: 2, borderColor: C.PRIMARY, borderRadius: 12, marginHorizontal: 2 },
   feedDivider:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   feedDividerLine: { flex: 1, height: 1, backgroundColor: C.BORDER },

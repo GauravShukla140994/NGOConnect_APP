@@ -20,7 +20,8 @@ const Stack = createNativeStackNavigator();
 // SOS types that route to the urgent channel (alarm sound + triple vibration)
 // Matches MainApplication.kt "ripplehub_sos" channel.
 // SOS_RESOLVED goes on the default channel — it's a relief notification, not urgent.
-const SOS_NOTIF_TYPES = new Set(['SOS_TRIGGERED', 'SOS_RESPONDER_APPROVED']);
+// SOS_RESPONDER_INCOMING → victim needs urgent alert so they can approve/deny in time.
+const SOS_NOTIF_TYPES = new Set(['SOS_TRIGGERED', 'SOS_RESPONDER_INCOMING', 'SOS_RESPONDER_APPROVED']);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Deep-link routing: notifType → { screen, params }
@@ -63,10 +64,13 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
     case 'INVITE_DECLINED':
       return { screen: 'MyOrgs' };
     case 'SOS_TRIGGERED':
-    case 'SOS_RESPONDER_INCOMING':
     case 'SOS_RESPONDER_APPROVED':
     case 'SOS_RESOLVED':
       return refId ? { screen: 'SosActive', params: { sosIncidentId: refId } } : null;
+    // Victim-only: responder offered help → victim must approve/decline.
+    // Must pass isVictim: true so SosActiveScreen shows the Approve/Decline buttons.
+    case 'SOS_RESPONDER_INCOMING':
+      return refId ? { screen: 'SosActive', params: { sosIncidentId: refId, isVictim: true } } : null;
     case 'DONATION_CONFIRMED':
       return { screen: 'MyDonations' };
     case 'DONATION_RECEIVED_ADMIN':
