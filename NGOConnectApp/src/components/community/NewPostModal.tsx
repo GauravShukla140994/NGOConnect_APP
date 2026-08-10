@@ -305,7 +305,7 @@ export default function NewPostModal({
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.kavWrapper}
         >
-          <Pressable style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
+          <Pressable style={styles.sheet}>
             {/* Handle */}
             <View style={styles.handle} />
 
@@ -716,7 +716,10 @@ export default function NewPostModal({
                 </View>
               </TouchableOpacity>
 
-              {/* Submit */}
+            </ScrollView>
+
+            {/* Submit — outside ScrollView so it never hides behind the keyboard */}
+            <View style={[styles.submitFooter, { paddingBottom: insets.bottom + 8 }]}>
               <TouchableOpacity
                 style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
                 onPress={handleSubmit}
@@ -728,8 +731,7 @@ export default function NewPostModal({
                   : <Text style={styles.submitBtnText}>{submitLabel}</Text>
                 }
               </TouchableOpacity>
-
-            </ScrollView>
+            </View>
           </Pressable>
         </KeyboardAvoidingView>
       </Pressable>
@@ -833,6 +835,7 @@ const styles = StyleSheet.create({
   toggleRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   toggleLabel:  { fontSize: 13, color: C2.TEXT },
 
-  submitBtn:    { backgroundColor: C2.PRIMARY, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 8, marginBottom: 8 },
+  submitFooter: { paddingTop: 8, paddingHorizontal: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C2.BORDER },
+  submitBtn:    { backgroundColor: C2.PRIMARY, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
   submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
