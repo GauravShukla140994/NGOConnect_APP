@@ -308,8 +308,8 @@ export default function AdminOrgScreen() {
           <FieldRow label="Registration Number"  value={regNumber}   placeholder="Not provided" />
           <FieldRow label="Total Members"         value={memberCount} placeholder="—" />
           <FieldRow label="About Organisation"    value={about}       placeholder="Not provided" multiline />
-          <FieldRow label="Mission"               value={mission}     placeholder="Not provided" />
-          <FieldRow label="Vision"                value={vision}      placeholder="Not provided" />
+          <FieldRow label="Mission"               value={mission}     placeholder="Not provided" multiline />
+          <FieldRow label="Vision"                value={vision}      placeholder="Not provided" multiline />
         </View>
 
         {/* ── Contact Information ───────────────────────────────────────── */}

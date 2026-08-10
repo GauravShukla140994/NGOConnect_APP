@@ -276,7 +276,12 @@ export default function AdminDashboardScreen() {
           accessibilityLabel="Select organisation"
         >
           {selectedOrg?.logoUrl || selectedOrg?.orgLogoUrl
-            ? <Image source={{ uri: (selectedOrg.logoUrl ?? selectedOrg.orgLogoUrl)! }} style={[styles.orgLogo, { overflow: 'hidden' }]} resizeMode="cover" />
+            ? <Image
+                key={selectedOrg.logoUrl ?? selectedOrg.orgLogoUrl}
+                source={{ uri: (selectedOrg.logoUrl ?? selectedOrg.orgLogoUrl)! }}
+                style={[styles.orgLogo, { overflow: 'hidden' }]}
+                resizeMode="cover"
+              />
             : <View style={[styles.orgLogo, { backgroundColor: orgColor }]}><Text style={styles.orgLogoText}>{orgInit}</Text></View>
           }
           <Text style={styles.orgName} numberOfLines={1}>{orgName}</Text>
