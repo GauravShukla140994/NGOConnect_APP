@@ -670,10 +670,13 @@ export default function NgoProfileScreen() {
     getProfile(orgId).then(res => {
       if (res.data?.isSuccess) {
         const d = res.data.data;
-        setIsFollowing(!!d?.isFollowing);
-        if (d?.followerCount !== undefined) {
-          setOrg(prev => prev ? { ...prev, followerCount: d.followerCount } : prev);
-        }
+        if (!d) return;
+        setIsFollowing(!!d.isFollowing);
+        setOrg(prev => prev ? {
+          ...prev,
+          followerCount:    d.followerCount    ?? prev.followerCount,
+          memberStatusCode: (d as any).memberStatusCode ?? (prev as any).memberStatusCode,
+        } : prev);
       }
     }).catch(() => {});
   }, [orgId]));

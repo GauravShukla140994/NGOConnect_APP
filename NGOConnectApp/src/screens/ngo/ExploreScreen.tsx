@@ -70,7 +70,9 @@ function initials(name: string) {
 }
 
 // ── Row card — Recommended tab ────────────────────────────────────────────────
-function OrgRowCard({ org, distKm, onPress }: { org: Organisation; distKm?: number; onPress: () => void }) {
+function OrgRowCard({ org, distKm, memberStatusCode, onPress }: {
+  org: Organisation; distKm?: number; memberStatusCode?: string; onPress: () => void;
+}) {
   const name   = org.orgName ?? org.name ?? 'NGO';
   const color  = avatarColor(name);
   const rating = org.avgRating ?? org.rating ?? 0;
@@ -80,6 +82,8 @@ function OrgRowCard({ org, distKm, onPress }: { org: Organisation; distKm?: numb
     org.memberCount ? `${org.memberCount.toLocaleString('en-IN')} members` : null,
     distKm !== undefined ? formatDist(distKm) : null,
   ].filter(Boolean).join(' · ');
+  const isMember  = memberStatusCode === 'APPROVED';
+  const isPending = memberStatusCode === 'PENDING';
 
   return (
     <View style={styles.rowCard}>
@@ -88,11 +92,13 @@ function OrgRowCard({ org, distKm, onPress }: { org: Organisation; distKm?: numb
         : <View style={[styles.rowAvatar, { backgroundColor: color }]}><Text style={styles.rowAvatarText}>{initials(name)}</Text></View>
       }
       <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
           <Text style={styles.rowName} numberOfLines={1}>{name}</Text>
           {org.verificationStatusCode === 'VERIFIED' && (
             <View style={styles.verifiedBadge}><Text style={styles.verifiedBadgeText}>✓</Text></View>
           )}
+          {isMember  && <View style={styles.memberChipInline}><Text style={styles.memberChipInlineText}>✓ Member</Text></View>}
+          {isPending && <View style={styles.pendingChipInline}><Text style={styles.pendingChipInlineText}>⏳ Pending</Text></View>}
         </View>
         <Text style={styles.rowMeta} numberOfLines={1}>{meta}</Text>
       </View>
@@ -104,10 +110,14 @@ function OrgRowCard({ org, distKm, onPress }: { org: Organisation; distKm?: numb
 }
 
 // ── Grid card — All NGOs tab ──────────────────────────────────────────────────
-function OrgGridCard({ org, onPress }: { org: Organisation; onPress: () => void }) {
-  const name   = org.orgName ?? org.name ?? 'NGO';
-  const color  = avatarColor(name);
-  const rating = org.avgRating ?? org.rating ?? 0;
+function OrgGridCard({ org, memberStatusCode, onPress }: {
+  org: Organisation; memberStatusCode?: string; onPress: () => void;
+}) {
+  const name      = org.orgName ?? org.name ?? 'NGO';
+  const color     = avatarColor(name);
+  const rating    = org.avgRating ?? org.rating ?? 0;
+  const isMember  = memberStatusCode === 'APPROVED';
+  const isPending = memberStatusCode === 'PENDING';
   return (
     <TouchableOpacity style={styles.gridCard} onPress={onPress} activeOpacity={0.8} accessibilityLabel={`View ${name}`}>
       {org.logoUrl || org.orgLogoUrl
@@ -123,9 +133,25 @@ function OrgGridCard({ org, onPress }: { org: Organisation; onPress: () => void 
       <Text style={styles.gridMeta} numberOfLines={1}>
         {(org.categoryName ?? org.category ?? 'NGO')}{rating > 0 ? ` · ⭐${rating.toFixed(1)}` : ''}
       </Text>
-      <TouchableOpacity style={styles.joinBtn} onPress={onPress} accessibilityLabel={`Join ${name}`}>
-        <Text style={styles.joinBtnText}>Join</Text>
-      </TouchableOpacity>
+      {isMember ? (
+        <>
+          <View style={styles.memberChipGrid}><Text style={styles.memberChipGridText}>✓ Member</Text></View>
+          <TouchableOpacity style={styles.viewBtnGrid} onPress={onPress} accessibilityLabel={`View ${name}`}>
+            <Text style={styles.viewBtnGridText}>View</Text>
+          </TouchableOpacity>
+        </>
+      ) : isPending ? (
+        <>
+          <View style={styles.pendingChipGrid}><Text style={styles.pendingChipGridText}>⏳ Pending</Text></View>
+          <TouchableOpacity style={styles.viewBtnGrid} onPress={onPress} accessibilityLabel={`View ${name}`}>
+            <Text style={styles.viewBtnGridText}>View</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <TouchableOpacity style={styles.joinBtn} onPress={onPress} accessibilityLabel={`Join ${name}`}>
+          <Text style={styles.joinBtnText}>Join</Text>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }
@@ -194,6 +220,13 @@ export default function ExploreScreen() {
   const exploreOrgName = activeOrg?.orgName ?? activeOrg?.name ?? 'Explore';
   const orgInitials  = exploreOrgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const approvedOrgs = userOrgs.filter((o) => o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED');
+
+  // Map orgId → memberStatusCode so cards can show member/pending state without an extra API call
+  const membershipMap = useMemo(() => {
+    const map = new Map<number, string>();
+    userOrgs.forEach((o: any) => { if (o.orgId && o.memberStatusCode) map.set(o.orgId, o.memberStatusCode); });
+    return map;
+  }, [userOrgs]);
 
   // Deterministic color for org avatar
   const ORG_COLORS   = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A', '#7C3AED'];
@@ -612,7 +645,7 @@ export default function ExploreScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <OrgRowCard org={item} distKm={distFor(item)} onPress={() => goToNgo(item.orgId)} />
+            <OrgRowCard org={item} distKm={distFor(item)} memberStatusCode={membershipMap.get(item.orgId)} onPress={() => goToNgo(item.orgId)} />
           )}
           ListEmptyComponent={
             <View style={styles.center}>
@@ -694,7 +727,7 @@ export default function ExploreScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <OrgGridCard org={item} onPress={() => goToNgo(item.orgId)} />
+            <OrgGridCard org={item} memberStatusCode={membershipMap.get(item.orgId)} onPress={() => goToNgo(item.orgId)} />
           )}
           ListFooterComponent={
             hasMore && orgs.length > 0
@@ -795,6 +828,18 @@ const styles = StyleSheet.create({
   gridMeta:      { fontSize: 11, color: C.TEXT2, textAlign: 'center', marginBottom: 10 },
   joinBtn:       { backgroundColor: C.PRIMARY, paddingHorizontal: 20, paddingVertical: 7, borderRadius: 20, width: '100%', alignItems: 'center' },
   joinBtnText:   { color: '#fff', fontSize: 13, fontWeight: '600' },
+  // Member / Pending — row card inline chips
+  memberChipInline:     { backgroundColor: '#ECFDF5', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#6EE7B7' },
+  memberChipInlineText: { fontSize: 10, fontWeight: '700', color: '#059669' },
+  pendingChipInline:    { backgroundColor: '#FFF7ED', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#FCD34D' },
+  pendingChipInlineText:{ fontSize: 10, fontWeight: '700', color: '#D97706' },
+  // Member / Pending — grid card chips + view button
+  memberChipGrid:     { backgroundColor: '#ECFDF5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#6EE7B7', width: '100%', alignItems: 'center', marginBottom: 6 },
+  memberChipGridText: { fontSize: 11, fontWeight: '700', color: '#059669' },
+  pendingChipGrid:    { backgroundColor: '#FFF7ED', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#FCD34D', width: '100%', alignItems: 'center', marginBottom: 6 },
+  pendingChipGridText:{ fontSize: 11, fontWeight: '700', color: '#D97706' },
+  viewBtnGrid:        { backgroundColor: C.BG, paddingHorizontal: 20, paddingVertical: 7, borderRadius: 20, width: '100%', alignItems: 'center', borderWidth: 1.5, borderColor: C.BORDER },
+  viewBtnGridText:    { color: C.TEXT2, fontSize: 13, fontWeight: '600' },
   trendCard:     { backgroundColor: C.CARD, marginHorizontal: 12, marginTop: 10, borderRadius: 16, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 4 },
   emergencyBadge:{ alignSelf: 'flex-start', backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20, marginBottom: 8 },
   emergencyText: { fontSize: 11, fontWeight: '700', color: '#DC2626' },
