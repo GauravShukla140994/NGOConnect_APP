@@ -129,12 +129,21 @@ function parseHM(s: string): Date {
   return d;
 }
 
-/** Format a Date to "HH:MM". */
+/** Format a Date to "HH:MM" (24-hour) — used for API / form state storage. */
 function formatHM(d: Date): string {
   return [
     String(d.getHours()).padStart(2, '0'),
     String(d.getMinutes()).padStart(2, '0'),
   ].join(':');
+}
+
+/** Convert stored "HH:MM" (24-hour) to "h:MM AM/PM" for display only. */
+function display12H(hhmm: string): string {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
 /** Midnight today (local) — used as minimumDate for date pickers. */
@@ -282,7 +291,7 @@ function TimePickerButton({ label, value, onPress }: { label: string; value: str
       <Text style={s.label}>{label}</Text>
       <TouchableOpacity onPress={onPress} style={s.pickerBtn} activeOpacity={0.75}>
         <Text style={[s.pickerBtnText, !value && s.pickerBtnPlaceholder]}>
-          {value || 'Select time'}
+          {value ? display12H(value) : 'Select time'}
         </Text>
         <Text style={s.pickerBtnIcon}>🕐</Text>
       </TouchableOpacity>
@@ -324,6 +333,9 @@ export default function CreateProjectScreen() {
   // has NO saved coordinates. This prevents any race condition: GPS can never
   // overwrite saved DB coordinates regardless of which async operation arrives first.
   const shouldUseGpsRef     = useRef(!projectId);
+  // Tracks skills already saved in DB for this project — used during edit to
+  // avoid re-POSTing existing skills (which would create duplicates).
+  const savedSkillsRef      = useRef<string[]>([]);
 
   // ---- date / time picker state ----
   type PickerTarget = 'date' | 'startDate' | 'endDate' | 'startTime' | 'endTime';
@@ -385,7 +397,7 @@ export default function CreateProjectScreen() {
           description:      p.description ?? '',
           maxVolunteers:    String(p.maxVolunteers ?? ''),
           isPublic:         p.isPublic ?? true,
-          requiresApproval: p.requiresApproval ?? false,
+          requiresApproval: Boolean(p.requiresApproval),
           scheduleType:     (p.scheduleType ?? p.scheduleTypeCode ?? 'ONE_TIME') as ScheduleType,
           date:             p.oneTimeDate ? p.oneTimeDate.slice(0,10).split('-').reverse().join('-') : '',
           startTime:        p.sessionStartTime ?? '',
@@ -401,9 +413,22 @@ export default function CreateProjectScreen() {
           latitude:         p.latitude,
           longitude:        p.longitude,
           locationPinned:   !!(p.latitude && p.longitude),
-          skills:           [],
-          age18Plus:        (p.ageRestriction ?? 0) === 1,
+          skills:           [],   // filled below after skills fetch
+          age18Plus:        Boolean(p.ageRestriction),
         });
+
+        // Fetch existing project skills and pre-populate the form so
+        // the admin can see what's already saved (and we don't re-add them).
+        try {
+          const skRes = await projectApi.getSkills(projectId);
+          const existing: string[] = (skRes.data?.data ?? []).map(
+            (s: any) => s.skillName ?? s.SkillName ?? ''
+          ).filter(Boolean);
+          savedSkillsRef.current = existing;
+          setForm(prev => ({ ...prev, skills: existing }));
+        } catch {
+          // Non-fatal — form just starts with empty skills list
+        }
 
         if (p.latitude && p.longitude) {
           // Project has saved coordinates — GPS stays permanently blocked.
@@ -478,8 +503,24 @@ export default function CreateProjectScreen() {
       if (pickerTarget === 'endDate')   set('endDate', v);
     } else {
       const v = formatHM(d);
-      if (pickerTarget === 'startTime') set('startTime', v);
-      if (pickerTarget === 'endTime')   set('endTime', v);
+      if (pickerTarget === 'startTime') {
+        // If start time is moved past the existing end time, clear end time
+        if (form.endTime && v >= form.endTime) {
+          set('endTime', '');
+          Alert.alert('End Time Cleared', 'Start time is now at or after the previous end time. Please select a new end time.');
+        }
+        set('startTime', v);
+      }
+      if (pickerTarget === 'endTime') {
+        if (form.startTime && v <= form.startTime) {
+          Alert.alert('Invalid Time', `End time must be after start time (${display12H(form.startTime)}).`);
+          // Don't apply — leave picker closed, user must pick again
+          setPickerVisible(false);
+          setPickerTarget(null);
+          return;
+        }
+        set('endTime', v);
+      }
     }
     setPickerVisible(false);
     setPickerTarget(null);
@@ -632,6 +673,11 @@ export default function CreateProjectScreen() {
         if (!form.startTime) { Alert.alert('Required', 'Please select a start time.');      return false; }
         if (!form.endTime)   { Alert.alert('Required', 'Please select an end time.');       return false; }
       }
+      // Time order check — applies to all schedule types
+      if (form.startTime && form.endTime && form.endTime <= form.startTime) {
+        Alert.alert('Invalid Time', `End time (${display12H(form.endTime)}) must be after start time (${display12H(form.startTime)}).`);
+        return false;
+      }
     }
     return true;
   };
@@ -664,7 +710,7 @@ export default function CreateProjectScreen() {
     latitude:         form.latitude,
     longitude:        form.longitude,
     // Restrictions
-    minAge:           form.age18Plus ? 18 : undefined,
+    minAge:           form.age18Plus ? 18 : 0,
     // Status
     isDraft,
   });
@@ -681,8 +727,13 @@ export default function CreateProjectScreen() {
         if (!r.data?.isSuccess) { Alert.alert('Error', r.data?.message ?? 'Could not create project.'); return; }
         pid = r.data.data?.projectId ?? r.data?.data;
       }
-      if (pid && form.skills.length > 0) {
-        for (const skill of form.skills) {
+      // For new projects: add all skills.
+      // For edits: only add skills that weren't already saved — avoids duplicates.
+      const skillsToAdd = isEdit
+        ? form.skills.filter(sk => !savedSkillsRef.current.includes(sk))
+        : form.skills;
+      if (pid && skillsToAdd.length > 0) {
+        for (const skill of skillsToAdd) {
           await projectApi.addSkill(pid, skill, false);
         }
       }
@@ -711,7 +762,7 @@ export default function CreateProjectScreen() {
           value={pickerDate}
           mode={pickerMode}
           display="default"
-          is24Hour={pickerMode === 'time'}
+          is24Hour={false}
           minimumDate={pickerMode === 'date' ? todayMidnight() : undefined}
           onChange={onPickerChange}
         />
@@ -738,7 +789,7 @@ export default function CreateProjectScreen() {
               value={pickerDate}
               mode={pickerMode}
               display="spinner"
-              is24Hour={pickerMode === 'time'}
+              is24Hour={false}
               minimumDate={pickerMode === 'date' ? todayMidnight() : undefined}
               onChange={onPickerChange}
               style={{ height: 200 }}
@@ -1090,7 +1141,7 @@ export default function CreateProjectScreen() {
   const renderStep5 = () => {
     const locType  = LOCATION_TYPES.find(l => l.code === form.locationType);
     const timeStr  = form.startTime
-      ? `${form.startTime}${form.endTime ? ' – ' + form.endTime : ''}`
+      ? `${display12H(form.startTime)}${form.endTime ? ' – ' + display12H(form.endTime) : ''}`
       : null;
     const locationStr = form.locationType === 'REMOTE'
       ? (form.landmark || 'Online')
@@ -1188,25 +1239,16 @@ export default function CreateProjectScreen() {
           </Text>
         </View>
 
-        {/* Two equal buttons: Preview (outline) + Publish (primary) */}
-        <View style={s.reviewActions}>
-          <TouchableOpacity
-            style={s.previewBtn}
-            onPress={() => Alert.alert('Preview', 'Project preview coming soon.')}
-          >
-            <Text style={s.previewBtnText}>Preview</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={s.publishBtn}
-            onPress={() => doSave(false)}
-            disabled={saving}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.publishBtnText}>🚀 {isEdit ? 'Update' : 'Publish'}</Text>
-            }
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={s.publishBtn}
+          onPress={() => doSave(false)}
+          disabled={saving}
+        >
+          {saving
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={s.publishBtnText}>🚀 {isEdit ? 'Update' : 'Publish'}</Text>
+          }
+        </TouchableOpacity>
 
       </ScrollView>
     );
@@ -1442,17 +1484,9 @@ const s = StyleSheet.create({
   },
   warningText: { fontSize: 11, color: '#92400E', lineHeight: 16 },
 
-  reviewActions: { flexDirection: 'row', gap: 8, marginBottom: 7 },
-  previewBtn: {
-    flex: 1,
-    backgroundColor: 'transparent', borderWidth: 1.5, borderColor: C_CONST.PRIMARY,
-    borderRadius: 12, padding: 9, alignItems: 'center',
-  },
-  previewBtnText: { color: C_CONST.PRIMARY, fontSize: 12, fontWeight: '600' },
   publishBtn: {
-    flex: 1,
     backgroundColor: C_CONST.PRIMARY, borderRadius: 12,
-    padding: 9, alignItems: 'center',
+    padding: 9, alignItems: 'center', marginBottom: 7,
   },
   publishBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 
