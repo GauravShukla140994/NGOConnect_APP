@@ -158,6 +158,7 @@ export interface UserApplication {
   sessionEndTime?: string;
   landmark?: string;
   city?: string;
+  categoryName?: string;       // project category (raw string, e.g. "Education", "Health")
   // Project status (drives tab routing client-side)
   projectStatusCode?: string; // UPCOMING | ACTIVE | COMPLETED | EXPIRED | CANCELLED
   projectStatus?: string;

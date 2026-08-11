@@ -126,6 +126,11 @@ function ProjectCard({
               </View>
             </View>
             <Text style={styles.orgName}>{item.orgName}</Text>
+            {!!item.categoryName && (
+              <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 4 }}>
+                <Text style={{ fontSize: 11, color: '#2563EB', fontWeight: '600' }}>{item.categoryName}</Text>
+              </View>
+            )}
             {scheduleOneLiner(item) ? <Text style={styles.dateText}>{scheduleOneLiner(item)}</Text> : null}
             <View style={styles.cardFooter}>
               <Text style={[styles.footerMeta, { color: statusColor.text }]}>
@@ -152,10 +157,24 @@ function ProjectCard({
             </View>
           </View>
           <Text style={styles.orgName}>{item.orgName}</Text>
+          {/* Category + schedule type pills */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+            {!!item.categoryName && (
+              <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 11, color: '#2563EB', fontWeight: '600' }}>{item.categoryName}</Text>
+              </View>
+            )}
+            {!!item.scheduleTypeCode && (
+              <View style={{ backgroundColor: '#F5F3FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 11, color: '#7C3AED', fontWeight: '600' }}>
+                  {item.scheduleTypeCode === 'ONE_TIME'  ? 'One-time'  :
+                   item.scheduleTypeCode === 'RECURRING' ? 'Recurring' :
+                   item.scheduleTypeCode === 'FLEXIBLE'  ? 'Flexible'  : item.scheduleTypeCode}
+                </Text>
+              </View>
+            )}
+          </View>
           {scheduleOneLiner(item) ? <Text style={styles.dateText}>{scheduleOneLiner(item)}</Text> : null}
-          {item.scheduleTypeCode === 'RECURRING' && item.recurDays ? (
-            <Text style={styles.sessionText}>🔄 {item.recurDays}</Text>
-          ) : null}
           {item.requiresApproval && !item.isCheckedIn && (
             <View style={styles.qrSection}>
               <Text style={styles.qrHint}>At the venue? Ask admin to show the QR and scan it to log attendance.</Text>
@@ -232,6 +251,11 @@ function ProjectCard({
               </View>
             </View>
             <Text style={styles.orgName}>{item.orgName}</Text>
+            {!!item.categoryName && (
+              <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 4 }}>
+                <Text style={{ fontSize: 11, color: '#2563EB', fontWeight: '600' }}>{item.categoryName}</Text>
+              </View>
+            )}
             {scheduleOneLiner(item) ? <Text style={styles.dateText}>{scheduleOneLiner(item)}</Text> : null}
             <View style={styles.cardFooter}>
               <Text style={[styles.footerMeta, { color: C.TEXT3 }]}>

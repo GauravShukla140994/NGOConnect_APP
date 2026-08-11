@@ -215,7 +215,10 @@ function AppliedCard({
 function UpcomingCard({
   app, onPress, onScanQR, onSelfCheckIn,
 }: { app: UserApplication; onPress: () => void; onScanQR: () => void; onSelfCheckIn: () => void }) {
-  const typeLabel = app.scheduleTypeCode === 'RECURRING' ? 'Recurring' : 'Event';
+  const typeLabel =
+    app.scheduleTypeCode === 'ONE_TIME'  ? 'One-time'  :
+    app.scheduleTypeCode === 'RECURRING' ? 'Recurring' :
+    app.scheduleTypeCode === 'FLEXIBLE'  ? 'Flexible'  : 'Event';
 
   return (
     <TouchableOpacity style={s.projectCard} onPress={onPress} activeOpacity={0.85}>
@@ -227,6 +230,13 @@ function UpcomingCard({
         </View>
       </View>
       <Text style={s.orgName}>{app.orgName}</Text>
+
+      {/* Category pill */}
+      {!!app.categoryName && (
+        <View style={[s.chip, { backgroundColor: '#EFF6FF', alignSelf: 'flex-start', marginBottom: 4 }]}>
+          <Text style={[s.chipText, { color: '#2563EB' }]}>{app.categoryName}</Text>
+        </View>
+      )}
 
       {/* Schedule */}
       <View style={s.scheduleRow}>
