@@ -740,15 +740,7 @@ function DiscussionCard({ item, onLike, onComment, onMorePress }: {
         item={item}
         onLike={onLike}
         onComment={onComment}
-        rightSlot={
-          <TouchableOpacity
-            style={css.footerBtn}
-            onPress={() => Alert.alert('Link copied!')}
-            accessibilityLabel="Share"
-          >
-            <Text style={css.footerTxt}>🔗</Text>
-          </TouchableOpacity>
-        }
+        rightSlot={null}
       />
     </View>
   );
