@@ -699,7 +699,7 @@ export default function ImpactScreen() {
                 {(summary?.totalBadges ?? 0) > 0 && (
                   <TouchableOpacity
                     activeOpacity={0.7}
-                    onPress={() => nav.navigate('AllBadges', { badges: summary!.badges })}
+                    onPress={() => nav.navigate('AllBadges', { totalBadges: summary!.totalBadges })}
                   >
                     <Text style={s.viewAllTxt}>View All</Text>
                   </TouchableOpacity>
@@ -715,7 +715,7 @@ export default function ImpactScreen() {
                     <TouchableOpacity
                       style={s.viewAllBadgesBtn}
                       activeOpacity={0.7}
-                      onPress={() => nav.navigate('AllBadges', { badges: summary!.badges })}
+                      onPress={() => nav.navigate('AllBadges', { totalBadges: summary!.totalBadges })}
                     >
                       <Text style={s.viewAllBadgesBtnTxt}>
                         View all {summary!.totalBadges} badges →

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   StyleSheet,
   Text,
@@ -9,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { getMyBadges } from '../../api/user.api';
 import type { UserBadge } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
@@ -48,12 +50,26 @@ function BadgeCard({ badge }: { badge: UserBadge }) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-type RouteParams = { badges: UserBadge[] };
+type RouteParams = { totalBadges?: number };
 
 export default function AllBadgesScreen() {
-  const nav    = useNavigation<any>();
-  const route  = useRoute<RouteProp<Record<string, RouteParams>, string>>();
-  const badges = route.params?.badges ?? [];
+  const nav   = useNavigation<any>();
+  const route = useRoute<RouteProp<Record<string, RouteParams>, string>>();
+
+  // Show totalBadges from ImpactScreen immediately while fetching the full list
+  const hintTotal = route.params?.totalBadges;
+
+  const [badges,  setBadges]  = useState<UserBadge[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getMyBadges()
+      .then(r => { if (r.data?.isSuccess) setBadges(r.data.data ?? []); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const count = loading ? (hintTotal ?? 0) : badges.length;
 
   return (
     <SafeAreaView style={s.container} edges={['top']}>
@@ -64,25 +80,33 @@ export default function AllBadgesScreen() {
           <Text style={s.backArrow}>←</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Badges Earned</Text>
-        <View style={s.countPill}>
-          <Text style={s.countPillTxt}>{badges.length}</Text>
-        </View>
+        {count > 0 && (
+          <View style={s.countPill}>
+            <Text style={s.countPillTxt}>{count}</Text>
+          </View>
+        )}
       </View>
 
       {/* List */}
-      <FlatList
-        data={badges}
-        keyExtractor={(b, i) => String(b.userBadgeId ?? i)}
-        renderItem={({ item }) => <BadgeCard badge={item} />}
-        contentContainerStyle={s.list}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={s.empty}>
-            <Text style={{ fontSize: 44, marginBottom: 10 }}>🎖</Text>
-            <Text style={s.emptyText}>No badges earned yet.{'\n'}Complete projects to earn your first badge!</Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={s.center}>
+          <ActivityIndicator color={C.PRIMARY} />
+        </View>
+      ) : (
+        <FlatList
+          data={badges}
+          keyExtractor={(b, i) => String(b.userBadgeId ?? i)}
+          renderItem={({ item }) => <BadgeCard badge={item} />}
+          contentContainerStyle={s.list}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <Text style={{ fontSize: 44, marginBottom: 10 }}>🎖</Text>
+              <Text style={s.emptyText}>No badges earned yet.{'\n'}Complete projects to earn your first badge!</Text>
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -114,7 +138,8 @@ const s = StyleSheet.create({
   countPillTxt: { fontSize: 13, fontWeight: '700', color: C.PRIMARY },
 
   // List
-  list: { padding: 16, gap: 10 },
+  list:   { padding: 16, gap: 10 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   // Badge card
   badgeCard: {
