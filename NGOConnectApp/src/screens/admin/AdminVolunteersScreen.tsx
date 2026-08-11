@@ -279,21 +279,22 @@ function PostCard({
 
 // ── Member details bottom sheet ───────────────────────────────────────────────
 function MemberDetailsSheet({
-  member, orgId, visible, onClose, onDeactivate,
+  member, orgId, visible, onClose, onDeactivate, onSave,
 }: {
   member: OrgMember | null;
   orgId: number;
   visible: boolean;
   onClose: () => void;
   onDeactivate: (userId: number) => void;
+  onSave?: () => void;
 }) {
   const nav    = useNavigation<any>();
   const insets = useSafeAreaInsets();
 
-  const [canPost,        setCanPost]        = useState(member?.canPost        ?? true);
-  const [canComment,     setCanComment]     = useState(member?.canComment     ?? true);
-  const [canCommunity,   setCanCommunity]   = useState(member?.canCommunityPost ?? true);
-  const [locSharing,     setLocSharing]     = useState(member?.locationSharing ?? false);
+  const [canPost,        setCanPost]        = useState(Boolean(member?.canPost        ?? true));
+  const [canComment,     setCanComment]     = useState(Boolean(member?.canComment     ?? true));
+  const [canCommunity,   setCanCommunity]   = useState(Boolean(member?.canCommunityPost ?? true));
+  const [locSharing,     setLocSharing]     = useState(Boolean(member?.locationSharing));
   const [maxPosts,       setMaxPosts]       = useState(member?.maxPostsPerDay  ?? 10);
   const [roleCode,       setRoleCode]       = useState(member?.roleCode?.toUpperCase() ?? 'MEMBER');
   const [showRolePicker, setShowRolePicker] = useState(false);
@@ -303,11 +304,11 @@ function MemberDetailsSheet({
   // Sync when member changes
   useEffect(() => {
     if (member) {
-      setCanPost(member.canPost        ?? true);
-      setCanComment(member.canComment  ?? true);
-      setCanCommunity(member.canCommunityPost ?? true);
-      setLocSharing(member.locationSharing    ?? false);
-      setMaxPosts(member.maxPostsPerDay       ?? 10);
+      setCanPost(Boolean(member.canPost));
+      setCanComment(Boolean(member.canComment));
+      setCanCommunity(Boolean(member.canCommunityPost));
+      setLocSharing(Boolean(member.locationSharing));
+      setMaxPosts(member.maxPostsPerDay ?? 10);
       setRoleCode(member.roleCode?.toUpperCase() ?? 'MEMBER');
     }
   }, [member]);
@@ -318,7 +319,7 @@ function MemberDetailsSheet({
     try {
       // 1. Save permissions (always)
       const permRes = await orgApi.updateMemberPermissions(orgId, member.memberId, {
-        canPost, canComment, canCommunityPost: canCommunity, maxPostsPerDay: maxPosts,
+        canPost, canComment, canCommunityPost: canCommunity, locationSharing: locSharing, maxPostsPerDay: maxPosts,
       });
       if (!permRes.data?.isSuccess) {
         Alert.alert('Error', permRes.data?.message ?? 'Could not save permissions. Please try again.');
@@ -339,13 +340,15 @@ function MemberDetailsSheet({
         }
       }
 
-      Alert.alert('Saved', 'Member settings updated successfully.');
+      Alert.alert('Saved', 'Member settings updated successfully.', [
+        { text: 'OK', onPress: () => { onClose(); onSave?.(); } },
+      ]);
     } catch {
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setSaving(false);
     }
-  }, [member, orgId, canPost, canComment, canCommunity, maxPosts, roleCode]);
+  }, [member, orgId, canPost, canComment, canCommunity, locSharing, maxPosts, roleCode, onClose, onSave]);
 
   const handleDeactivate = () => {
     if (!member) { return; }
@@ -985,6 +988,7 @@ export default function AdminVolunteersScreen() {
         visible={selectedMember !== null}
         onClose={() => setSelectedMember(null)}
         onDeactivate={deactivateMember}
+        onSave={loadAll}
       />
 
     </SafeAreaView>
