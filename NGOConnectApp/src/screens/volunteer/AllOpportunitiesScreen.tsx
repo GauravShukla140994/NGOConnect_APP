@@ -200,7 +200,7 @@ function ShareSheet({ project, onClose }: { project: Project | null; onClose: ()
 }
 
 // ── OppCard ───────────────────────────────────────────────────────────────────
-function OppCard({ item, onApply, onShare, onPress }: { item: Project; onApply: () => void; onShare: () => void; onPress: () => void }) {
+function OppCard({ item, applied, onApply, onShare, onPress }: { item: Project; applied: boolean; onApply: () => void; onShare: () => void; onPress: () => void }) {
   const isExpired = isProjectExpired(item as any);
   const max    = item.maxParticipants ?? item.maxVolunteers ?? 0;
   const curr   = item.currentParticipants ?? item.approvedCount ?? 0;
@@ -294,6 +294,10 @@ function OppCard({ item, onApply, onShare, onPress }: { item: Project; onApply: 
           <View style={[styles.applyBtn, { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FED7AA', flex: 2 }]}>
             <Text style={{ color: '#C2410C', fontSize: 13, fontWeight: '600' }}>Deadline Passed</Text>
           </View>
+        ) : applied ? (
+          <View style={[styles.applyBtn, { backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#6EE7B7', flex: 2 }]}>
+            <Text style={{ color: '#059669', fontSize: 13, fontWeight: '700' }}>✓ Applied</Text>
+          </View>
         ) : isFull ? (
           <View style={[styles.applyBtn, { backgroundColor: '#F0F2F8', flex: 2 }]}>
             <Text style={{ color: C.TEXT2, fontSize: 13 }}>No spots available</Text>
@@ -326,6 +330,8 @@ export default function AllOpportunitiesScreen() {
   const [activeType, setActiveType] = useState<string>('Any Schedule');
   const [applyProject, setApplyProject] = useState<Project | null>(null);
   const [shareProject, setShareProject] = useState<Project | null>(null);
+  // Track projectIds the user applied to in this session (optimistic update before next fetch)
+  const [appliedIds, setAppliedIds]     = useState<Set<number>>(new Set());
   const [userCoords, setUserCoords]     = useState<{ lat: number; lon: number } | null>(null);
   const [categoryChips, setCategoryChips] = useState<string[]>(['All']);
   const searchRef = useRef('');
@@ -512,6 +518,7 @@ export default function AllOpportunitiesScreen() {
         renderItem={({ item }) => (
           <OppCard
             item={item}
+            applied={appliedIds.has(item.projectId) || !!item.applicationStatusCode}
             onApply={() => handleApply(item)}
             onShare={() => handleShare(item)}
             onPress={() => nav.navigate('ProjectDetail', { projectId: item.projectId })}
@@ -534,6 +541,11 @@ export default function AllOpportunitiesScreen() {
         visible={applyProject !== null}
         project={applyProject}
         onClose={() => setApplyProject(null)}
+        onSuccess={() => {
+          if (applyProject) {
+            setAppliedIds(prev => new Set(prev).add(applyProject.projectId));
+          }
+        }}
       />
 
       <ShareSheet
