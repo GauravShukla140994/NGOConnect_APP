@@ -110,6 +110,10 @@ export const orgApi = {
   unfollowOrg: (orgId: number) =>
     apiClient.delete<ApiResponse<null>>(`/org/${orgId}/follow`),
 
+  // GET /org/following — orgs the current user follows but is not a member of
+  getFollowedOrgs: () =>
+    apiClient.get<ApiResponse<any[]>>('/org/following'),
+
   // GET /org/{orgId}/documents — list org's uploaded documents (for org admin view)
   getDocuments: (orgId: number) =>
     apiClient.get<ApiResponse<any[]>>(`/org/${orgId}/documents`),
@@ -149,3 +153,4 @@ export const removeMember = (orgId: number, userId: number) => orgApi.removeMemb
 export const awardBadge = (orgId: number, data: { userId: number; badgeLkpId: number; projectId: number }) => orgApi.awardBadge(orgId, data);
 export const getDonors = (orgId: number, params: { tab?: string; pageNumber?: number; pageSize?: number }) => orgApi.getDonors(orgId, params);
 export const getTransactions = (orgId: number, params: { statusCode?: string; pageNumber?: number; pageSize?: number }) => orgApi.getTransactions(orgId, params);
+export const getFollowedOrgs = () => orgApi.getFollowedOrgs();

@@ -15,7 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getMyOrgs, getMyDocuments } from '../../api/user.api';
-import { cancelMembershipRequest } from '../../api/org.api';
+import { cancelMembershipRequest, getFollowedOrgs } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
 import type { Organisation } from '../../types/api.types';
 import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
@@ -245,6 +245,33 @@ function SuspendedOrgCard({ org }: { org: Organisation }) {
   );
 }
 
+// ── Followed org card (non-member follower) ───────────────────────────────────
+function FollowingOrgCard({ org, onPress }: { org: any; onPress: () => void }) {
+  const name    = org.orgName ?? 'NGO';
+  const color   = orgColor(name);
+  const members = org.memberCount ? `${Number(org.memberCount).toLocaleString('en-IN')} members` : '';
+  const followers = org.followerCount ? `${Number(org.followerCount).toLocaleString('en-IN')} followers` : '';
+  const meta    = [members, followers].filter(Boolean).join(' · ');
+  const location = [org.city, org.state].filter(Boolean).join(', ');
+
+  return (
+    <TouchableOpacity style={styles.orgCard} onPress={onPress} activeOpacity={0.75}>
+      {org.logoUrl
+        ? <Image source={{ uri: org.logoUrl }} style={styles.orgAvatar} resizeMode="cover" />
+        : <View style={[styles.orgAvatar, { backgroundColor: color }]}><Text style={styles.orgAvatarText}>{initials(name)}</Text></View>
+      }
+      <View style={{ flex: 1 }}>
+        <Text style={styles.orgName} numberOfLines={1}>{name}</Text>
+        {!!location && <Text style={styles.orgMeta} numberOfLines={1}>{location}</Text>}
+        {!!meta && <Text style={styles.orgMeta} numberOfLines={1}>{meta}</Text>}
+      </View>
+      <View style={[styles.statusPill, { backgroundColor: '#EEF5FF' }]}>
+        <Text style={[styles.statusPillText, { color: '#2563EB' }]}>Following</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 // ── Section header ────────────────────────────────────────────────────────────
 function SectionHeader({ title, count }: { title: string; count?: number }) {
   return (
@@ -265,10 +292,11 @@ export default function MyOrgsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
 
-  const [orgs,       setOrgs]       = useState<Organisation[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error,      setError]      = useState<string | null>(null);
+  const [orgs,          setOrgs]          = useState<Organisation[]>([]);
+  const [followedOrgs,  setFollowedOrgs]  = useState<any[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [refreshing,    setRefreshing]    = useState(false);
+  const [error,         setError]         = useState<string | null>(null);
 
   // Profile gate state
   const [gateVisible,     setGateVisible]     = useState(false);
@@ -277,17 +305,22 @@ export default function MyOrgsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const res = await getMyOrgs();
-      console.log('[MyOrgs] raw response:', JSON.stringify(res.data, null, 2));
-      if (res.data?.isSuccess) {
-        const data = res.data.data ?? [];
-        console.log('[MyOrgs] orgs count:', data.length);
-        if (data.length > 0) console.log('[MyOrgs] first org:', JSON.stringify(data[0]));
-        setOrgs(data);
+      const [orgsRes, followedRes] = await Promise.all([
+        getMyOrgs(),
+        getFollowedOrgs(),
+      ]);
+
+      if (orgsRes.data?.isSuccess) {
+        setOrgs(orgsRes.data.data ?? []);
         setError(null);
       } else {
-        setError(res.data?.message ?? 'Failed to load organizations.');
+        setError(orgsRes.data?.message ?? 'Failed to load organizations.');
       }
+
+      if (followedRes.data?.isSuccess) {
+        setFollowedOrgs(followedRes.data.data ?? []);
+      }
+      // Non-fatal if followed orgs fail — don't set error, just show empty section
     } catch (e: any) {
       console.error('[MyOrgs] error:', e?.message, e?.response?.status);
       setError('Could not connect. Pull to refresh.');
@@ -456,6 +489,25 @@ export default function MyOrgsScreen() {
                 </View>
               )}
             </View>
+
+            {/* ── Following (non-member followers) ── */}
+            {followedOrgs.length > 0 && (
+              <View style={styles.section}>
+                <SectionHeader title="Following" count={followedOrgs.length} />
+                <Text style={styles.sectionSubtitle}>
+                  Organizations you follow. Join as a member to participate in projects and community.
+                </Text>
+                <View style={styles.cardGroup}>
+                  {followedOrgs.map(org => (
+                    <FollowingOrgCard
+                      key={org.orgId}
+                      org={org}
+                      onPress={() => nav.navigate('NgoProfile', { orgId: org.orgId })}
+                    />
+                  ))}
+                </View>
+              </View>
+            )}
 
             {/* ── Pending Review ── */}
             {pendingOrgs.length > 0 && (
