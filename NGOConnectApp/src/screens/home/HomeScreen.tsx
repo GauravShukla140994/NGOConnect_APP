@@ -560,7 +560,7 @@ const PostCard = React.memo(function PostCard({
       </View>
 
       {/* ── Post options sheet ─────────────────────────────────────── */}
-      <Modal visible={showMenu} transparent animationType="slide" onRequestClose={() => setShowMenu(false)}>
+      {showMenu && <Modal visible transparent animationType="slide" onRequestClose={() => setShowMenu(false)}>
         <Pressable style={styles.menuOverlay} onPress={() => setShowMenu(false)}>
           <View style={[styles.menuSheet, { paddingBottom: insets.bottom + 8 }]}>
             <View style={styles.menuHandle} />
@@ -590,10 +590,10 @@ const PostCard = React.memo(function PostCard({
             </TouchableOpacity>
           </View>
         </Pressable>
-      </Modal>
+      </Modal>}
 
       {/* ── Report Post modal ──────────────────────────────────────── */}
-      <Modal visible={showReport} transparent animationType="slide" onRequestClose={() => setShowReport(false)}>
+      {showReport && <Modal visible transparent animationType="slide" onRequestClose={() => setShowReport(false)}>
         <SafeAreaProvider>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <Pressable style={styles.menuOverlay} onPress={() => !reportSubmitting && setShowReport(false)}>
@@ -678,7 +678,7 @@ const PostCard = React.memo(function PostCard({
           </Pressable>
         </KeyboardAvoidingView>
         </SafeAreaProvider>
-      </Modal>
+      </Modal>}
 
       {/* ── Media carousel ─────────────────────────────────────────── */}
       {mediaUrls.length > 0 ? (
@@ -1660,8 +1660,8 @@ export default function HomeScreen() {
       />
 
          {/* ── Org Switcher Modal ──────────────────────────────────── */}
-      <Modal
-        visible={showOrgSwitcher}
+      {showOrgSwitcher && <Modal
+        visible
         animationType="slide"
         transparent
         onRequestClose={() => setShowOrgSwitcher(false)}
@@ -1770,7 +1770,7 @@ export default function HomeScreen() {
             <View style={{ height: insets.bottom + 8 }} />
           </Pressable>
         </Pressable>
-      </Modal>
+      </Modal>}
     </SafeAreaView>
   );
 }

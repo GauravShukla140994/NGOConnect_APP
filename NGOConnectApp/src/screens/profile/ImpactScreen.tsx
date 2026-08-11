@@ -948,8 +948,9 @@ export default function ImpactScreen() {
       </View>
 
       {/* ── MODALS ── */}
+      {detailVisible && (
       <ProjectDetailModal
-        visible={detailVisible}
+        visible
         application={detailApp}
         onClose={() => setDetailVisible(false)}
         onScanQR={() => {
@@ -959,9 +960,11 @@ export default function ImpactScreen() {
           if (detailApp) handleSelfCheckIn(detailApp);
         }}
       />
+      )}
 
+      {qrVisible && (
       <QRScannerModal
-        visible={qrVisible}
+        visible
         projectId={qrProjectId}
         projectName={qrProjectName}
         onClose={() => setQrVisible(false)}
@@ -970,13 +973,16 @@ export default function ImpactScreen() {
           onRefresh();
         }}
       />
+      )}
 
+      {certVisible && (
       <CertificateModal
-        visible={certVisible}
+        visible
         projectId={certProjectId}
         projectName={certProjName}
         onClose={() => setCertVisible(false)}
       />
+      )}
     </SafeAreaView>
   );
 }

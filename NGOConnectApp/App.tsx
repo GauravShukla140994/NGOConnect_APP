@@ -5,6 +5,14 @@
 import React from 'react';
 import { StatusBar, useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+// Fabric crash fix: react-native-screens 4.x + RN 0.86 (New Architecture) causes
+// "addViewAt: failed to insert view — The specified child already has a parent"
+// when the bottom tab navigator activates a screen for the first time.
+// enableScreens(false) replaces native RNSScreen containers with plain JS Views,
+// eliminating the entire class of Fabric view-hierarchy crash entirely.
+// Trade-off: very slight navigation perf regression (invisible at this app scale).
+import { enableScreens } from 'react-native-screens';
+enableScreens(false);
 import RootNavigator from './src/navigation/RootNavigator';
 import AppConfig from './src/config/AppConfig';
 import * as Sentry from '@sentry/react-native';

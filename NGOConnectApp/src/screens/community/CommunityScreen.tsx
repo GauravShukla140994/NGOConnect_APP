@@ -833,8 +833,8 @@ export default function CommunityScreen() {
       />
 
       {/* ── Org Switcher Modal (mirrors HomeScreen pattern) ──────────────────── */}
-      <Modal
-        visible={showOrgSwitcher}
+      {showOrgSwitcher && <Modal
+        visible
         animationType="slide"
         transparent
         onRequestClose={() => setShowOrgSwitcher(false)}
@@ -905,7 +905,7 @@ export default function CommunityScreen() {
             </ScrollView>
           </Pressable>
         </Pressable>
-      </Modal>
+      </Modal>}
     </SafeAreaView>
   );
 }

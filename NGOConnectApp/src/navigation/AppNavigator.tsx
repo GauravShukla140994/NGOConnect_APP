@@ -89,6 +89,27 @@ const tabStyles = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 const VolunteerTabs = () => (
   <Tab.Navigator
+    // react-native-screens 4.x + Fabric (RN 0.86) crash fix:
+    // "addViewAt: failed to insert view — The specified child already has a parent"
+    //
+    // Root cause: with lazy={true} (default), react-native-screens pre-creates the
+    // native RNSScreen container for every tab at startup. When a tab is first tapped,
+    // Fabric tries to insert the screen view into that container — but it was already
+    // registered there during initialization. The re-insertion crashes Fabric.
+    //
+    // lazy={false}: all tab screen components mount at startup, so every RNSScreen
+    // is already properly linked before the user taps anything. No first-activation
+    // insertion needed, no crash.
+    //
+    // detachInactiveScreens={false}: defence-in-depth. Prevents the detach/reattach
+    // cycle on subsequent tab switches from triggering the same class of crash.
+    //
+    // Pre-condition: ALL tab screens must use conditional Modal rendering
+    // ({state && <Modal visible>}) — NOT <Modal visible={state}>. Screens with
+    // visible={false} Modals will still crash at startup with lazy={false}.
+    // ProfileScreen and ImpactScreen were fixed alongside this change.
+    lazy={false}
+    detachInactiveScreens={false}
     screenOptions={({ route }) => ({
       headerShown: false,
       tabBarActiveTintColor:   C.PRIMARY,

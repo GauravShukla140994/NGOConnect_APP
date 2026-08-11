@@ -335,8 +335,9 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* ── Admin org picker (shown when user admins multiple orgs) ─────── */}
+      {showAdminPicker && (
       <Modal
-        visible={showAdminPicker}
+        visible
         transparent
         animationType="slide"
         onRequestClose={() => setShowAdminPicker(false)}
@@ -380,13 +381,16 @@ export default function ProfileScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      )}
 
+      {gateVisible && (
       <ProfileIncompleteSheet
-        visible={gateVisible}
+        visible
         onClose={() => setGateVisible(false)}
         missingItems={gateMissing}
         targetStep={gateTargetStep}
       />
+      )}
 
     </SafeAreaView>
   );

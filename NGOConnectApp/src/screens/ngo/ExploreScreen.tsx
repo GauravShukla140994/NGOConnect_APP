@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  InteractionManager,
   Modal,
   Pressable,
   RefreshControl,
@@ -19,6 +20,7 @@ import AppConfig from '../../config/AppConfig';
 import { list as listOrgs, getRecommended, orgApi } from '../../api/org.api';
 import { getMyOrgs } from '../../api/user.api';
 import { notificationApi } from '../../api/notification.api';
+import { lookupApi } from '../../api/lookup.api';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminStore } from '../../store/adminStore';
 import type { Organisation } from '../../types/api.types';
@@ -41,16 +43,7 @@ function formatDist(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
 }
 
-// ── Category list — label shown in UI, code sent to API / used for filtering ──
-const CATEGORIES: { label: string; code: string }[] = [
-  { label: 'All',           code: 'ALL'          },
-  { label: 'Education',     code: 'EDUCATION'    },
-  { label: 'Environment',   code: 'ENVIRONMENT'  },
-  { label: 'Healthcare',    code: 'HEALTHCARE'   },
-  { label: 'Animal Welfare',code: 'ANIMAL_WELFARE'},
-  { label: 'Community',     code: 'COMMUNITY'    },
-  { label: 'Welfare',       code: 'WELFARE'      },
-];
+const ALL_CHIP = { label: 'All', code: 'ALL' };
 
 type TabKey = 'recommended' | 'trending' | 'all';
 const TABS: { key: TabKey; label: string }[] = [
@@ -281,16 +274,36 @@ export default function ExploreScreen() {
   const [categoryCode,setCategoryCode]= useState<string>('ALL');   // stores DB code
   const [search,      setSearch]      = useState('');
 
+  // Start EMPTY — Fabric's reconciler has a bug where it re-issues addViewAt(index 0)
+  // for an existing child when the list grows from [A] → [A, B, C…], crashing with
+  // "The specified child already has a parent". Starting empty means every chip is
+  // inserted fresh (no existing child to re-insert), avoiding the crash entirely.
+  const [categories, setCategories] = useState<{ label: string; code: string }[]>([]);
+  useEffect(() => {
+    lookupApi.getValuesByTypeCode('ORG_CATEGORY')
+      .then(res => {
+        if (res.data?.isSuccess && res.data.data?.length) {
+          setCategories([ALL_CHIP, ...res.data.data.map(v => ({ label: v.valueName, code: v.valueCode }))]);
+        } else {
+          setCategories([ALL_CHIP]);
+        }
+      })
+      .catch(() => { setCategories([ALL_CHIP]); });
+  }, []);
+
   const [recommended, setRecommended] = useState<Organisation[]>([]);
-  const [recLoading,  setRecLoading]  = useState(false);
+  // Start true: prevents an empty FlatList from mounting on the first render
+  // then immediately unmounting when the useEffect sets loading=true — that
+  // rapid create→destroy cycle is what triggers the Fabric "addViewAt" crash.
+  const [recLoading,  setRecLoading]  = useState(true);
 
   const [trendingAll,  setTrendingAll]  = useState<any[]>([]);   // all fetched campaigns (unfiltered)
-  const [trendLoading, setTrendLoading] = useState(false);
+  const [trendLoading, setTrendLoading] = useState(true);        // same reason as recLoading
 
   const [orgs,       setOrgs]       = useState<Organisation[]>([]);
   const [page,       setPage]       = useState(1);
   const [hasMore,    setHasMore]    = useState(true);
-  const [allLoading, setAllLoading] = useState(false);
+  const [allLoading, setAllLoading] = useState(true);            // same reason as recLoading
   const [allError,   setAllError]   = useState(false);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -433,6 +446,28 @@ export default function ExploreScreen() {
   const goToNgo   = (orgId: number) => nav.navigate('NgoProfile', { orgId });
   const goToDonate= (orgId: number) => nav.navigate('Donate', { orgId });
 
+  // ── Fabric race-condition guard ───────────────────────────────────────────
+  // Defer the full UI until after any pending interactions (tab switch etc.)
+  // are done. This prevents Fabric's "addViewAt: failed to insert view" crash
+  // that occurs when complex native view trees are created while Fabric is
+  // still processing the mount of the tab navigator.
+  const [isReady, setIsReady] = useState(false);
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => setIsReady(true));
+    return () => task.cancel();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!isReady) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={C.PRIMARY} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
 
@@ -497,8 +532,9 @@ export default function ExploreScreen() {
       </View>
 
       {/* ── Org Switcher Modal ──────────────────────────────────────────── */}
+      {showOrgSwitcher && (
       <Modal
-        visible={showOrgSwitcher}
+        visible
         transparent
         animationType="slide"
         onRequestClose={() => setShowOrgSwitcher(false)}
@@ -563,6 +599,7 @@ export default function ExploreScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+      )}
 
       {/* Search — All NGOs tab only */}
       {tab === 'all' && (
@@ -593,13 +630,13 @@ export default function ExploreScreen() {
       <View style={styles.catWrapper}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 6 }}>
-          {CATEGORIES.map((cat, i) => (
+          {categories.map((cat, i) => (
             <TouchableOpacity
               key={cat.code}
               style={[
                 styles.catChip,
                 categoryCode === cat.code && styles.catChipOn,
-                i < CATEGORIES.length - 1 && { marginRight: 6 },
+                i < categories.length - 1 && { marginRight: 6 },
               ]}
               onPress={() => setCategoryCode(cat.code)}
               accessibilityLabel={`Filter ${cat.label}`}
@@ -639,7 +676,7 @@ export default function ExploreScreen() {
               <Text style={styles.secTitle}>Recommended for You</Text>
               <Text style={styles.secSub}>
                 {categoryCode !== 'ALL'
-                  ? `${CATEGORIES.find(c => c.code === categoryCode)?.label} NGOs near you`
+                  ? `${categories.find(c => c.code === categoryCode)?.label} NGOs near you`
                   : userLat ? 'NGOs matching your interests & location' : 'NGOs matching your interests'}
               </Text>
             </View>
@@ -651,7 +688,7 @@ export default function ExploreScreen() {
             <View style={styles.center}>
               <Text style={styles.emptyTxt}>
                 {categoryCode !== 'ALL'
-                  ? `No ${CATEGORIES.find(c => c.code === categoryCode)?.label} NGOs in your recommendations.\nTry a different category.`
+                  ? `No ${categories.find(c => c.code === categoryCode)?.label} NGOs in your recommendations.\nTry a different category.`
                   : 'No recommendations yet.\nUpdate your interests in your profile.'}
               </Text>
             </View>
@@ -673,7 +710,7 @@ export default function ExploreScreen() {
               <Text style={styles.secTitle}>Trending Campaigns</Text>
               <Text style={styles.secSub}>
                 {categoryCode !== 'ALL'
-                  ? `${CATEGORIES.find(c => c.code === categoryCode)?.label} fundraisers`
+                  ? `${categories.find(c => c.code === categoryCode)?.label} fundraisers`
                   : 'Most active fundraisers right now'}
               </Text>
             </View>
@@ -685,7 +722,7 @@ export default function ExploreScreen() {
             <View style={styles.center}>
               <Text style={styles.emptyTxt}>
                 {categoryCode !== 'ALL'
-                  ? `No trending ${CATEGORIES.find(c => c.code === categoryCode)?.label} campaigns right now.`
+                  ? `No trending ${categories.find(c => c.code === categoryCode)?.label} campaigns right now.`
                   : 'No trending campaigns at the moment.'}
               </Text>
             </View>
@@ -720,7 +757,7 @@ export default function ExploreScreen() {
             <View style={styles.secHead}>
               <Text style={styles.secTitle}>
                 {categoryCode !== 'ALL'
-                  ? `${CATEGORIES.find(c => c.code === categoryCode)?.label} NGOs`
+                  ? `${categories.find(c => c.code === categoryCode)?.label} NGOs`
                   : orgs.length > 0 ? `${orgs.length}+ NGOs` : 'All NGOs'}
               </Text>
               {userLat && <Text style={styles.secSub}>Sorted by distance</Text>}

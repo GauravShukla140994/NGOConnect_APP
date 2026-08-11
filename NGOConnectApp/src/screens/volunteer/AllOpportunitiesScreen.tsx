@@ -20,13 +20,13 @@ import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { list as listProjects } from '../../api/project.api';
 import { shareApi } from '../../api/share.api';
+import { lookupApi } from '../../api/lookup.api';
 import ApplyModal from '../../components/project/ApplyModal';
 import type { Project } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
 
 const LOCATION_CHIPS = ['Nearby', 'Mumbai', 'Pune', 'Delhi', 'Bangalore', 'Chennai', 'Hyderabad'] as const;
-const CATEGORY_CHIPS = ['All', 'Community', 'Environment', 'Education', 'Healthcare', 'Animal Welfare'] as const;
 const TYPE_CHIPS     = ['Any Schedule', 'Recurring', 'One-time', 'Flexible'] as const;
 
 /* Category pill — bg + text color matching prototype */
@@ -327,6 +327,7 @@ export default function AllOpportunitiesScreen() {
   const [applyProject, setApplyProject] = useState<Project | null>(null);
   const [shareProject, setShareProject] = useState<Project | null>(null);
   const [userCoords, setUserCoords]     = useState<{ lat: number; lon: number } | null>(null);
+  const [categoryChips, setCategoryChips] = useState<string[]>(['All']);
   const searchRef = useRef('');
 
   // Capture GPS on mount so Nearby results are sorted by distance
@@ -341,6 +342,17 @@ export default function AllOpportunitiesScreen() {
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
       );
     } catch { /* package not installed */ }
+  }, []);
+
+  // Load categories from DB (ORG_CATEGORY lookup) instead of a hardcoded list
+  useEffect(() => {
+    lookupApi.getValuesByTypeCode('ORG_CATEGORY')
+      .then(res => {
+        if (res.data?.isSuccess && res.data.data?.length) {
+          setCategoryChips(['All', ...res.data.data.map((v: any) => v.valueName)]);
+        }
+      })
+      .catch(() => { /* keep default ['All'] */ });
   }, []);
 
   const fetchData = useCallback(async (pg: number, refresh = false) => {
@@ -457,10 +469,10 @@ export default function AllOpportunitiesScreen() {
             ))}
           </View>
         </ScrollView>
-        {/* Category chips */}
+        {/* Category chips — loaded from DB via ORG_CATEGORY lookup */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 6 }}>
           <View style={styles.chipRow}>
-            {CATEGORY_CHIPS.map((c) => (
+            {categoryChips.map((c) => (
               <TouchableOpacity
                 key={c}
                 style={[styles.filterChip, activeCategory === c && styles.filterChipActive]}
