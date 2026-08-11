@@ -1531,9 +1531,11 @@ export default function HomeScreen() {
               <View style={styles.section}>
                 <View style={styles.sectionRow}>
                   <Text style={styles.sectionTitle}>📍 Nearby Opportunities</Text>
-                  <TouchableOpacity onPress={() => nav.navigate('AllOpportunities')}>
-                    <Text style={styles.viewAll}>View All</Text>
-                  </TouchableOpacity>
+                  {projects.length > 0 && (
+                    <TouchableOpacity onPress={() => nav.navigate('AllOpportunities')}>
+                      <Text style={styles.viewAll}>View All</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
                 {projects.length > 0 ? (
                   <ScrollView
