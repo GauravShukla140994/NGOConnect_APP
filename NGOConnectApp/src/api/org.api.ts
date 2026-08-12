@@ -81,7 +81,7 @@ export const orgApi = {
   excuseNoShow: (orgId: number, attendanceId: number) =>
     apiClient.post<ApiResponse<null>>(`/org/${orgId}/attendance/excuse`, { attendanceId }),
 
-  awardBadge: (orgId: number, data: { userId: number; badgeLkpId: number; projectId: number }) =>
+  awardBadge: (orgId: number, data: { userId: number; badgeCode: string; projectId?: number }) =>
     apiClient.post<ApiResponse<null>>(`/org/${orgId}/badges`, data),
 
   // Member permissions (canPost, canComment, canCommunityPost, locationSharing, maxPostsPerDay)
@@ -150,7 +150,7 @@ export const requestMembership = (
 export const cancelMembershipRequest  = (orgId: number) => orgApi.cancelMembershipRequest(orgId);
 export const reviewMembershipRequest  = (orgId: number, data: { membershipRequestId: number; statusCode: string; adminNotes?: string }) => orgApi.reviewMembershipRequest(orgId, data);
 export const removeMember = (orgId: number, userId: number) => orgApi.removeMember(orgId, userId);
-export const awardBadge = (orgId: number, data: { userId: number; badgeLkpId: number; projectId: number }) => orgApi.awardBadge(orgId, data);
+export const awardBadge = (orgId: number, data: { userId: number; badgeCode: string; projectId?: number }) => orgApi.awardBadge(orgId, data);
 export const getDonors = (orgId: number, params: { tab?: string; pageNumber?: number; pageSize?: number }) => orgApi.getDonors(orgId, params);
 export const getTransactions = (orgId: number, params: { statusCode?: string; pageNumber?: number; pageSize?: number }) => orgApi.getTransactions(orgId, params);
 export const getFollowedOrgs = () => orgApi.getFollowedOrgs();

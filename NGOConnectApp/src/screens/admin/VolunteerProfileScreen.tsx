@@ -30,12 +30,13 @@ import type { OrgVolunteerProfile } from '../../types/api.types';
 const C = AppConfig.COLORS;
 
 // ─── Badge definitions ────────────────────────────────────────────────────────
+// Keys must match BADGE_TYPE ValueCode in LookupValues (DB seed).
 
 const BADGE_DEFS = [
-  { key: 'STAR_VOL',      icon: '☆',  label: 'Star Vol.'     },
-  { key: 'TEAM_PLAYER',   icon: '♡',  label: 'Team Player'   },
-  { key: 'GO_GETTER',     icon: '⚡', label: 'Go-getter'     },
-  { key: 'TOP_PERFORMER', icon: '🏆', label: 'Top Performer' },
+  { key: 'STAR_VOL',    icon: '☆',  label: 'Star Vol.'     },
+  { key: 'TEAM_PLAYER', icon: '♡',  label: 'Team Player'   },
+  { key: 'GO_GETTER',   icon: '⚡', label: 'Go-getter'     },
+  { key: 'TOP_PERFORM', icon: '🏆', label: 'Top Performer' },
 ];
 
 // ─── Star display (read-only, supports half-stars) ───────────────────────────
@@ -87,16 +88,29 @@ export default function VolunteerProfileScreen() {
   const insets = useSafeAreaInsets();
 
   // app: full participant record from ParticipantsScreen or member object from AdminVolunteersScreen
-  const { app: routeApp = {}, projectId, orgId, userId: paramUserId } = route.params ?? {};
+  // myAwardedBadge: badge key awarded by this admin in the current ParticipantsScreen session
+  const {
+    app: routeApp = {},
+    projectId,
+    orgId,
+    userId: paramUserId,
+    myAwardedBadge: navMyAwardedBadge = null,
+  } = route.params ?? {};
 
   const [profile,        setProfile]       = useState<any>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [orgProfile,     setOrgProfile]     = useState<OrgVolunteerProfile | null>(null);
 
-  // Pre-select Star Vol. as default (or use awarded badges from SP when available)
-  const [awardedBadges, setAwardedBadges] = useState<string[]>(
-    routeApp.awardedBadges ?? ['STAR_VOL'],
+  // Badges already on record from server.
+  // Seeded from the stale nav param on mount; upgraded to fresh orgProfile data once loaded.
+  const [existingBadges, setExistingBadges] = useState<string[]>(
+    routeApp.awardedBadgeCodes
+      ? (routeApp.awardedBadgeCodes as string).split(',').filter(Boolean)
+      : [],
   );
+
+  // Badge awarded by THIS admin for this volunteer this session (optimistic).
+  const [newlyAwardedBadge, setNewlyAwardedBadge] = useState<string | null>(navMyAwardedBadge);
   const [reviewing, setReviewing] = useState(false);
 
   const uid = routeApp.userId ?? routeApp.applicantUserId ?? routeApp.volunteerId ?? paramUserId;
@@ -111,13 +125,24 @@ export default function VolunteerProfileScreen() {
       .finally(() => setProfileLoading(false));
   }, [uid]);
 
-  // ── Load org-specific volunteer profile (reliability, role, request details) ──
+  // ── Load org-specific volunteer profile (reliability, role, badges, request details) ──
   useEffect(() => {
     if (!orgId || !uid) return;
     orgApi.getVolunteerProfile(orgId, uid)
       .then(res => {
         const d = (res.data as any);
-        if (d?.isSuccess && d?.data) setOrgProfile(d.data as OrgVolunteerProfile);
+        if (d?.isSuccess && d?.data) {
+          const profile = d.data as OrgVolunteerProfile;
+          setOrgProfile(profile);
+          // Upgrade existingBadges from fresh DB data — overrides the stale nav param
+          if (profile.awardedBadgeCodes !== undefined) {
+            setExistingBadges(
+              profile.awardedBadgeCodes
+                ? profile.awardedBadgeCodes.split(',').filter(Boolean)
+                : [],
+            );
+          }
+        }
       })
       .catch(() => {});
   }, [orgId, uid]);
@@ -194,21 +219,39 @@ export default function VolunteerProfileScreen() {
     }
   }, [projectId, routeApp.applicationId, nav]);
 
-  // ── Award badge ──
+  // ── Award badge — only 1 per award action ──
   const handleAwardBadge = useCallback((key: string) => {
-    if (awardedBadges.includes(key)) return;
+    if (existingBadges.includes(key)) return;
+    if (newlyAwardedBadge === key)    return;
+    if (newlyAwardedBadge !== null)   return;  // 1 badge limit, silently block
     const label = BADGE_DEFS.find(b => b.key === key)?.label ?? key;
     Alert.alert('Award Badge', `Award "${label}" to ${name}?`, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Award', onPress: () => {
-          setAwardedBadges(prev => [...prev, key]);
-          // TODO: projectApi.awardBadge(projectId, routeApp.applicationId, { badgeKey: key })
-          Alert.alert('Badge Awarded! 🎉', `"${label}" has been awarded to ${name}.`);
+        text: 'Award', onPress: async () => {
+          // Optimistic UI — highlight immediately
+          setNewlyAwardedBadge(key);
+          try {
+            const res = await orgApi.awardBadge(orgId, {
+              userId:    uid,
+              badgeCode: key,
+              projectId: projectId ?? undefined,
+            });
+            if (res.data?.isSuccess) {
+              Alert.alert('Badge Awarded! 🎉', `"${label}" has been awarded to ${name}.`);
+            } else {
+              // Revert optimistic state on API failure
+              setNewlyAwardedBadge(null);
+              Alert.alert('Error', res.data?.message ?? 'Could not award badge.');
+            }
+          } catch {
+            setNewlyAwardedBadge(null);
+            Alert.alert('Error', 'An error occurred.');
+          }
         },
       },
     ]);
-  }, [awardedBadges, name]);
+  }, [existingBadges, newlyAwardedBadge, name, orgId, uid, projectId]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -450,25 +493,39 @@ export default function VolunteerProfileScreen() {
           </View>
         )}
 
-        {/* ── Award a Badge ── */}
+        {/* ── Award a Badge — max 1 per award action ── */}
         <View style={s.card}>
           <Text style={[s.cardTitle, { marginBottom: 12 }]}>Award a Badge</Text>
           <View style={s.badgeGrid}>
             {BADGE_DEFS.map(b => {
-              const awarded = awardedBadges.includes(b.key);
+              const alreadyAwarded = existingBadges.includes(b.key);
+              const awardedNow     = newlyAwardedBadge === b.key;
+              const awarded        = alreadyAwarded || awardedNow;
+              // Dim other badges once one has been awarded this session
+              const dimmed         = !awarded && newlyAwardedBadge !== null;
+              // Awarded badges (any source) are non-interactive — prevents re-awarding same badge
+              const isDisabled     = awarded || dimmed;
               return (
                 <TouchableOpacity
                   key={b.key}
-                  style={[s.badgeBtn, awarded && s.badgeBtnAwarded]}
+                  style={[
+                    s.badgeBtn,
+                    awarded && s.badgeBtnAwarded,
+                    dimmed  && s.badgeBtnDisabled,
+                  ]}
                   onPress={() => handleAwardBadge(b.key)}
-                  activeOpacity={0.75}
+                  activeOpacity={isDisabled ? 1 : 0.75}
+                  disabled={isDisabled}
                 >
-                  <Text style={[s.badgeBtnIcon, awarded && { color: C.PRIMARY }]}>
+                  <Text style={[s.badgeBtnIcon, awarded && { color: C.PRIMARY }, dimmed && { color: '#D1D5DB' }]}>
                     {b.icon}
                   </Text>
-                  <Text style={[s.badgeBtnLabel, awarded && { color: C.PRIMARY }]}>
+                  <Text style={[s.badgeBtnLabel, awarded && { color: C.PRIMARY }, dimmed && { color: '#D1D5DB' }]}>
                     {b.label}
                   </Text>
+                  {awarded && (
+                    <Text style={s.badgeBtnCheck}>✓</Text>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -613,6 +670,14 @@ const s = StyleSheet.create({
   badgeBtnAwarded: {
     borderColor: C.PRIMARY,
     backgroundColor: `${C.PRIMARY}12`,
+  },
+  badgeBtnDisabled: {
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    opacity: 0.45,
+  },
+  badgeBtnCheck: {
+    fontSize: 11, fontWeight: '700', color: C.PRIMARY, marginTop: 3,
   },
   badgeBtnIcon:  { fontSize: 20, color: '#9CA3AF', marginBottom: 5 },
   badgeBtnLabel: { fontSize: 10, fontWeight: '600', color: '#6B7280', textAlign: 'center' },

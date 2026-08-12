@@ -402,6 +402,8 @@ export interface OrgVolunteerProfile {
   areasOfInterest?: string;
   whyJoin?: string;
   requestedAt?: string;
+  // Badges — comma-separated BADGE_TYPE ValueCodes (e.g. "STAR_VOL,TEAM_PLAYER")
+  awardedBadgeCodes?: string;
 }
 
 export interface AdminPost {

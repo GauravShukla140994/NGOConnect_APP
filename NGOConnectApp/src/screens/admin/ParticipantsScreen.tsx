@@ -26,7 +26,6 @@ import { awardBadge } from '../../api/org.api';
 import { issueCertificate } from '../../api/user.api';
 
 type ProjectSkill = { id: number; name: string };
-import { lookupApi } from '../../api/lookup.api';
 import { UserAvatar } from '../../components/ui';
 
 const C = AppConfig.COLORS;
@@ -451,21 +450,7 @@ export default function ParticipantsScreen() {
   // appId currently being cert-issued (null = idle)
   const [issuingCertFor, setIssuingCertFor] = useState<number | null>(null);
 
-  // BADGE_TYPE lookup: ValueCode → LookupValueId (needed to call the API)
-  const [badgeLkpMap, setBadgeLkpMap] = useState<Record<string, number>>({});
-
-  // ── Load badge lookups once on mount ──
-  useEffect(() => {
-    lookupApi.getValuesByTypeCode('BADGE_TYPE').then(res => {
-      if (res.data?.isSuccess) {
-        const map: Record<string, number> = {};
-        for (const v of res.data.data ?? []) {
-          if (v.valueCode && v.lookupValueId) map[v.valueCode] = v.lookupValueId;
-        }
-        setBadgeLkpMap(map);
-      }
-    }).catch(() => { /* non-fatal */ });
-  }, []);
+  // (badgeLkpMap removed — API now accepts badgeCode string directly)
 
   // ── Load ──
   const load = useCallback(async (isRefresh = false) => {
@@ -668,14 +653,8 @@ export default function ParticipantsScreen() {
   // ── Award badge ──
   const handleAwardBadge = useCallback((app: any, key: string) => {
     if ((awardedBadges[app.applicationId] ?? []).includes(key)) return;
-    const label      = BADGE_DEFS.find(b => b.key === key)?.label ?? key;
-    const name       = app.applicantName ?? app.fullName ?? 'Volunteer';
-    const badgeLkpId = badgeLkpMap[key];
-
-    if (!badgeLkpId) {
-      Alert.alert('Error', `Badge type "${key}" not found. Please refresh and try again.`);
-      return;
-    }
+    const label = BADGE_DEFS.find(b => b.key === key)?.label ?? key;
+    const name  = app.applicantName ?? app.fullName ?? 'Volunteer';
 
     Alert.alert(`Award "${label}"?`, `This badge will appear on ${name}'s Impact profile and they'll receive a notification.`, [
       { text: 'Cancel', style: 'cancel' },
@@ -685,9 +664,9 @@ export default function ParticipantsScreen() {
           setAwardingBadge(prev => ({ ...prev, [app.applicationId]: key }));
           try {
             const res = await awardBadge(orgId, {
-              userId:     app.userId,
-              badgeLkpId,
-              projectId:  projectId,
+              userId:    app.userId,
+              badgeCode: key,
+              projectId,
             });
             if (res.data?.isSuccess) {
               setAwardedBadges(prev => ({
@@ -706,7 +685,7 @@ export default function ParticipantsScreen() {
         },
       },
     ]);
-  }, [awardedBadges, badgeLkpMap, orgId, projectId]);
+  }, [awardedBadges, orgId, projectId]);
 
   // ── Issue Certificate ──
   const handleIssueCertificate = useCallback((app: any) => {
@@ -821,7 +800,12 @@ export default function ParticipantsScreen() {
                     { text: 'Reject', style: 'destructive', onPress: () => handleReview(app.applicationId, 'REJECTED') },
                   ])
                 }
-                onProfile={() => nav.navigate('VolunteerProfile', { app, projectId, orgId })}
+                onProfile={() => nav.navigate('VolunteerProfile', {
+                  app,
+                  projectId,
+                  orgId,
+                  myAwardedBadge: (awardedBadges[app.applicationId] ?? [])[0] ?? null,
+                })}
               />
             ))}
           </>
@@ -837,7 +821,12 @@ export default function ParticipantsScreen() {
               <ApprovedCard
                 key={app.applicationId}
                 app={app}
-                onProfile={() => nav.navigate('VolunteerProfile', { app, projectId, orgId })}
+                onProfile={() => nav.navigate('VolunteerProfile', {
+                  app,
+                  projectId,
+                  orgId,
+                  myAwardedBadge: (awardedBadges[app.applicationId] ?? [])[0] ?? null,
+                })}
                 onMarkAttended={() => handleManualAttendance(app.applicationId, app.applicantName ?? 'Volunteer')}
                 marking={markingAttended === app.applicationId}
               />
