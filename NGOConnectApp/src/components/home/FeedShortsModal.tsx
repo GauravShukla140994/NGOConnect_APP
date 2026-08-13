@@ -454,6 +454,9 @@ function PostShortsSlide({
   const [following,       setFollowing]       = useState(!!(post.isFollowing));
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
+  // Live view count — fetched from server when description sheet opens
+  const [liveViewCount,   setLiveViewCount]   = useState<number | null>(null);
+
   // Floating heart animation (double-tap to like)
   const [heartPos, setHeartPos] = useState<{ x: number; y: number } | null>(null);
   const heartAnim  = useRef(new Animated.Value(0)).current;
@@ -670,7 +673,18 @@ function PostShortsSlide({
 
         {/* Caption — always tappable to open the description sheet */}
         {!!caption && (
-          <TouchableOpacity onPress={() => setDescriptionOpen(true)} activeOpacity={0.75}>
+          <TouchableOpacity
+            onPress={async () => {
+              setDescriptionOpen(true);
+              // Fetch live stats from server so the view count reflects all users
+              try {
+                const res = await feedApi.getPost(post.postId!);
+                const fresh = res.data?.data;
+                if (fresh?.viewCount != null) setLiveViewCount(fresh.viewCount);
+              } catch { /* fire-and-forget — sheet still shows local estimate */ }
+            }}
+            activeOpacity={0.75}
+          >
             <Text style={s.caption} numberOfLines={2}>{caption}</Text>
             {isLong && <Text style={s.moreLink}>…more</Text>}
           </TouchableOpacity>
@@ -682,7 +696,7 @@ function PostShortsSlide({
         visible={descriptionOpen}
         post={post}
         onClose={() => setDescriptionOpen(false)}
-        viewCountOverride={viewCountOverride}
+        viewCountOverride={liveViewCount ?? viewCountOverride}
       />
 
       {/* Floating heart — direct child of slide root so pageX/pageY coords are correct */}
@@ -977,7 +991,7 @@ const s = StyleSheet.create({
     backgroundColor: BRAND.VOLUNTEER,
     alignItems: 'center', justifyContent: 'center',
   },
-  volunteerLabel: { color: BRAND.PILL_TEXT },
+  volunteerLabel: {},
 
   // floating heart (double-tap)
   heartFloat: {
