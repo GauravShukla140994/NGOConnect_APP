@@ -27,6 +27,7 @@ function notifMeta(type: string): { emoji: string; color: string } {
     case 'APPLICATION_REJECTED':    return { emoji: '❌', color: C.RED };
     case 'NEW_APPLICATION':         return { emoji: '📋', color: C.PRIMARY };
     case 'MEMBERSHIP_REQUEST':      return { emoji: '👋', color: C.PRIMARY };
+    case 'MEMBERSHIP_CANCELLED':    return { emoji: '↩️', color: C.TEXT2 };
     case 'MEMBERSHIP_APPROVED':     return { emoji: '✅', color: '#2ECC71' };
     case 'MEMBERSHIP_REJECTED':     return { emoji: '❌', color: C.RED };
     case 'MEMBER_REMOVED':          return { emoji: '🚫', color: C.RED };
@@ -77,6 +78,7 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
     case 'APPLICATION_REJECTED':
       return { screen: 'MyProjects' };
     case 'MEMBERSHIP_REQUEST':
+    case 'MEMBERSHIP_CANCELLED':
     case 'MEMBERSHIP_APPROVED':
     case 'MEMBERSHIP_REJECTED':
     case 'MEMBER_REMOVED':

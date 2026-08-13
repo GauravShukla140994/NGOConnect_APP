@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Video from 'react-native-video';
 import AppConfig from '../../config/AppConfig';
 import { fmtDate } from '../../utils/dateUtils';
 import type { ReviewItem } from '../../api/review.api';
@@ -179,11 +180,24 @@ export default function ReviewCard({
                 activeOpacity={0.85}
               >
                 <View style={styles.thumbnailWrapper}>
-                  <Image
-                    source={{ uri: item.uri }}
-                    style={styles.mediaThumbnail}
-                    resizeMode="cover"
-                  />
+                  {item.type === 'VIDEO' ? (
+                    // Video component renders the first frame when paused — proper thumbnail
+                    <Video
+                      source={{ uri: item.uri }}
+                      style={styles.mediaThumbnail}
+                      resizeMode="cover"
+                      paused
+                      muted
+                      repeat={false}
+                      controls={false}
+                    />
+                  ) : (
+                    <Image
+                      source={{ uri: item.uri }}
+                      style={styles.mediaThumbnail}
+                      resizeMode="cover"
+                    />
+                  )}
                   {/* Play icon overlay for videos */}
                   {item.type === 'VIDEO' && (
                     <View style={styles.playBadge}>

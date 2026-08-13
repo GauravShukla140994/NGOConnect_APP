@@ -32,6 +32,11 @@ export const userApi = {
   getCertificate: (certCode: string) =>
     apiClient.get<ApiResponse<UserCert>>(`/certificates/${certCode}`),
 
+  // Returns server-rendered certificate HTML — mobile renders this in WebView directly.
+  // API is the single source of truth for the template design.
+  getCertificateHtml: (certCode: string) =>
+    apiClient.get<ApiResponse<string>>(`/certificates/${certCode}/html`),
+
   issueCertificate: (data: { projectId: number; userId: number; orgId: number; totalHours?: number }) =>
     apiClient.post<ApiResponse<any>>('/certificates/issue', data),
 
@@ -88,6 +93,7 @@ export const withdrawApplication  = (applicationId: number) => userApi.withdrawA
 export const getImpactSummary     = () => userApi.getImpactSummary();
 export const getMyCertificates    = () => userApi.getMyCertificates();
 export const getCertificate       = (certCode: string) => userApi.getCertificate(certCode);
+export const getCertificateHtml   = (certCode: string) => userApi.getCertificateHtml(certCode);
 export const issueCertificate     = (data: { projectId: number; userId: number; orgId: number; totalHours?: number }) => userApi.issueCertificate(data);
 export const getMySkills       = () => userApi.getMySkills();
 export const addSkill          = (data: {skillName: string}) => userApi.addSkill(data.skillName);

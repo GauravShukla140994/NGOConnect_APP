@@ -50,6 +50,7 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
     case 'NEW_APPLICATION':
       return refId ? { screen: 'Participants', params: { projectId: refId } } : { screen: 'AdminProjects' };
     case 'MEMBERSHIP_REQUEST':
+    case 'MEMBERSHIP_CANCELLED':
     case 'MEMBERSHIP_APPROVED':
     case 'MEMBERSHIP_REJECTED':
     case 'MEMBER_REMOVED':
