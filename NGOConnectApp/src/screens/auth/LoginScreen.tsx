@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -50,6 +50,9 @@ export default function LoginScreen({ navigation }: Props) {
   const [showCheckbox,    setShowCheckbox]    = useState(false);
   const [legalUrl,        setLegalUrl]        = useState('');
   const [showLegal,       setShowLegal]       = useState(false);
+  const legalWebViewRef  = useRef<InstanceType<typeof WebView>>(null);
+  const legalAnchorUrl   = useRef('');
+  const legalHasLanded   = useRef(false);
 
   // Show checkbox only for new users (terms not yet accepted)
   useEffect(() => {
@@ -273,17 +276,17 @@ export default function LoginScreen({ navigation }: Props) {
                   </TouchableOpacity>
                   <Text style={styles.checkLabel}>
                     {'By continuing, you agree to our '}
-                    <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/terms'); setShowLegal(true); }}>Terms of Service</Text>
+                    <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/terms'); legalAnchorUrl.current = 'https://www.ripplehub.app/terms'; legalHasLanded.current = false; setShowLegal(true); }}>Terms of Service</Text>
                     {' and '}
-                    <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/privacy'); setShowLegal(true); }}>Privacy Policy</Text>
+                    <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/privacy'); legalAnchorUrl.current = 'https://www.ripplehub.app/privacy'; legalHasLanded.current = false; setShowLegal(true); }}>Privacy Policy</Text>
                   </Text>
                 </View>
               ) : (
                 <Text style={styles.terms}>
                   {'By continuing, you agree to our '}
-                  <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/terms'); setShowLegal(true); }}>Terms of Service</Text>
+                  <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/terms'); legalAnchorUrl.current = 'https://www.ripplehub.app/terms'; legalHasLanded.current = false; setShowLegal(true); }}>Terms of Service</Text>
                   {' and '}
-                  <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/privacy'); setShowLegal(true); }}>Privacy Policy</Text>
+                  <Text style={styles.link} onPress={() => { setLegalUrl('https://www.ripplehub.app/privacy'); legalAnchorUrl.current = 'https://www.ripplehub.app/privacy'; legalHasLanded.current = false; setShowLegal(true); }}>Privacy Policy</Text>
                 </Text>
               )}
             </View>
@@ -319,7 +322,48 @@ export default function LoginScreen({ navigation }: Props) {
             </Text>
             <View style={{ width: 70 }} />
           </View>
-          <WebView source={{ uri: legalUrl }} style={{ flex: 1 }} />
+          <WebView
+            ref={legalWebViewRef}
+            source={{ uri: legalUrl }}
+            style={{ flex: 1 }}
+            onShouldStartLoadWithRequest={request => {
+              if (!legalHasLanded.current) {
+                legalAnchorUrl.current = request.url;
+                legalHasLanded.current = true;
+                return true;
+              }
+              return request.url === legalAnchorUrl.current || request.url.startsWith('about:');
+            }}
+            onNavigationStateChange={navState => {
+              if (!navState.url) return; // guard: url is undefined during modal close transitions
+              if (!legalHasLanded.current) {
+                legalAnchorUrl.current = navState.url;
+                legalHasLanded.current = true;
+                return;
+              }
+              if (navState.url !== legalAnchorUrl.current && !navState.url.startsWith('about:') && navState.loading) {
+                legalWebViewRef.current?.stopLoading();
+              }
+            }}
+            injectedJavaScript={`
+              (function () {
+                var style = document.createElement('style');
+                style.textContent = [
+                  'header, nav, footer { display: none !important; }',
+                  '[class*="header"],[class*="navbar"],[class*="nav-bar"],[class*="navigation"] { display: none !important; }',
+                  '[class*="footer"],[class*="site-footer"] { display: none !important; }',
+                  '[class*="cookie"],[class*="banner"],[class*="announcement"] { display: none !important; }',
+                  '[id*="header"],[id*="nav"],[id*="footer"],[id*="cookie"] { display: none !important; }',
+                  'a { pointer-events: none !important; cursor: default !important; }',
+                ].join(' ');
+                document.head.appendChild(style);
+              })();
+              true;
+            `}
+            javaScriptEnabled
+            domStorageEnabled
+            showsVerticalScrollIndicator={false}
+          />
         </SafeAreaView>
       </Modal>
 

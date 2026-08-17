@@ -35,6 +35,91 @@ export interface CreateProjectPayload {
   googleMapsUrl?: string;
   // Status
   isDraft?: boolean;            // true = save as DRAFT, false/null = UPCOMING
+  // v5.1 RECURRING / FLEXIBLE attendance rules (nullable = use platform defaults)
+  minAttendPct?: number;        // % of sessions volunteer must attend to be cert-eligible
+  maxDailyHours?: number;       // FLEXIBLE only: max hours logged per day (cap)
+  minSessionHours?: number;     // min hours in a session to count as ATTENDED
+}
+
+// ── v5.1 Request payloads ─────────────────────────────────────────────────
+
+export interface FinalizeClosingPayload {
+  impactSummary?: string;
+  beneficiaryCount?: number;
+}
+
+export interface CancelSessionPayload {
+  reason?: string;
+}
+
+export interface SessionOptOutPayload {
+  sessionId: number;
+  userId: number;
+  optOutType?: 'SELF' | 'ADMIN_EXCUSED' | 'ADMIN_REMOVED';
+  reason?: string;
+}
+
+export interface SessionSkillRatingPayload {
+  sessionId: number;
+  userId: number;
+  skillId: number;
+  rating: number;           // 1-5
+  notes?: string;
+}
+
+export interface IssueBulkCertificatePayload {
+  projectId: number;
+  orgId: number;
+}
+
+// ── v5.1 Response shapes ──────────────────────────────────────────────────
+
+export interface FlexCheckInResult {
+  sessionId: number | null;
+  message: string;
+}
+
+export interface FlexCheckOutResult {
+  hoursLogged: number;
+  message: string;
+}
+
+export interface VolunteerEligibilityResult {
+  totalSessions: number;
+  eligibleSessions: number;
+  attendedCount: number;
+  totalHoursLogged: number;
+  attendancePct: number;
+  minAttendPct: number | null;
+  isEligibleForCert: boolean;
+}
+
+export interface SessionListItem {
+  sessionId: number;
+  sessionDate: string;          // YYYY-MM-DD
+  startTime: string;
+  endTime: string;
+  sessionStatus: string;
+  sessionStatusName: string;
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  hoursLogged: number | null;
+  attendanceStatus: string | null;
+  attendanceStatusName: string | null;
+  isNoShowExcused: boolean | null;
+  adminNote: string | null;
+  optOutId: number | null;
+  optOutType: string | null;
+  optOutTypeName: string | null;
+  optOutReason: string | null;
+  ratingCount: number;
+}
+
+export interface MilestoneResult {
+  totalSessions: number;
+  attendedCount: number;
+  attendancePct: number;
+  milestoneReached: 0 | 25 | 50 | 75;
 }
 
 export interface AdminListParams {
@@ -133,6 +218,55 @@ export const projectApi = {
   // Manual attendance (admin marks volunteer as attended)
   manualAttendance: (projectId: number, applicationId: number) =>
     apiClient.post<ApiResponse<null>>(`/project/${projectId}/attendance/manual`, { applicationId }),
+
+  // Admin remove volunteer (sets application WITHDRAWN, frees slot)
+  // POST instead of DELETE: Railway's Nginx proxy drops DELETE response bodies.
+  adminRemoveVolunteer: (projectId: number, userId: number) =>
+    apiClient.post<ApiResponse<null>>(`/project/${projectId}/participants/${userId}/remove`),
+
+  // ── v5.1: FLEXIBLE self check-in / check-out ───────────────────────────
+
+  flexCheckIn: (projectId: number) =>
+    apiClient.post<ApiResponse<FlexCheckInResult>>(`/project/${projectId}/flex-checkin`),
+
+  flexCheckOut: (projectId: number) =>
+    apiClient.post<ApiResponse<FlexCheckOutResult>>(`/project/${projectId}/flex-checkout`),
+
+  // ── v5.1: Project lifecycle ────────────────────────────────────────────
+
+  finalizeClosing: (projectId: number, data: FinalizeClosingPayload) =>
+    apiClient.post<ApiResponse<null>>(`/project/${projectId}/finalize`, data),
+
+  // ── v5.1: Session management ───────────────────────────────────────────
+
+  cancelSession: (projectId: number, sessionId: number, data: CancelSessionPayload) =>
+    apiClient.post<ApiResponse<null>>(`/project/${projectId}/sessions/${sessionId}/cancel`, data),
+
+  sessionOptOut: (projectId: number, data: SessionOptOutPayload) =>
+    apiClient.post<ApiResponse<null>>(`/project/${projectId}/sessions/optout`, data),
+
+  // ── v5.1: Session-level skill ratings ─────────────────────────────────
+
+  addSessionSkillRating: (projectId: number, data: SessionSkillRatingPayload) =>
+    apiClient.post<ApiResponse<null>>(`/project/${projectId}/sessions/skill-rating`, data),
+
+  // ── v5.1: Volunteer session history + eligibility ─────────────────────
+
+  getMySessionList: (projectId: number, userId: number) =>
+    apiClient.get<ApiResponse<SessionListItem[]>>(`/project/${projectId}/my-sessions/${userId}`),
+
+  getVolunteerEligibility: (projectId: number, userId: number) =>
+    apiClient.get<ApiResponse<VolunteerEligibilityResult>>(`/project/${projectId}/eligibility/${userId}`),
+
+  // ── v5.1: Milestone check (called after flex checkout) ────────────────
+
+  checkMilestone: (projectId: number, userId: number) =>
+    apiClient.get<ApiResponse<MilestoneResult>>(`/project/${projectId}/milestone/${userId}`),
+
+  // ── v5.1: Bulk certificate issuance ───────────────────────────────────
+
+  issueBulkCertificates: (data: IssueBulkCertificatePayload) =>
+    apiClient.post<ApiResponse<null>>(`/certificate/bulk`, data),
 };
 
 // -- Named exports --
@@ -156,3 +290,15 @@ export const rateSkill       = (data: Parameters<typeof projectApi.rateSkill>[0]
 export const getSessions  = (projectId: number) => projectApi.getSessions(projectId);
 export const getSessionQr = (projectId: number, sessionId: number) =>
   projectApi.getSessionQr(projectId, sessionId);
+
+// v5.1 named exports
+export const flexCheckIn        = (projectId: number) => projectApi.flexCheckIn(projectId);
+export const flexCheckOut       = (projectId: number) => projectApi.flexCheckOut(projectId);
+export const finalizeClosing    = (projectId: number, data: FinalizeClosingPayload) => projectApi.finalizeClosing(projectId, data);
+export const cancelSession      = (projectId: number, sessionId: number, data: CancelSessionPayload) => projectApi.cancelSession(projectId, sessionId, data);
+export const sessionOptOut      = (projectId: number, data: SessionOptOutPayload) => projectApi.sessionOptOut(projectId, data);
+export const addSessionSkillRating = (projectId: number, data: SessionSkillRatingPayload) => projectApi.addSessionSkillRating(projectId, data);
+export const getMySessionList   = (projectId: number, userId: number) => projectApi.getMySessionList(projectId, userId);
+export const getVolunteerEligibility = (projectId: number, userId: number) => projectApi.getVolunteerEligibility(projectId, userId);
+export const checkMilestone     = (projectId: number, userId: number) => projectApi.checkMilestone(projectId, userId);
+export const issueBulkCertificates = (data: IssueBulkCertificatePayload) => projectApi.issueBulkCertificates(data);

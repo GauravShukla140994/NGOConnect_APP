@@ -15,10 +15,10 @@ const C_CONST = AppConfig.COLORS;
 import { useAdminStore } from '../../store/adminStore';
 import { getMyOrgs } from '../../api/user.api';
 
-type Tab = 'UPCOMING' | 'COMPLETED' | 'CANCELLED';
-const TABS: Tab[] = ['UPCOMING', 'COMPLETED', 'CANCELLED'];
+type Tab = 'UPCOMING' | 'CLOSING' | 'COMPLETED' | 'CANCELLED';
+const TABS: Tab[] = ['UPCOMING', 'CLOSING', 'COMPLETED', 'CANCELLED'];
 const TAB_LABELS: Record<Tab, string> = {
-  UPCOMING: 'Upcoming', COMPLETED: 'Completed', CANCELLED: 'Cancelled',
+  UPCOMING: 'Upcoming', CLOSING: 'Closing', COMPLETED: 'Completed', CANCELLED: 'Cancelled',
 };
 
 interface AdminProject {
@@ -109,6 +109,7 @@ function getDateInfo(p: AdminProject): DateInfo {
 const BADGE_CONFIG: Record<string, { label: string; bgStyle: object; textColor: string }> = {
   ACTIVE:    { label: 'Active',    bgStyle: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }, textColor: '#16a34a' },
   UPCOMING:  { label: 'Upcoming',  bgStyle: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }, textColor: '#2563eb' },
+  CLOSING:   { label: 'Closing',   bgStyle: { backgroundColor: '#fffbeb', borderColor: '#fde68a' }, textColor: '#d97706' },
   COMPLETED: { label: 'Completed', bgStyle: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }, textColor: '#16a34a' },
   CANCELLED: { label: 'Cancelled', bgStyle: { backgroundColor: '#fff1f2', borderColor: '#fecdd3' }, textColor: '#be123c' },
   EXPIRED:   { label: 'Expired',   bgStyle: { backgroundColor: '#fff7ed', borderColor: '#fed7aa' }, textColor: '#c2410c' },
@@ -453,10 +454,10 @@ export default function AdminProjectsScreen() {
 
   const [activeTab, setActiveTab] = useState<Tab>('UPCOMING');
   const [projects, setProjects] = useState<Record<Tab, AdminProject[]>>({
-    UPCOMING: [], COMPLETED: [], CANCELLED: [],
+    UPCOMING: [], CLOSING: [], COMPLETED: [], CANCELLED: [],
   });
   const [loading, setLoading] = useState<Record<Tab, boolean>>({
-    UPCOMING: false, COMPLETED: false, CANCELLED: false,
+    UPCOMING: false, CLOSING: false, COMPLETED: false, CANCELLED: false,
   });
   const [refreshing, setRefreshing] = useState(false);
   const loadedTabs = useRef<Set<Tab>>(new Set());
@@ -507,6 +508,9 @@ export default function AdminProjectsScreen() {
         ]);
         const merged = [...extractItems(activeRes), ...extractItems(upcomingRes)].map(mapRow);
         setProjects(prev => ({ ...prev, UPCOMING: merged }));
+      } else if (tab === 'CLOSING') {
+        const res = await projectApi.list({ orgId: activeOrgId, statusCode: 'CLOSING', pageNumber: 1, pageSize: 50 });
+        setProjects(prev => ({ ...prev, CLOSING: extractItems(res).map(mapRow) }));
       } else {
         const res = await projectApi.list({
           orgId: activeOrgId,
@@ -554,6 +558,7 @@ export default function AdminProjectsScreen() {
         setCancelTarget(null);
         setCancelReason('');
         loadedTabs.current.delete('UPCOMING');
+        loadedTabs.current.delete('CLOSING');
         loadedTabs.current.delete('CANCELLED');
         await loadTab('UPCOMING', true);
         if (activeTab === 'CANCELLED') await loadTab('CANCELLED', true);
@@ -605,6 +610,7 @@ export default function AdminProjectsScreen() {
     const source: Record<Tab, AdminProject[]> = {
       ...projects,
       UPCOMING:  stillUpcoming,
+      CLOSING:   projects['CLOSING'],
       CANCELLED: [...projects['CANCELLED'], ...expiredUnstarted],
     };
 
@@ -795,7 +801,7 @@ export default function AdminProjectsScreen() {
           ) : (
             <>
               <Text style={s.emptyIcon}>
-                {activeTab === 'UPCOMING' ? '📅' : activeTab === 'COMPLETED' ? '✅' : '❌'}
+                {activeTab === 'UPCOMING' ? '📅' : activeTab === 'CLOSING' ? '⏳' : activeTab === 'COMPLETED' ? '✅' : '❌'}
               </Text>
               <Text style={s.emptyTitle}>No {TAB_LABELS[activeTab]} Projects</Text>
               <Text style={s.emptyText}>

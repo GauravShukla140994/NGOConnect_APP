@@ -244,6 +244,59 @@ function UpcomingCard({
         <Text style={s.scheduleLine}>{scheduleOneLiner(app)}</Text>
       </View>
 
+      {/* RECURRING — session attendance progress */}
+      {app.scheduleTypeCode === 'RECURRING' && app.myEligibleSessions != null && app.myEligibleSessions > 0 && (
+        <View style={s.progressBlock}>
+          <View style={s.progressLabelRow}>
+            <Text style={s.progressLabel}>Sessions attended</Text>
+            <Text style={s.progressValue}>
+              {app.myAttendedSessions ?? 0} / {app.myEligibleSessions}
+              {app.minAttendPct != null ? `  (${app.minAttendPct}% req.)` : ''}
+            </Text>
+          </View>
+          <View style={s.progressTrack}>
+            <View
+              style={[
+                s.progressFill,
+                {
+                  width: `${Math.min(
+                    ((app.myAttendedSessions ?? 0) / app.myEligibleSessions) * 100,
+                    100,
+                  )}%` as any,
+                  backgroundColor: '#2563EB',
+                },
+              ]}
+            />
+          </View>
+        </View>
+      )}
+
+      {/* FLEXIBLE — hours logged progress */}
+      {app.scheduleTypeCode === 'FLEXIBLE' && app.myRequiredHours != null && app.myRequiredHours > 0 && (
+        <View style={s.progressBlock}>
+          <View style={s.progressLabelRow}>
+            <Text style={s.progressLabel}>Hours logged</Text>
+            <Text style={s.progressValue}>
+              {(app.myHoursLogged ?? 0).toFixed(1)} / {app.myRequiredHours} hrs
+            </Text>
+          </View>
+          <View style={s.progressTrack}>
+            <View
+              style={[
+                s.progressFill,
+                {
+                  width: `${Math.min(
+                    ((app.myHoursLogged ?? 0) / app.myRequiredHours) * 100,
+                    100,
+                  )}%` as any,
+                  backgroundColor: '#059669',
+                },
+              ]}
+            />
+          </View>
+        </View>
+      )}
+
       {/* QR hint + scan button — shown when admin approval required */}
       {app.requiresApproval && !app.isCheckedIn && (
         <>
@@ -370,12 +423,14 @@ function CompletedCard({ app, onPress, onCertPress }: { app: UserApplication; on
 function CancelledCard({ app, onPress }: { app: UserApplication; onPress: () => void }) {
   const reason =
     app.statusCode === 'REJECTED'
-      ? { label: '✕ Rejected by Admin', color: '#DC2626', bg: '#FEE2E2', border: '#DC2626' }
+      ? { label: '✕ Rejected by Admin',  color: '#DC2626', bg: '#FEE2E2', border: '#DC2626' }
+    : app.statusCode === 'WITHDRAWN' && app.wasRemovedByAdmin
+      ? { label: '✕ Removed by Admin',   color: '#DC2626', bg: '#FEE2E2', border: '#DC2626' }
     : app.statusCode === 'WITHDRAWN'
-      ? { label: 'Withdrawn by You',    color: '#6B7280', bg: '#F3F4F6', border: C.BORDER }
+      ? { label: 'Withdrawn by You',     color: '#6B7280', bg: '#F3F4F6', border: C.BORDER }
     : app.projectStatusCode === 'CANCELLED'
-      ? { label: 'Project Cancelled',   color: '#D97706', bg: '#FEF3C7', border: '#D97706' }
-      : { label: 'Project Expired',     color: '#9CA3AF', bg: '#F3F4F6', border: C.BORDER };
+      ? { label: 'Project Cancelled',    color: '#D97706', bg: '#FEF3C7', border: '#D97706' }
+      : { label: 'Project Expired',      color: '#9CA3AF', bg: '#F3F4F6', border: C.BORDER };
 
   const scheduleLine = scheduleOneLiner(app) ? `📅 ${scheduleOneLiner(app)}` : null;
 
@@ -1092,6 +1147,12 @@ const s = StyleSheet.create({
   scheduleRow:    { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   scheduleIcon:   { fontSize: 13 },
   scheduleLine:   { fontSize: 12, color: C.TEXT2, flex: 1 },
+  progressBlock:  { marginTop: 8, marginBottom: 2 },
+  progressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  progressLabel:  { fontSize: 11, color: C.TEXT2 },
+  progressValue:  { fontSize: 11, color: C.TEXT2, fontWeight: '600' },
+  progressTrack:  { height: 6, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden' },
+  progressFill:   { height: 6, borderRadius: 3 },
 
   // Chips
   chip:           { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },

@@ -27,7 +27,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
 import AppConfig from '../../config/AppConfig';
-import { get, apply } from '../../api/project.api';
+import { get, apply, flexCheckIn, flexCheckOut, getVolunteerEligibility } from '../../api/project.api';
+import { useAuthStore } from '../../store/authStore';
+import type { VolunteerEligibilityResult } from '../../api/project.api';
 import type { Project } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
@@ -154,8 +156,12 @@ export default function ProjectDetailScreen() {
   const webViewRef  = useRef<any>(null);
   const [project, setProject]   = useState<Project | null>(null);
   const [loading, setLoading]   = useState(true);
-  const [applying, setApplying] = useState(false);
-  const [applied, setApplied]   = useState(false);
+  const [applying, setApplying]       = useState(false);
+  const [applied, setApplied]         = useState(false);
+  const [flexBusy, setFlexBusy]       = useState(false);
+  const [checkedIn, setCheckedIn]     = useState(false);
+  const [eligibility, setEligibility] = useState<VolunteerEligibilityResult | null>(null);
+  const currentUser = useAuthStore(s => s.user);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
@@ -173,6 +179,16 @@ export default function ProjectDetailScreen() {
   }, [projectId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Fetch volunteer eligibility for RECURRING/FLEXIBLE once project loads
+  useEffect(() => {
+    if (!project || !currentUser) return;
+    const isRF = project.scheduleType === 'RECURRING' || project.scheduleType === 'FLEXIBLE';
+    if (!isRF || project.applicationStatusCode !== 'APPROVED') return;
+    getVolunteerEligibility(project.projectId, currentUser.userId)
+      .then(res => { if (res.data?.isSuccess) setEligibility(res.data.data ?? null); })
+      .catch(() => {});
+  }, [project, currentUser]);
 
   // Fetch user GPS
   useEffect(() => {
@@ -211,6 +227,41 @@ export default function ProjectDetailScreen() {
       setApplying(false);
     }
   }, [projectId, applied]);
+
+  const handleFlexCheckIn = useCallback(async () => {
+    setFlexBusy(true);
+    try {
+      const res = await flexCheckIn(projectId);
+      if (res.data?.isSuccess) {
+        setCheckedIn(true);
+        Alert.alert('Checked In', res.data.message ?? 'You are now checked in for today\'s session.');
+      } else {
+        Alert.alert('Check-In Failed', res.data?.message ?? 'Could not check in.');
+      }
+    } catch {
+      Alert.alert('Error', 'Network error. Please try again.');
+    } finally {
+      setFlexBusy(false);
+    }
+  }, [projectId]);
+
+  const handleFlexCheckOut = useCallback(async () => {
+    setFlexBusy(true);
+    try {
+      const res = await flexCheckOut(projectId);
+      if (res.data?.isSuccess) {
+        setCheckedIn(false);
+        const hours = res.data.data?.hoursLogged ?? 0;
+        Alert.alert('Checked Out', `Session complete! You logged ${hours.toFixed(2)} hours.`);
+      } else {
+        Alert.alert('Check-Out Failed', res.data?.message ?? 'Could not check out.');
+      }
+    } catch {
+      Alert.alert('Error', 'Network error. Please try again.');
+    } finally {
+      setFlexBusy(false);
+    }
+  }, [projectId]);
 
   const openMaps = useCallback(() => {
     if (!project) { return; }
@@ -451,11 +502,97 @@ export default function ProjectDetailScreen() {
           </View>
         ) : null}
 
+        {/* ── 7. My Progress card — RECURRING/FLEXIBLE approved volunteers ── */}
+        {isApproved && eligibility && (
+          project.scheduleType === 'RECURRING' || project.scheduleType === 'FLEXIBLE'
+        ) ? (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>My Progress</Text>
+
+            {/* Eligibility badge */}
+            <View style={[s.eligBadge,
+              { backgroundColor: eligibility.isEligibleForCert ? '#D1FAE5' : '#FEF3C7' }]}>
+              <Text style={[s.eligBadgeText,
+                { color: eligibility.isEligibleForCert ? '#059669' : '#D97706' }]}>
+                {eligibility.isEligibleForCert
+                  ? '✅  Eligible for certificate'
+                  : '⏳  Keep going — not yet eligible'}
+              </Text>
+            </View>
+
+            {/* RECURRING — sessions progress */}
+            {project.scheduleType === 'RECURRING' && eligibility.eligibleSessions > 0 && (
+              <>
+                <View style={s.progressLabelRow}>
+                  <Text style={s.progressLabel}>Sessions attended</Text>
+                  <Text style={s.progressValue}>
+                    {eligibility.attendedCount} / {eligibility.eligibleSessions}
+                  </Text>
+                </View>
+                <View style={s.progressTrack}>
+                  <View style={[s.progressFill, {
+                    width: `${Math.min(
+                      (eligibility.attendedCount / eligibility.eligibleSessions) * 100, 100,
+                    )}%` as any,
+                    backgroundColor: '#2563EB',
+                  }]} />
+                </View>
+                {eligibility.minAttendPct != null && (
+                  <Text style={s.progressHint}>
+                    {eligibility.attendancePct?.toFixed(0) ?? 0}% attendance
+                    {`  (need ${eligibility.minAttendPct}%)`}
+                  </Text>
+                )}
+              </>
+            )}
+
+            {/* FLEXIBLE — hours progress */}
+            {project.scheduleType === 'FLEXIBLE' && (
+              <View style={s.progressLabelRow}>
+                <Text style={s.progressLabel}>Hours logged</Text>
+                <Text style={s.progressValue}>
+                  {(eligibility.totalHoursLogged ?? 0).toFixed(1)} hrs
+                </Text>
+              </View>
+            )}
+
+            <View style={[s.progressLabelRow, { marginTop: 6 }]}>
+              <Text style={s.progressLabel}>Total sessions</Text>
+              <Text style={s.progressValue}>{eligibility.totalSessions}</Text>
+            </View>
+          </View>
+        ) : null}
+
       </ScrollView>
 
-      {/* ── Sticky apply footer ───────────────────────────────────────────── */}
+      {/* ── Sticky footer ─────────────────────────────────────────────────── */}
       <View style={[s.footer, { paddingBottom: insets.bottom + 12 }]}>
-        {isApproved ? (
+        {/* FLEXIBLE + APPROVED + ACTIVE → show Check-In / Check-Out */}
+        {isApproved && project.scheduleType === 'FLEXIBLE' && project.statusCode === 'ACTIVE' ? (
+          checkedIn ? (
+            <TouchableOpacity
+              style={[s.footerBtn, { backgroundColor: '#EF4444' }]}
+              onPress={handleFlexCheckOut}
+              disabled={flexBusy}
+            >
+              {flexBusy
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={s.footerBtnText}>🔴 Check Out</Text>
+              }
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[s.footerBtn, { backgroundColor: C.TEAL }]}
+              onPress={handleFlexCheckIn}
+              disabled={flexBusy}
+            >
+              {flexBusy
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={s.footerBtnText}>🟢 Check In for Today</Text>
+              }
+            </TouchableOpacity>
+          )
+        ) : isApproved ? (
           <View style={[s.footerBtn, { backgroundColor: C.TEAL }]}>
             <Text style={s.footerBtnText}>✓ Already Approved</Text>
           </View>
@@ -565,6 +702,16 @@ const s = StyleSheet.create({
   skillTagText:  { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
   skillTagReq:   { fontSize: 12, fontWeight: '700' },
   skillNote:     { fontSize: 11, color: C.TEXT3, marginTop: 2 },
+
+  // Progress section
+  eligBadge:       { borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', marginBottom: 12 },
+  eligBadgeText:   { fontSize: 12, fontWeight: '700' },
+  progressLabelRow:{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  progressLabel:   { fontSize: 12, color: C.TEXT2 },
+  progressValue:   { fontSize: 12, fontWeight: '700', color: C.TEXT },
+  progressTrack:   { height: 6, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden', marginBottom: 4 },
+  progressFill:    { height: 6, borderRadius: 3 },
+  progressHint:    { fontSize: 11, color: C.TEXT2, marginBottom: 6 },
 
   // Footer
   footer:        { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: C.CARD, borderTopWidth: 1, borderTopColor: C.BORDER, paddingHorizontal: 14, paddingTop: 12 },

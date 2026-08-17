@@ -11,6 +11,8 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AppConfig from '../../config/AppConfig';
 import { projectApi } from '../../api/project.api';
+import { settingsApi } from '../../api/settings.api';
+import * as orgApiModule from '../../api/org.api';
 import { useAdminStore } from '../../store/adminStore';
 
 // ---------------------------------------------------------------------------
@@ -45,6 +47,10 @@ interface ProjectForm {
   latitude?: number;
   longitude?: number;
   locationPinned: boolean;
+  // Step 2 — Attendance rules (RECURRING/FLEXIBLE only, v5.1)
+  minAttendPct: string;    // % sessions required for cert eligibility (>= system default)
+  maxDailyHours: string;   // FLEXIBLE: max hours per day (>= system default)
+  minSessionHours: string; // FLEXIBLE: min hours per session (>= FLEXIBLE_MIN_SESSION_HOURS floor)
   // Step 4
   skills: string[];
   age18Plus: boolean;
@@ -80,6 +86,7 @@ const DEFAULT_FORM: ProjectForm = {
   locationType: 'IN_PERSON', address: '', landmark: '', city: '',
   locationPinned: false,
   skills: [], age18Plus: false,
+  minAttendPct: '', maxDailyHours: '', minSessionHours: '',
 };
 
 // ---------------------------------------------------------------------------
@@ -144,6 +151,34 @@ function display12H(hhmm: string): string {
   const period = h >= 12 ? 'PM' : 'AM';
   const hour12 = h % 12 === 0 ? 12 : h % 12;
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/**
+ * Compute the read-only minSessionHours from the current form state.
+ * Formula: (minAttendPct / 100) × sessionDurationHours
+ *   RECURRING — duration = endTime minus startTime (in hours)
+ *   FLEXIBLE  — duration = maxDailyHours
+ * Returns undefined when the inputs aren't filled in yet.
+ */
+function calcMinSessionHours(form: ProjectForm): number | undefined {
+  const pct = parseFloat(form.minAttendPct);
+  if (isNaN(pct) || pct <= 0) return undefined;
+
+  if (form.scheduleType === 'RECURRING' && form.startTime && form.endTime) {
+    const [sh, sm] = form.startTime.split(':').map(Number);
+    const [eh, em] = form.endTime.split(':').map(Number);
+    const durHours = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+    if (durHours <= 0) return undefined;
+    return Math.round((pct / 100) * durHours * 100) / 100; // 2 decimal places
+  }
+
+  if (form.scheduleType === 'FLEXIBLE') {
+    const maxH = parseFloat(form.maxDailyHours);
+    if (isNaN(maxH) || maxH <= 0) return undefined;
+    return Math.round((pct / 100) * maxH * 100) / 100;
+  }
+
+  return undefined;
 }
 
 /** Midnight today (local) — used as minimumDate for date pickers. */
@@ -318,6 +353,20 @@ export default function CreateProjectScreen() {
   const [form, setForm]          = useState<ProjectForm>(DEFAULT_FORM);
   const [saving, setSaving]      = useState(false);
   const [loading, setLoading]    = useState(!!projectId);
+  // System-floor values fetched from Settings.
+  // Admin can set a HIGHER value per project but not lower than these floors.
+  const [sysDefaults, setSysDefaults] = useState({
+    minAttendPct:         70,
+    maxDailyHours:        8,
+    otMaxDurationHours:   12,
+    recurMinDays:         7,
+    recurMaxDays:         90,
+    flexMinDays:          3,
+    flexMaxDays:          60,
+    flexMinSessionHours:  1,
+  });
+  // Org-level project type permissions + cap — default true/100 while loading (avoids jarring lock flash)
+  const [orgPerms, setOrgPerms] = useState({ canCreateRecurring: true, canCreateFlexible: true, orgMaxVolunteers: 100 });
   const [skillInput, setSkillInput] = useState('');
   const [tilesLoaded, setTilesLoaded]     = useState(false);
   const [pinnedAddress, setPinnedAddress] = useState('');
@@ -345,6 +394,58 @@ export default function CreateProjectScreen() {
   const [pickerDate, setPickerDate]       = useState(new Date());
 
   const isEdit = !!projectId;
+
+  // ── Fetch system-default settings at mount ───────────────────────────────────
+  useEffect(() => {
+    settingsApi.getPublic()
+      .then(res => {
+        const list = res.data?.data ?? [];
+        const num  = (key: string, fallback: number) => {
+          const v = parseFloat(list.find((s: any) => s.settingKey === key)?.settingValue ?? '');
+          return isNaN(v) ? fallback : v;
+        };
+        const floors = {
+          minAttendPct:        num('DEFAULT_MIN_ATTEND_PCT',       70),
+          maxDailyHours:       num('DEFAULT_MAX_DAILY_HOURS',       8),
+          otMaxDurationHours:  num('OT_MAX_DURATION_HOURS',        12),
+          recurMinDays:        num('RECURRING_MIN_DURATION_DAYS',   7),
+          recurMaxDays:        num('RECURRING_MAX_DURATION_DAYS',  90),
+          flexMinDays:         num('FLEXIBLE_MIN_DURATION_DAYS',    3),
+          flexMaxDays:         num('FLEXIBLE_MAX_DURATION_DAYS',   60),
+          flexMinSessionHours: num('FLEXIBLE_MIN_SESSION_HOURS',    1),
+        };
+        setSysDefaults(floors);
+        // Pre-fill attendance fields with system defaults on NEW projects.
+        // On EDIT projects these will be overwritten by the project-load effect.
+        if (!projectId) {
+          setForm(f => ({
+            ...f,
+            minAttendPct:    String(floors.minAttendPct),
+            maxDailyHours:   String(floors.maxDailyHours),
+            minSessionHours: String(floors.flexMinSessionHours),
+          }));
+        }
+      })
+      .catch(() => { /* keep hardcoded fallback */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount only
+
+  // ── Fetch org project permissions ────────────────────────────────────────────
+  useEffect(() => {
+    if (!orgId) return;
+    orgApiModule.getProfile(orgId)
+      .then(res => {
+        const org = res.data?.data ?? res.data;
+        if (!org) return;
+        setOrgPerms({
+          canCreateRecurring: org.canCreateRecurring === true || (org as any).canCreateRecurring === 1,
+          canCreateFlexible:  org.canCreateFlexible  === true || (org as any).canCreateFlexible  === 1,
+          orgMaxVolunteers:   typeof org.orgMaxVolunteers === 'number' ? org.orgMaxVolunteers : 100,
+        });
+      })
+      .catch(() => { /* keep defaults = allowed/100, fail open */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
 
   // ── Fetch GPS at mount ───────────────────────────────────────────────────────
   // For NEW projects: GPS fires immediately — provides a default pin the admin
@@ -398,7 +499,7 @@ export default function CreateProjectScreen() {
           maxVolunteers:    String(p.maxVolunteers ?? ''),
           isPublic:         p.isPublic ?? true,
           requiresApproval: Boolean(p.requiresApproval),
-          scheduleType:     (p.scheduleType ?? p.scheduleTypeCode ?? 'ONE_TIME') as ScheduleType,
+          scheduleType:     (p.scheduleTypeCode ?? 'ONE_TIME') as ScheduleType,
           date:             p.oneTimeDate ? p.oneTimeDate.slice(0,10).split('-').reverse().join('-') : '',
           startTime:        p.sessionStartTime ?? '',
           endTime:          p.sessionEndTime ?? '',
@@ -415,6 +516,10 @@ export default function CreateProjectScreen() {
           locationPinned:   !!(p.latitude && p.longitude),
           skills:           [],   // filled below after skills fetch
           age18Plus:        Boolean(p.ageRestriction),
+          // Attendance rules — use saved project values if present, otherwise system defaults
+          minAttendPct:    p.minAttendPct    != null ? String(p.minAttendPct)    : String(sysDefaults.minAttendPct),
+          maxDailyHours:   p.maxDailyHours   != null ? String(p.maxDailyHours)   : String(sysDefaults.maxDailyHours),
+          minSessionHours: p.minSessionHours != null ? String(p.minSessionHours) : String(sysDefaults.flexMinSessionHours),
         });
 
         // Fetch existing project skills and pre-populate the form so
@@ -643,6 +748,16 @@ export default function CreateProjectScreen() {
     if (step === 1) {
       if (!form.title.trim())    { Alert.alert('Required', 'Please enter a project title.');  return false; }
       if (!form.categoryName)    { Alert.alert('Required', 'Please select a category.');      return false; }
+      if (form.maxVolunteers) {
+        const mv = parseInt(form.maxVolunteers, 10);
+        if (!isNaN(mv) && mv > orgPerms.orgMaxVolunteers) {
+          Alert.alert(
+            'Exceeds Org Limit',
+            `Max volunteers cannot exceed your organisation's limit of ${orgPerms.orgMaxVolunteers}. Contact support to increase the limit.`
+          );
+          return false;
+        }
+      }
     }
     if (step === 2) {
       if (form.scheduleType === 'ONE_TIME') {
@@ -652,6 +767,16 @@ export default function CreateProjectScreen() {
         }
         if (!form.startTime) { Alert.alert('Required', 'Please select a start time.');      return false; }
         if (!form.endTime)   { Alert.alert('Required', 'Please select an end time.');       return false; }
+        // Duration cap: session must not exceed OT_MAX_DURATION_HOURS
+        if (form.startTime && form.endTime) {
+          const [sh, sm] = form.startTime.split(':').map(Number);
+          const [eh, em] = form.endTime.split(':').map(Number);
+          const durHrs = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+          if (durHrs > sysDefaults.otMaxDurationHours) {
+            Alert.alert('Session Too Long', `One-time session cannot exceed ${sysDefaults.otMaxDurationHours} hours.`);
+            return false;
+          }
+        }
       }
       if (form.scheduleType === 'RECURRING') {
         if (!form.startDate || !form.endDate || form.activeDays.length === 0) {
@@ -662,6 +787,20 @@ export default function CreateProjectScreen() {
         }
         if (!form.startTime) { Alert.alert('Required', 'Please select a start time.');      return false; }
         if (!form.endTime)   { Alert.alert('Required', 'Please select an end time.');       return false; }
+        // Duration range check: RECURRING_MIN_DURATION_DAYS – RECURRING_MAX_DURATION_DAYS
+        if (form.startDate && form.endDate) {
+          const startMs = parseDMY(form.startDate).getTime();
+          const endMs   = parseDMY(form.endDate).getTime();
+          const days    = Math.round((endMs - startMs) / 86400000);
+          if (days < sysDefaults.recurMinDays) {
+            Alert.alert('Date Range Too Short', `Recurring projects must span at least ${sysDefaults.recurMinDays} days.`);
+            return false;
+          }
+          if (days > sysDefaults.recurMaxDays) {
+            Alert.alert('Date Range Too Long', `Recurring projects cannot span more than ${sysDefaults.recurMaxDays} days.`);
+            return false;
+          }
+        }
       }
       if (form.scheduleType === 'FLEXIBLE') {
         if (!form.startDate || !form.endDate) {
@@ -672,11 +811,41 @@ export default function CreateProjectScreen() {
         }
         if (!form.startTime) { Alert.alert('Required', 'Please select a start time.');      return false; }
         if (!form.endTime)   { Alert.alert('Required', 'Please select an end time.');       return false; }
+        // Duration range check: FLEXIBLE_MIN_DURATION_DAYS – FLEXIBLE_MAX_DURATION_DAYS
+        if (form.startDate && form.endDate) {
+          const startMs = parseDMY(form.startDate).getTime();
+          const endMs   = parseDMY(form.endDate).getTime();
+          const days    = Math.round((endMs - startMs) / 86400000);
+          if (days < sysDefaults.flexMinDays) {
+            Alert.alert('Date Range Too Short', `Flexible projects must span at least ${sysDefaults.flexMinDays} days.`);
+            return false;
+          }
+          if (days > sysDefaults.flexMaxDays) {
+            Alert.alert('Date Range Too Long', `Flexible projects cannot span more than ${sysDefaults.flexMaxDays} days.`);
+            return false;
+          }
+        }
+        // Min session hours floor
+        const msh = parseFloat(form.minSessionHours);
+        if (!isNaN(msh) && msh < sysDefaults.flexMinSessionHours) {
+          Alert.alert('Invalid Min Session Hours', `Min session hours cannot be below the platform floor of ${sysDefaults.flexMinSessionHours}h.`);
+          set('minSessionHours', String(sysDefaults.flexMinSessionHours));
+          return false;
+        }
       }
       // Time order check — applies to all schedule types
       if (form.startTime && form.endTime && form.endTime <= form.startTime) {
         Alert.alert('Invalid Time', `End time (${display12H(form.endTime)}) must be after start time (${display12H(form.startTime)}).`);
         return false;
+      }
+      // Attendance floor — admin cannot set below platform minimum
+      if (form.scheduleType !== 'ONE_TIME') {
+        const attendPct = parseFloat(form.minAttendPct);
+        if (!isNaN(attendPct) && attendPct < sysDefaults.minAttendPct) {
+          Alert.alert('Invalid Attendance %', `Min attendance cannot be below the platform floor of ${sysDefaults.minAttendPct}%. It has been reset.`);
+          set('minAttendPct', String(sysDefaults.minAttendPct));
+          return false;
+        }
       }
     }
     return true;
@@ -711,6 +880,13 @@ export default function CreateProjectScreen() {
     longitude:        form.longitude,
     // Restrictions
     minAge:           form.age18Plus ? 18 : 0,
+    // Attendance rules (v5.1) — only sent for RECURRING/FLEXIBLE
+    minAttendPct:    form.scheduleType !== 'ONE_TIME' && form.minAttendPct  ? parseFloat(form.minAttendPct)  : undefined,
+    maxDailyHours:   form.scheduleType === 'FLEXIBLE' && form.maxDailyHours ? parseFloat(form.maxDailyHours) : undefined,
+    // FLEXIBLE: admin-entered minSessionHours; RECURRING: auto-computed from attendance %
+    minSessionHours: form.scheduleType === 'FLEXIBLE' && form.minSessionHours
+                       ? parseFloat(form.minSessionHours)
+                       : calcMinSessionHours(form),
     // Status
     isDraft,
   });
@@ -835,10 +1011,10 @@ export default function CreateProjectScreen() {
         multiline
       />
       <FormInput
-        label="Max Volunteers"
+        label={`Max Volunteers (org limit: ${orgPerms.orgMaxVolunteers})`}
         value={form.maxVolunteers}
-        onChangeText={v => set('maxVolunteers', v)}
-        placeholder="e.g., 20"
+        onChangeText={v => set('maxVolunteers', v.replace(/[^0-9]/g, ''))}
+        placeholder={`e.g., 20 (max ${orgPerms.orgMaxVolunteers})`}
         keyboardType="number-pad"
       />
       <View style={s.switchRow}>
@@ -865,17 +1041,34 @@ export default function CreateProjectScreen() {
         <SectionLabel text="Schedule" />
         <Text style={s.label}>Schedule Type</Text>
         <View style={[s.chipRow, { marginBottom: 20 }]}>
-          {(['ONE_TIME','RECURRING','FLEXIBLE'] as ScheduleType[]).map(t => (
-            <TouchableOpacity
-              key={t}
-              onPress={() => set('scheduleType', t)}
-              style={[s.segBtn, form.scheduleType === t && s.segBtnActive]}
-            >
-              <Text style={[s.segText, form.scheduleType === t && s.segTextActive]}>
-                {t === 'ONE_TIME' ? 'One-time' : t === 'RECURRING' ? 'Recurring' : 'Flexible'}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {(['ONE_TIME','RECURRING','FLEXIBLE'] as ScheduleType[]).map(t => {
+            const locked =
+              (t === 'RECURRING' && !orgPerms.canCreateRecurring) ||
+              (t === 'FLEXIBLE'  && !orgPerms.canCreateFlexible);
+            return (
+              <TouchableOpacity
+                key={t}
+                onPress={() => {
+                  if (locked) {
+                    Alert.alert(
+                      'Plan Upgrade Required',
+                      `${t === 'RECURRING' ? 'Recurring' : 'Flexible'} projects are available on upgraded plans. Contact support to enable this for your organisation.`,
+                      [{ text: 'OK' }]
+                    );
+                    return;
+                  }
+                  set('scheduleType', t);
+                }}
+                style={[s.segBtn, form.scheduleType === t && s.segBtnActive, locked && { opacity: 0.45 }]}
+              >
+                <Text style={[s.segText, form.scheduleType === t && s.segTextActive]}>
+                  {t === 'ONE_TIME'
+                    ? 'One-time'
+                    : `${t === 'RECURRING' ? 'Recurring' : 'Flexible'}${locked ? ' 🔒' : ''}`}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {form.scheduleType === 'ONE_TIME' && (
@@ -900,11 +1093,11 @@ export default function CreateProjectScreen() {
           <>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <View style={{ flex: 1 }}>
-                <DatePickerButton label="From *" value={form.startDate}
+                <DatePickerButton label={`From * (min ${sysDefaults.recurMinDays}d)`} value={form.startDate}
                   onPress={() => openDatePicker('startDate')} />
               </View>
               <View style={{ flex: 1 }}>
-                <DatePickerButton label="Until *" value={form.endDate}
+                <DatePickerButton label={`Until * (max ${sysDefaults.recurMaxDays}d)`} value={form.endDate}
                   onPress={() => openDatePicker('endDate')} />
               </View>
             </View>
@@ -935,11 +1128,11 @@ export default function CreateProjectScreen() {
           <>
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <View style={{ flex: 1 }}>
-                <DatePickerButton label="Available From *" value={form.startDate}
+                <DatePickerButton label={`Available From * (min ${sysDefaults.flexMinDays}d)`} value={form.startDate}
                   onPress={() => openDatePicker('startDate')} />
               </View>
               <View style={{ flex: 1 }}>
-                <DatePickerButton label="Available Until *" value={form.endDate}
+                <DatePickerButton label={`Available Until * (max ${sysDefaults.flexMaxDays}d)`} value={form.endDate}
                   onPress={() => openDatePicker('endDate')} />
               </View>
             </View>
@@ -954,11 +1147,109 @@ export default function CreateProjectScreen() {
               </View>
             </View>
             {dur ? <Text style={s.durationBadge}>{dur}</Text> : null}
-            <FormInput label="Minimum Hours" value={form.minHours}
+            <FormInput label="Minimum Hours Required" value={form.minHours}
               onChangeText={v => set('minHours', v)} placeholder="e.g., 4"
               keyboardType="number-pad" />
           </>
         )}
+
+        {/* ── Attendance Rules — only for RECURRING / FLEXIBLE ─────────── */}
+        {form.scheduleType !== 'ONE_TIME' && (() => {
+          const computedMsh = calcMinSessionHours(form);
+          const mshDisplay  = computedMsh != null ? `${computedMsh} hr${computedMsh !== 1 ? 's' : ''}` : '—';
+          return (
+            <>
+              <SectionLabel text="Attendance Rules" />
+              <Text style={[s.subText, { marginBottom: 10, marginHorizontal: 2 }]}>
+                Platform minimum is {sysDefaults.minAttendPct}% — you can set a higher bar for this project. These lock once the project goes Active.
+              </Text>
+
+              {/* Min Attendance % */}
+              <Text style={s.label}>Min Attendance % for Certificate *</Text>
+              <TextInput
+                style={s.input}
+                keyboardType="numeric"
+                value={form.minAttendPct}
+                onChangeText={v => set('minAttendPct', v)}
+                onBlur={() => {
+                  const n = parseFloat(form.minAttendPct);
+                  if (isNaN(n) || n < sysDefaults.minAttendPct) {
+                    set('minAttendPct', String(sysDefaults.minAttendPct));
+                  } else if (n > 100) {
+                    set('minAttendPct', '100');
+                  }
+                }}
+                placeholderTextColor={C.TEXT2}
+              />
+              <Text style={[s.subText, { marginBottom: 12 }]}>
+                Volunteer must attend ≥{form.minAttendPct || sysDefaults.minAttendPct}% of sessions to earn a certificate.
+              </Text>
+
+              {/* Max Daily Hours — FLEXIBLE only */}
+              {form.scheduleType === 'FLEXIBLE' && (
+                <>
+                  <Text style={s.label}>Max Daily Hours *</Text>
+                  <TextInput
+                    style={s.input}
+                    keyboardType="numeric"
+                    value={form.maxDailyHours}
+                    onChangeText={v => set('maxDailyHours', v)}
+                    onBlur={() => {
+                      const n = parseFloat(form.maxDailyHours);
+                      if (isNaN(n) || n < sysDefaults.maxDailyHours) {
+                        set('maxDailyHours', String(sysDefaults.maxDailyHours));
+                      } else if (n > 24) {
+                        set('maxDailyHours', '24');
+                      }
+                    }}
+                    placeholderTextColor={C.TEXT2}
+                  />
+                  <Text style={[s.subText, { marginBottom: 12 }]}>
+                    Maximum hours a volunteer can log in one day on this project.
+                  </Text>
+                </>
+              )}
+
+              {/* Min Session Hours — editable for FLEXIBLE, auto-calculated for RECURRING */}
+              {form.scheduleType === 'FLEXIBLE' ? (
+                <>
+                  <Text style={s.label}>Min Hours per Session * (floor: {sysDefaults.flexMinSessionHours}h)</Text>
+                  <TextInput
+                    style={s.input}
+                    keyboardType="numeric"
+                    value={form.minSessionHours}
+                    onChangeText={v => set('minSessionHours', v)}
+                    onBlur={() => {
+                      const n     = parseFloat(form.minSessionHours);
+                      const maxH  = parseFloat(form.maxDailyHours) || sysDefaults.maxDailyHours;
+                      if (isNaN(n) || n < sysDefaults.flexMinSessionHours) {
+                        set('minSessionHours', String(sysDefaults.flexMinSessionHours));
+                      } else if (n > maxH) {
+                        set('minSessionHours', String(maxH));
+                      }
+                    }}
+                    placeholderTextColor={C.TEXT2}
+                  />
+                  <Text style={[s.subText, { marginBottom: 8 }]}>
+                    A volunteer must log at least this many hours in a session for it to count as Attended. Min: {sysDefaults.flexMinSessionHours}h, max: {form.maxDailyHours || sysDefaults.maxDailyHours}h.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.label}>Min Hours per Session (auto-calculated)</Text>
+                  <View style={[s.input, { justifyContent: 'center', backgroundColor: C.INPUT_BG }]}>
+                    <Text style={{ color: computedMsh != null ? C.TEXT : C.TEXT2 }}>
+                      {mshDisplay}
+                    </Text>
+                  </View>
+                  <Text style={[s.subText, { marginBottom: 8 }]}>
+                    = {form.minAttendPct || sysDefaults.minAttendPct}% × session duration ({dur || '?'}). A volunteer must log at least this much in a single session for it to count as Attended.
+                  </Text>
+                </>
+              )}
+            </>
+          );
+        })()}
       </ScrollView>
     );
   };
@@ -1135,6 +1426,7 @@ export default function CreateProjectScreen() {
         </View>
         <Switch value={form.age18Plus} onValueChange={v => set('age18Plus', v)} trackColor={{ true: C.PRIMARY }} />
       </View>
+
     </ScrollView>
   );
 
@@ -1230,6 +1522,40 @@ export default function CreateProjectScreen() {
               </View>
             ) : null}
           </View>
+
+          {/* Attendance rule summary — RECURRING / FLEXIBLE only */}
+          {form.scheduleType !== 'ONE_TIME' && (() => {
+            const msh = calcMinSessionHours(form);
+            return (
+              <>
+                <View style={s.reviewDivider} />
+                <Text style={{ fontSize: 10, color: '#94a3b8', fontWeight: '600', marginBottom: 6 }}>
+                  ATTENDANCE RULES
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  <View style={[s.tagPill, { borderColor: '#0284c740', backgroundColor: '#0284c712' }]}>
+                    <Text style={[s.tagPillText, { color: '#0284c7' }]}>
+                      Min {form.minAttendPct || sysDefaults.minAttendPct}% attendance
+                    </Text>
+                  </View>
+                  {form.scheduleType === 'FLEXIBLE' && (
+                    <View style={[s.tagPill, { borderColor: '#0284c740', backgroundColor: '#0284c712' }]}>
+                      <Text style={[s.tagPillText, { color: '#0284c7' }]}>
+                        Max {form.maxDailyHours || sysDefaults.maxDailyHours}h / day
+                      </Text>
+                    </View>
+                  )}
+                  {msh != null && (
+                    <View style={[s.tagPill, { borderColor: '#0284c740', backgroundColor: '#0284c712' }]}>
+                      <Text style={[s.tagPillText, { color: '#0284c7' }]}>
+                        Min {msh}h per session
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </>
+            );
+          })()}
         </View>
 
         {/* Warning box — matches prototype .warn */}

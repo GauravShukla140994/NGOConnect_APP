@@ -44,6 +44,7 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
     // Sent to the volunteer applicant
     case 'APPLICATION_APPROVED':
     case 'APPLICATION_REJECTED':
+    case 'APP_REMOVED':
     case 'NO_SHOW_EXCUSED':
       return { screen: 'MyProjects' };
     // Sent to org admins — open the specific project's participants list (Applied tab)

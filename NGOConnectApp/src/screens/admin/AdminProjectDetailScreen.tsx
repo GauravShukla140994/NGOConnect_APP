@@ -14,7 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { projectApi } from '../../api/project.api';
+import { projectApi, finalizeClosing, issueBulkCertificates } from '../../api/project.api';
 import { UserAvatar } from '../../components/ui';
 
 const C = AppConfig.COLORS;
@@ -180,11 +180,12 @@ function ParticipantRow({ app }: { app: any }) {
   const cfg  = STATUS_CFG[app.statusCode] ?? { label: app.statusCode, bg: '#F3F4F6', color: '#6B7280' };
   const aName = app.applicantName ?? app.fullName ?? 'Volunteer';
 
-  // Build subtitle: "QR 9:02 AM · 4 hrs" for attended, "Did not check in" for no-show
+  // Build subtitle: "QR 9:02 AM · 4 hrs" / "Self Check-in …" / "Manual" for attended
+  const checkInLabel = app.qrScannedAt ? 'QR' : app.checkedInAt ? 'Self Check-in' : null;
   let subtitle = app.city ?? '';
   if (app.statusCode === 'ATTENDED') {
     const parts = [
-      app.checkedInAt ? `QR ${_fmtDateTime(app.checkedInAt, app.checkedInAt.split('T')[1])}` : null,
+      (checkInLabel && app.checkedInAt) ? `${checkInLabel} ${_fmtDateTime(app.checkedInAt, app.checkedInAt.split('T')[1])}` : null,
       app.hoursLogged  ? `${app.hoursLogged} hrs` : null,
     ].filter(Boolean);
     subtitle = parts.join(' · ') || subtitle;
@@ -426,7 +427,40 @@ export default function AdminProjectDetailScreen() {
   // the Complete/Cancel actions for these — nothing can be done to them.
   const isExpiredUnstarted  = project?.statusCode === 'UPCOMING' && isProjectExpired(project);
   // Completed and cancelled projects are read-only — editing is not allowed.
-  const isReadOnly = project?.statusCode === 'COMPLETED' || project?.statusCode === 'CANCELLED';
+  const isReadOnly  = project?.statusCode === 'COMPLETED' || project?.statusCode === 'CANCELLED';
+  const isClosing   = project?.statusCode === 'CLOSING';
+
+  const handleFinalize = () => {
+    Alert.alert('Finalize Project', 'This will aggregate skill ratings, mark all sessions complete, and set status to COMPLETED. Continue?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Finalize', style: 'default', onPress: async () => {
+        setActioning(true);
+        try {
+          const res = await finalizeClosing(project!.projectId, {});
+          if (res.data?.isSuccess) {
+            Alert.alert('Done', 'Project finalized and marked as COMPLETED.', [{ text: 'OK', onPress: () => nav.goBack() }]);
+          } else {
+            Alert.alert('Error', res.data?.message ?? 'Could not finalize project.');
+          }
+        } catch { Alert.alert('Error', 'Network error.'); }
+        finally { setActioning(false); }
+      }},
+    ]);
+  };
+
+  const handleBulkCert = () => {
+    Alert.alert('Issue Certificates', 'Issue certificates to all eligible volunteers now?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Issue', onPress: async () => {
+        setActioning(true);
+        try {
+          const res = await issueBulkCertificates({ projectId: project!.projectId, orgId: project!.orgId });
+          Alert.alert('Done', res.data?.message ?? 'Certificates issued.');
+        } catch { Alert.alert('Error', 'Network error.'); }
+        finally { setActioning(false); }
+      }},
+    ]);
+  };
 
   const badge        = statusBadge(project?.statusCode);
   const schedule     = project ? fmtSchedule(project) : '';
@@ -738,20 +772,41 @@ export default function AdminProjectDetailScreen() {
           </View>
         ) : (
           <View style={styles.dangerSection}>
-            <TouchableOpacity
-              style={[styles.dangerBtn, styles.completeBtn, actioning && { opacity: 0.6 }]}
-              onPress={handleComplete}
-              disabled={actioning}
-            >
-              <Text style={styles.completeBtnText}>☑ Mark as Completed</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dangerBtn, styles.cancelBtn, actioning && { opacity: 0.6 }]}
-              onPress={handleCancel}
-              disabled={actioning}
-            >
-              <Text style={styles.cancelBtnText}>✕ Cancel Project</Text>
-            </TouchableOpacity>
+            {isClosing ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.dangerBtn, styles.completeBtn, actioning && { opacity: 0.6 }]}
+                  onPress={handleFinalize}
+                  disabled={actioning}
+                >
+                  <Text style={styles.completeBtnText}>✅ Finalize & Close Project</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.dangerBtn, { backgroundColor: '#7C3AED' }, actioning && { opacity: 0.6 }]}
+                  onPress={handleBulkCert}
+                  disabled={actioning}
+                >
+                  <Text style={styles.completeBtnText}>🎓 Issue Certificates</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.dangerBtn, styles.completeBtn, actioning && { opacity: 0.6 }]}
+                  onPress={handleComplete}
+                  disabled={actioning}
+                >
+                  <Text style={styles.completeBtnText}>☑ Mark as Completed</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.dangerBtn, styles.cancelBtn, actioning && { opacity: 0.6 }]}
+                  onPress={handleCancel}
+                  disabled={actioning}
+                >
+                  <Text style={styles.cancelBtnText}>✕ Cancel Project</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         ))}
 

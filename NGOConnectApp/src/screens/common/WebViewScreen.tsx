@@ -9,24 +9,51 @@ const C = AppConfig.COLORS;
 
 type WebViewParams = { url: string; title: string };
 
+/**
+ * CSS injected into every legal page:
+ *  1. Hides header/nav/footer using both tag names and common class/id patterns
+ *     (attribute-selector wildcards catch any naming convention the site uses).
+ *  2. Disables all link clicks — the page is read-only inside the app.
+ */
+const LOCK_CSS = `
+(function () {
+  var style = document.createElement('style');
+  style.textContent = [
+    /* Hide page chrome by tag, class wildcard, and id wildcard */
+    'header, nav, footer { display: none !important; }',
+    '[class*="header"], [class*="navbar"], [class*="nav-bar"], [class*="navigation"] { display: none !important; }',
+    '[class*="footer"], [class*="site-footer"] { display: none !important; }',
+    '[class*="cookie"], [class*="banner"], [class*="announcement"] { display: none !important; }',
+    '[id*="header"], [id*="nav"], [id*="footer"], [id*="cookie"] { display: none !important; }',
+    /* Disable link clicks — this page is read-only */
+    'a { pointer-events: none !important; cursor: default !important; }',
+  ].join(' ');
+  document.head.appendChild(style);
+})();
+true;
+`;
+
 export default function WebViewScreen() {
   const nav   = useNavigation();
   const route = useRoute<RouteProp<{ WebView: WebViewParams }, 'WebView'>>();
   const { url, title } = route.params;
 
-  const webViewRef    = useRef<WebView>(null);
-  // Track whether the resolved URL after any server-side redirect
-  const resolvedUrl   = useRef<string | null>(null);
+  const webViewRef  = useRef<WebView>(null);
+  // Anchor URL — updated to final URL after any server-side redirect on first load.
+  const anchorUrl   = useRef<string>(url);
+  const hasLanded   = useRef(false);
 
-  // ── Android hardware back → always close this screen (no WebView history to traverse) ──
+  const isAllowed = (u: string | undefined | null) =>
+    !u || u === anchorUrl.current || u.startsWith('about:');
+
+  // ── Android hardware back → always close this screen ──────────────────────
   useFocusEffect(
     useCallback(() => {
-      const handler = () => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
         nav.goBack();
-        return true; // always consume — we block in-page navigation below
-      };
-      BackHandler.addEventListener('hardwareBackPress', handler);
-      return () => BackHandler.removeEventListener('hardwareBackPress', handler);
+        return true;
+      });
+      return () => sub.remove();
     }, [nav]),
   );
 
@@ -46,51 +73,39 @@ export default function WebViewScreen() {
         ref={webViewRef}
         source={{ uri: url }}
         style={{ flex: 1 }}
+
         /**
-         * Lock navigation to the initial page only.
-         *
-         * The privacy / terms page is a reading surface — tapping any link
-         * (website header, footer, "Home", social icons, etc.) would otherwise
-         * navigate the WebView into the full website, which is confusing.
-         *
-         * Strategy:
-         *  - First request (resolvedUrl is null): always allow and record the
-         *    final URL (handles server-side redirects transparently).
-         *  - Subsequent requests: allow only if the URL matches the resolved URL
-         *    or is an about: frame (some WebView internals use about:blank).
-         *  - Everything else (link clicks) → return false (blocked silently).
+         * iOS: onShouldStartLoadWithRequest fires before every navigation.
+         * Allow only the initial landing URL; block everything else silently.
          */
         onShouldStartLoadWithRequest={request => {
-          if (resolvedUrl.current === null) {
-            // First load — record where we actually land (may differ from `url`
-            // if the server redirects, e.g. http → https).
-            resolvedUrl.current = request.url;
+          if (!hasLanded.current) {
+            anchorUrl.current = request.url; // record final URL (handles redirects)
+            hasLanded.current = true;
             return true;
           }
-          // Allow internal WebView frames and the resolved page itself.
-          if (
-            request.url === resolvedUrl.current ||
-            request.url.startsWith('about:')
-          ) {
-            return true;
-          }
-          // Block everything else — link clicks on the website stay silent.
-          return false;
+          return isAllowed(request.url);
         }}
-        // Inject CSS to hide the website's navigation bar and footer so the
-        // screen looks like a clean in-app document, not a full web page.
-        injectedJavaScript={`
-          (function () {
-            var style = document.createElement('style');
-            style.textContent =
-              'header, nav, footer, .navbar, .nav, .footer, ' +
-              '.site-header, .site-footer, .cookie-banner, #cookie-banner { ' +
-              '  display: none !important; ' +
-              '}';
-            document.head.appendChild(style);
-          })();
-          true;
-        `}
+
+        /**
+         * Android: onShouldStartLoadWithRequest does NOT fire for user link-clicks.
+         * onNavigationStateChange is the Android equivalent — stop any load that
+         * drifts away from the anchor URL.
+         */
+        onNavigationStateChange={navState => {
+          if (!navState.url) return; // guard: url is undefined during back transitions
+          if (!hasLanded.current) {
+            anchorUrl.current = navState.url;
+            hasLanded.current = true;
+            return;
+          }
+          if (!isAllowed(navState.url) && navState.loading) {
+            webViewRef.current?.stopLoading();
+          }
+        }}
+
+        // Inject CSS on every page load: hide nav/footer chrome + disable links.
+        injectedJavaScript={LOCK_CSS}
         javaScriptEnabled
         domStorageEnabled
         showsVerticalScrollIndicator={false}

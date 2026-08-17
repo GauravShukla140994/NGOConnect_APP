@@ -7,9 +7,9 @@
 
 // ── Environment URLs ─────────────────────────────────────────────────────────
 // To build a Stage APK: set BASE_URL = STAGE_API_URL (release build variant)
-const DEV_API_URL   = 'http://10.55.200.135:58411/api/v1';
+const DEV_API_URL   = 'http://10.171.0.135:58411/api/v1';
 const STAGE_API_URL = 'https://ngoconnectapi-staging.up.railway.app/api/v1';
-const PROD_API_URL  = 'https://api.ngoconnect.app/api/v1';
+const PROD_API_URL  = 'https://api.ripplehub.app/api/v1';
 
 const AppConfig = {
   // ── Base URL ─────────────────────────────────────────────────────────────

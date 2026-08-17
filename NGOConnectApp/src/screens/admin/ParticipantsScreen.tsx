@@ -15,6 +15,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -166,9 +167,14 @@ function PendingCard({
 // ─── APPROVED CARD ────────────────────────────────────────────────────────────
 
 function ApprovedCard({
-  app, onProfile, onMarkAttended, marking,
+  app, onProfile, onMarkAttended, marking, onRemove, removing,
 }: {
-  app: any; onProfile: () => void; onMarkAttended: () => void; marking: boolean;
+  app: any;
+  onProfile: () => void;
+  onMarkAttended: () => void;
+  marking: boolean;
+  onRemove: () => void;
+  removing: boolean;
 }) {
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
   const subParts = [app.city, app.profession].filter(Boolean);
@@ -190,7 +196,7 @@ function ApprovedCard({
           <TouchableOpacity
             style={[s.markAttendedBtn, marking && s.btnDisabled]}
             onPress={onMarkAttended}
-            disabled={marking}
+            disabled={marking || removing}
             activeOpacity={0.85}
           >
             {marking
@@ -202,6 +208,17 @@ function ApprovedCard({
           <Text style={s.viewProfileText}>View profile →</Text>
         </TouchableOpacity>
       </View>
+      {/* Remove from project — for when volunteer has confirmed unavailability */}
+      <TouchableOpacity
+        style={[s.removeVolBtn, (removing || marking) && s.btnDisabled]}
+        onPress={onRemove}
+        disabled={removing || marking}
+        activeOpacity={0.85}
+      >
+        {removing
+          ? <ActivityIndicator color="#DC2626" size="small" />
+          : <Text style={s.removeVolBtnText}>✕  Remove from Project</Text>}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -212,7 +229,7 @@ function AttendedCard({
   app, projectSkills, skillRatings, onRateSkill, onSubmitRatings,
   submittingRatings, submittedRatings,
   awardedBadges, onAwardBadge, awardingBadge,
-  isCompleted, hasCertificate, onIssueCertificate, issuingCert,
+  isCompleted, isClosing, hasCertificate, onIssueCertificate, issuingCert,
 }: {
   app: any;
   projectSkills: ProjectSkill[];
@@ -225,18 +242,20 @@ function AttendedCard({
   onAwardBadge: (key: string) => void;
   awardingBadge: string | null;
   isCompleted: boolean;
+  isClosing: boolean;
   hasCertificate: boolean;
   onIssueCertificate: () => void;
   issuingCert: boolean;
 }) {
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
-  const checkinDt   = app.checkedInAt ? new Date(app.checkedInAt) : null;
-  const checkinDate = checkinDt ? fmtDate(app.checkedInAt) : null;
-  const checkinTime = checkinDt ? fmtTime12(app.checkedInAt) : null;
+  const checkinDt    = app.checkedInAt ? new Date(app.checkedInAt) : null;
+  const checkinDate  = checkinDt ? fmtDate(app.checkedInAt) : null;
+  const checkinTime  = checkinDt ? fmtTime12(app.checkedInAt) : null;
+  const checkInLabel = app.qrScannedAt ? 'QR' : checkinDt ? 'Self Check-in' : null;
   const hours = app.hoursLogged ?? app.hoursAttended;
 
   const checkinLine = [
-    (checkinDate && checkinTime) ? `QR ${checkinDate} ${checkinTime}` : null,
+    (checkInLabel && checkinDate && checkinTime) ? `${checkInLabel} ${checkinDate} ${checkinTime}` : null,
     hours ? `${hours} hrs logged` : null,
   ].filter(Boolean).join(' · ');
 
@@ -334,8 +353,8 @@ function AttendedCard({
         })}
       </View>
 
-      {/* Issue Certificate — only shown for COMPLETED projects; ATTENDED volunteers only */}
-      {isCompleted && (
+      {/* Issue Certificate — shown for COMPLETED or CLOSING projects; ATTENDED volunteers only */}
+      {(isCompleted || isClosing) && (
         <TouchableOpacity
           style={[
             s.issueCertBtn,
@@ -421,10 +440,11 @@ export default function ParticipantsScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
 
-  const { projectId, orgId, projectStatus } = route.params ?? {};
+  const { projectId, orgId, projectStatus, sessionId } = route.params ?? {};
   const isCompleted  = projectStatus === 'COMPLETED';
+  const isClosing    = projectStatus === 'CLOSING';
   const isCancelled  = projectStatus === 'CANCELLED';
-  const isReadOnly   = isCompleted || isCancelled;
+  const isReadOnly   = isCompleted || isClosing || isCancelled;
 
   const [apps,          setApps]          = useState<any[]>([]);
   const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
@@ -433,7 +453,8 @@ export default function ParticipantsScreen() {
   const [reviewing,     setReviewing]     = useState<number | null>(null);
 
   // Per-app state
-  const [markingAttended, setMarkingAttended] = useState<number | null>(null);
+  const [markingAttended,   setMarkingAttended]   = useState<number | null>(null);
+  const [removingVolunteer, setRemovingVolunteer] = useState<number | null>(null);
 
   // Skill ratings: appId → { projectSkillId → star count }
   const [skillRatings,      setSkillRatings]      = useState<Record<number, Record<number, number>>>({});
@@ -579,6 +600,44 @@ export default function ParticipantsScreen() {
     );
   }, [projectId]);
 
+  // ── Admin remove volunteer ──
+  const handleRemoveVolunteer = useCallback((userId: number, applicationId: number, name: string) => {
+    Alert.alert(
+      'Remove Volunteer',
+      `Remove ${name} from this project? Their slot will be freed so other volunteers can apply. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setRemovingVolunteer(applicationId);
+            try {
+              const res = await projectApi.adminRemoveVolunteer(projectId, userId);
+              if (res.data?.isSuccess) {
+                // Remove from local list immediately
+                setApps(prev => prev.filter(a => a.applicationId !== applicationId));
+              } else {
+                Alert.alert('Error', res.data?.message ?? 'Could not remove volunteer.');
+              }
+            } catch (err: any) {
+              if (err?.response) {
+                // Real HTTP error — operation likely failed; show server message
+                Alert.alert('Error', err.response?.data?.message ?? 'Could not remove volunteer.');
+              } else {
+                // Network/parse error — DB probably succeeded (Railway proxy issue);
+                // remove from local list so UI stays consistent
+                setApps(prev => prev.filter(a => a.applicationId !== applicationId));
+              }
+            } finally {
+              setRemovingVolunteer(null);
+            }
+          },
+        },
+      ],
+    );
+  }, [projectId]);
+
   // ── Excuse no-show ──
   const handleExcuse = useCallback((applicationId: number, name: string) => {
     Alert.alert(
@@ -628,13 +687,21 @@ export default function ParticipantsScreen() {
     try {
       const results = await Promise.all(
         entries.map(([skillId, rating]) =>
-          projectApi.rateSkill({
-            ratedUserId:    userId,
-            projectSkillId: Number(skillId),
-            rating,
-            projectId,
-            orgId: orgId ?? undefined,
-          }),
+          sessionId
+            ? projectApi.addSessionSkillRating(projectId, {
+                sessionId,
+                userId,
+                skillId: Number(skillId),
+                rating,
+                notes: '',
+              })
+            : projectApi.rateSkill({
+                ratedUserId:    userId,
+                projectSkillId: Number(skillId),
+                rating,
+                projectId,
+                orgId: orgId ?? undefined,
+              }),
         ),
       );
       const allOk = results.every(r => r.data?.isSuccess);
@@ -717,11 +784,18 @@ export default function ParticipantsScreen() {
     ]);
   }, [projectId, orgId]);
 
+  // ── Search ────────────────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+
   // ── Derived sections (ALL statuses covered — no member ever disappears) ──
-  const pendingApps  = apps.filter(a => a.statusCode === 'PENDING');
-  const approvedApps = apps.filter(a => a.statusCode === 'APPROVED');
-  const attendedApps = apps.filter(a => a.statusCode === 'ATTENDED');
-  const noShowApps   = apps.filter(a => a.statusCode === 'NO_SHOW');
+  const q = searchQuery.trim().toLowerCase();
+  const matchName = (a: any) =>
+    !q || (a.applicantName ?? a.fullName ?? '').toLowerCase().includes(q);
+
+  const pendingApps  = apps.filter(a => a.statusCode === 'PENDING'  && matchName(a));
+  const approvedApps = apps.filter(a => a.statusCode === 'APPROVED' && matchName(a));
+  const attendedApps = apps.filter(a => a.statusCode === 'ATTENDED' && matchName(a));
+  const noShowApps   = apps.filter(a => a.statusCode === 'NO_SHOW'  && matchName(a));
 
   const counts = {
     approved: approvedApps.length,
@@ -776,6 +850,25 @@ export default function ParticipantsScreen() {
         ))}
       </View>
 
+      {/* ── Search box ── */}
+      <View style={s.searchRow}>
+        <Text style={s.searchIcon}>🔍</Text>
+        <TextInput
+          style={s.searchInput}
+          placeholder="Search participants by name…"
+          placeholderTextColor={C.TEXT2}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ color: C.TEXT2, fontSize: 16, paddingRight: 4 }}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* ── Scrollable content ── */}
       <ScrollView
         ref={scrollRef}
@@ -784,6 +877,16 @@ export default function ParticipantsScreen() {
         refreshing={refreshing}
         onRefresh={() => load(true)}
       >
+        {/* ── CLOSING review banner ── */}
+        {isClosing && (
+          <View style={s.closingBanner}>
+            <Text style={s.closingBannerTitle}>⏳ Project in Review</Text>
+            <Text style={s.closingBannerBody}>
+              This project is closing. Review attended volunteers below and issue certificates to eligible volunteers.
+            </Text>
+          </View>
+        )}
+
         {/* ── PENDING APPLICATIONS ── */}
         {pendingApps.length > 0 && !isReadOnly && (
           <>
@@ -829,6 +932,8 @@ export default function ParticipantsScreen() {
                 })}
                 onMarkAttended={() => handleManualAttendance(app.applicationId, app.applicantName ?? 'Volunteer')}
                 marking={markingAttended === app.applicationId}
+                onRemove={() => handleRemoveVolunteer(app.userId, app.applicationId, app.applicantName ?? 'Volunteer')}
+                removing={removingVolunteer === app.applicationId}
               />
             ))}
           </>
@@ -854,6 +959,7 @@ export default function ParticipantsScreen() {
                 onAwardBadge={key => handleAwardBadge(app, key)}
                 awardingBadge={awardingBadge[app.applicationId] ?? null}
                 isCompleted={isCompleted}
+                isClosing={isClosing}
                 hasCertificate={issuedCerts[app.applicationId] ?? false}
                 onIssueCertificate={() => handleIssueCertificate(app)}
                 issuingCert={issuingCertFor === app.applicationId}
@@ -914,6 +1020,11 @@ const s = StyleSheet.create({
   kpiLbl:   { fontSize: 10, color: C.TEXT2, marginTop: 2 },
   kpiDiv:   { width: 1, backgroundColor: C.BORDER, marginVertical: 4 },
 
+  // Search
+  searchRow:  { flexDirection: 'row', alignItems: 'center', backgroundColor: C.CARD, marginHorizontal: 12, marginVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.BORDER, paddingHorizontal: 10, paddingVertical: 6 },
+  searchIcon: { fontSize: 14, marginRight: 6, color: C.TEXT2 },
+  searchInput: { flex: 1, fontSize: 13, color: C.TEXT, paddingVertical: 0 },
+
   // Section header
   sectionHeader: { fontSize: 11, fontWeight: '700', color: C.TEXT2, letterSpacing: 0.5, marginTop: 20, marginBottom: 10 },
 
@@ -970,6 +1081,10 @@ const s = StyleSheet.create({
   markAttendedBtn:     { backgroundColor: '#2563EB', borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
   markAttendedBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
+  // Admin remove volunteer button
+  removeVolBtn:     { borderWidth: 1, borderColor: '#FECACA', borderRadius: 10, paddingVertical: 9, alignItems: 'center', marginTop: 8 },
+  removeVolBtnText: { color: '#DC2626', fontSize: 12, fontWeight: '600' },
+
   // Attended card — check-in line
   checkinRow:  { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   checkinIcon: { fontSize: 12, color: '#2563EB' },
@@ -995,6 +1110,11 @@ const s = StyleSheet.create({
   badgeBtnAwarded: { borderColor: C.PRIMARY, backgroundColor: `${C.PRIMARY}10` },
   badgeBtnIcon:    { fontSize: 19, color: C.TEXT2 },
   badgeBtnLabel:   { fontSize: 10, fontWeight: '600', color: C.TEXT2, textAlign: 'center' },
+
+  // Closing banner
+  closingBanner:      { backgroundColor: '#FFFBEB', borderColor: '#FDE68A', borderWidth: 1, borderRadius: 10, padding: 14, marginBottom: 8 },
+  closingBannerTitle: { fontSize: 14, fontWeight: '700', color: '#92400E', marginBottom: 4 },
+  closingBannerBody:  { fontSize: 12, color: '#78350F', lineHeight: 18 },
 
   // Issue certificate button
   issueCertBtn:          { marginTop: 8, backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },

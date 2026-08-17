@@ -6,6 +6,7 @@ import {
   PanResponder,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -24,10 +25,11 @@ const C = AppConfig.COLORS;
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'applied' | 'upcoming' | 'completed' | 'cancelled';
+type Tab = 'applied' | 'upcoming' | 'closing' | 'completed' | 'cancelled';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'applied',   label: 'Applied'   },
   { key: 'upcoming',  label: 'Upcoming'  },
+  { key: 'closing',   label: 'Closing'   },
   { key: 'completed', label: 'Completed' },
   { key: 'cancelled', label: 'Cancelled' },
 ];
@@ -35,6 +37,7 @@ const TABS: { key: Tab; label: string }[] = [
 const TAB_BORDER: Record<Tab, string> = {
   applied:   C.YELLOW,
   upcoming:  C.PRIMARY,
+  closing:   '#D97706',
   completed: C.TEAL,
   cancelled: '#9CA3AF',
 };
@@ -52,6 +55,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 const isUpcoming  = (a: UserApplication) =>
   a.statusCode === 'APPROVED' && ['UPCOMING', 'ACTIVE'].includes(a.projectStatusCode ?? '');
+const isClosing   = (a: UserApplication) =>
+  a.statusCode === 'APPROVED' && a.projectStatusCode === 'CLOSING';
 const isCompleted = (a: UserApplication) =>
   !['REJECTED', 'WITHDRAWN'].includes(a.statusCode) &&
   a.projectStatusCode === 'COMPLETED';
@@ -86,10 +91,72 @@ function scheduleOneLiner(item: UserApplication): string {
 }
 
 function cancelReason(item: UserApplication): { label: string; color: string; bg: string } {
-  if (item.statusCode === 'REJECTED')           return { label: '✕ Rejected by Admin', color: '#DC2626', bg: '#FEE2E2' };
-  if (item.statusCode === 'WITHDRAWN')          return { label: 'Withdrawn by You',    color: '#6B7280', bg: '#F3F4F6' };
-  if (item.projectStatusCode === 'CANCELLED')   return { label: 'Project Cancelled',   color: '#D97706', bg: '#FEF3C7' };
-  return                                               { label: 'Project Expired',     color: '#9CA3AF', bg: '#F3F4F6' };
+  if (item.statusCode === 'REJECTED')                              return { label: '✕ Rejected by Admin', color: '#DC2626', bg: '#FEE2E2' };
+  if (item.statusCode === 'WITHDRAWN' && item.wasRemovedByAdmin)  return { label: '✕ Removed by Admin',  color: '#DC2626', bg: '#FEE2E2' };
+  if (item.statusCode === 'WITHDRAWN')                             return { label: 'Withdrawn by You',    color: '#6B7280', bg: '#F3F4F6' };
+  if (item.projectStatusCode === 'CANCELLED')                      return { label: 'Project Cancelled',   color: '#D97706', bg: '#FEF3C7' };
+  return                                                                  { label: 'Project Expired',     color: '#9CA3AF', bg: '#F3F4F6' };
+}
+
+// ── Session History (RECURRING / FLEXIBLE upcoming projects) ──────────────────
+
+function SessionHistorySection({ projectId, userId }: { projectId: number; userId: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [loaded,   setLoaded]   = useState(false);
+
+  const toggle = async (e: any) => {
+    e.stopPropagation();
+    if (!expanded && !loaded) {
+      setFetching(true);
+      try {
+        const res = await projectApi.getMySessionList(projectId, userId);
+        if (res.data?.isSuccess) setSessions(res.data.data ?? []);
+      } catch {}
+      finally { setFetching(false); setLoaded(true); }
+    }
+    setExpanded(v => !v);
+  };
+
+  return (
+    <View style={{ marginTop: 8, borderTopWidth: 1, borderTopColor: C.BORDER, paddingTop: 8 }}>
+      <TouchableOpacity onPress={toggle} activeOpacity={0.7}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Text style={{ fontSize: 12, color: C.PRIMARY, fontWeight: '600' }}>
+          📋 Session History {expanded ? '▲' : '▼'}
+        </Text>
+        {fetching && <ActivityIndicator size="small" color={C.PRIMARY} />}
+      </TouchableOpacity>
+
+      {expanded && !fetching && (
+        sessions.length === 0
+          ? <Text style={{ fontSize: 11, color: C.TEXT2, marginTop: 6 }}>No sessions recorded yet.</Text>
+          : sessions.map((s: any, i: number) => {
+              const attended = s.statusCode === 'ATTENDED';
+              const noShow   = s.statusCode === 'NO_SHOW';
+              const optOut   = s.statusCode === 'OPT_OUT';
+              const statusColor = attended ? '#059669' : noShow ? '#EF4444' : optOut ? '#D97706' : C.TEXT2;
+              const statusBg    = attended ? '#D1FAE5' : noShow ? '#FEE2E2' : optOut ? '#FEF3C7' : C.INPUT_BG;
+              const label       = attended ? '✓ Attended' : noShow ? 'No show' : optOut ? 'Opted out' : (s.statusCode ?? 'Pending');
+              const dateStr     = s.sessionDate  ? fmtDate(s.sessionDate)   : '';
+              const timeStr     = s.checkedInAt  ? fmtTime(s.checkedInAt)   : '';
+              const hours       = s.hoursLogged  ? `${s.hoursLogged}h`      : '';
+              return (
+                <View key={s.sessionId ?? i}
+                  style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                  {!!dateStr && <Text style={{ fontSize: 11, color: C.TEXT2, minWidth: 90 }}>{dateStr}</Text>}
+                  <View style={{ backgroundColor: statusBg, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 10, color: statusColor, fontWeight: '700' }}>{label}</Text>
+                  </View>
+                  {!!timeStr && <Text style={{ fontSize: 10, color: C.TEXT2 }}>{timeStr}</Text>}
+                  {!!hours   && <Text style={{ fontSize: 10, color: '#059669', fontWeight: '600' }}>{hours}</Text>}
+                </View>
+              );
+            })
+      )}
+    </View>
+  );
 }
 
 // ── Project Card ──────────────────────────────────────────────────────────────
@@ -126,11 +193,23 @@ function ProjectCard({
               </View>
             </View>
             <Text style={styles.orgName}>{item.orgName}</Text>
-            {!!item.categoryName && (
-              <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 4 }}>
-                <Text style={{ fontSize: 11, color: '#2563EB', fontWeight: '600' }}>{item.categoryName}</Text>
-              </View>
-            )}
+            {/* Category + schedule type pills */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+              {!!item.categoryName && (
+                <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 11, color: '#2563EB', fontWeight: '600' }}>{item.categoryName}</Text>
+                </View>
+              )}
+              {!!item.scheduleTypeCode && (
+                <View style={{ backgroundColor: '#F5F3FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 11, color: '#7C3AED', fontWeight: '600' }}>
+                    {item.scheduleTypeCode === 'ONE_TIME'  ? 'One-time'  :
+                     item.scheduleTypeCode === 'RECURRING' ? 'Recurring' :
+                     item.scheduleTypeCode === 'FLEXIBLE'  ? 'Flexible'  : item.scheduleTypeCode}
+                  </Text>
+                </View>
+              )}
+            </View>
             {scheduleOneLiner(item) ? <Text style={styles.dateText}>{scheduleOneLiner(item)}</Text> : null}
             <View style={styles.cardFooter}>
               <Text style={[styles.footerMeta, { color: statusColor.text }]}>
@@ -192,6 +271,10 @@ function ProjectCard({
               <Text style={{ fontSize: 13, color: '#059669', fontWeight: '600' }}>Attendance marked</Text>
             </View>
           )}
+          {/* Session history — only for multi-session project types */}
+          {(item.scheduleTypeCode === 'RECURRING' || item.scheduleTypeCode === 'FLEXIBLE') && !!item.userId && (
+            <SessionHistorySection projectId={item.projectId} userId={item.userId} />
+          )}
         </>
       )}
 
@@ -205,6 +288,23 @@ function ProjectCard({
             </View>
           </View>
           <Text style={styles.orgName}>{item.orgName}</Text>
+          {/* Category + schedule type pills */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+            {!!item.categoryName && (
+              <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 11, color: '#2563EB', fontWeight: '600' }}>{item.categoryName}</Text>
+              </View>
+            )}
+            {!!item.scheduleTypeCode && (
+              <View style={{ backgroundColor: '#F5F3FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 11, color: '#7C3AED', fontWeight: '600' }}>
+                  {item.scheduleTypeCode === 'ONE_TIME'  ? 'One-time'  :
+                   item.scheduleTypeCode === 'RECURRING' ? 'Recurring' :
+                   item.scheduleTypeCode === 'FLEXIBLE'  ? 'Flexible'  : item.scheduleTypeCode}
+                </Text>
+              </View>
+            )}
+          </View>
           {scheduleOneLiner(item) ? <Text style={styles.dateText}>{scheduleOneLiner(item)}</Text> : null}
           <View style={styles.completedRow}>
             <View>
@@ -235,6 +335,30 @@ function ProjectCard({
                 <Text style={styles.certBtnTxt}>📄 Certificate</Text>
               </TouchableOpacity>
             )}
+          </View>
+        </>
+      )}
+
+      {/* ── Closing ── */}
+      {tab === 'closing' && (
+        <>
+          <View style={styles.cardRow}>
+            <Text style={styles.projectTitle}>{item.projectName}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: '#FEF3C7' }]}>
+              <Text style={[styles.statusText, { color: '#D97706' }]}>⏳ Closing</Text>
+            </View>
+          </View>
+          <Text style={styles.orgName}>{item.orgName}</Text>
+          {!!item.categoryName && (
+            <View style={{ backgroundColor: '#EFF6FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 4 }}>
+              <Text style={{ fontSize: 11, color: '#2563EB', fontWeight: '600' }}>{item.categoryName}</Text>
+            </View>
+          )}
+          {scheduleOneLiner(item) ? <Text style={styles.dateText}>{scheduleOneLiner(item)}</Text> : null}
+          <View style={[styles.cardFooter, { borderTopWidth: 1, borderTopColor: C.BORDER, marginTop: 6, paddingTop: 6 }]}>
+            <Text style={{ fontSize: 11, color: '#D97706' }}>
+              🔒 Project in review — certificates being issued
+            </Text>
           </View>
         </>
       )}
@@ -278,11 +402,12 @@ export default function MyProjectsScreen() {
 
   // honour initialTab passed from ImpactScreen "View All" / "View N more"
   const routeTab = (route.params?.initialTab as Tab) ?? 'applied';
-  const validTabs: Tab[] = ['applied', 'upcoming', 'completed', 'cancelled'];
+  const validTabs: Tab[] = ['applied', 'upcoming', 'closing', 'completed', 'cancelled'];
   const startTab = validTabs.includes(routeTab) ? routeTab : 'applied';
 
   const [allApps,      setAllApps]      = useState<UserApplication[]>([]);
   const [tab,          setTab]          = useState<Tab>(startTab);
+  const [searchQuery,  setSearchQuery]  = useState('');
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
   const [scanTarget,   setScanTarget]   = useState<{ projectId: number; projectName: string } | null>(null);
@@ -379,11 +504,17 @@ export default function MyProjectsScreen() {
     setCertVisible(true);
   };
 
-  const tabItems: UserApplication[] =
+  const baseItems: UserApplication[] =
     tab === 'applied'   ? allApps.filter(isApplied) :
     tab === 'upcoming'  ? allApps.filter(isUpcoming) :
+    tab === 'closing'   ? allApps.filter(isClosing) :
     tab === 'completed' ? allApps.filter(isCompleted) :
                           allApps.filter(isCancelled);
+
+  const q = searchQuery.trim().toLowerCase();
+  const tabItems = q
+    ? baseItems.filter(a => (a.projectName ?? '').toLowerCase().includes(q))
+    : baseItems;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -404,11 +535,30 @@ export default function MyProjectsScreen() {
             <TouchableOpacity
               key={t.key}
               style={[styles.tab, tab === t.key && styles.tabActive]}
-              onPress={() => setTab(t.key)}
+              onPress={() => { setTab(t.key); setSearchQuery(''); }}
             >
               <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
             </TouchableOpacity>
           ))}
+        </View>
+
+        {/* Search box */}
+        <View style={styles.searchRow}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search projects by name…"
+            placeholderTextColor={C.TEXT2}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ color: C.TEXT2, fontSize: 16, paddingRight: 4 }}>✕</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Info banners */}
@@ -416,6 +566,13 @@ export default function MyProjectsScreen() {
           <View style={styles.infoBanner}>
             <Text style={styles.infoBannerText}>
               ⏳ Pending applications are reviewed by admin. Once approved they move to Upcoming.
+            </Text>
+          </View>
+        )}
+        {tab === 'closing' && (
+          <View style={[styles.infoBanner, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+            <Text style={[styles.infoBannerText, { color: '#92400E' }]}>
+              ⏳ These projects are in review. Admin is issuing certificates. Check back soon!
             </Text>
           </View>
         )}
@@ -510,6 +667,10 @@ const styles = StyleSheet.create({
   tabActive:       { borderBottomWidth: 2, borderBottomColor: C.PRIMARY },
   tabText:         { fontSize: 11, color: C.TEXT2, fontWeight: '500' },
   tabTextActive:   { color: C.PRIMARY, fontWeight: '700' },
+
+  searchRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.CARD, marginHorizontal: 12, marginVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.BORDER, paddingHorizontal: 10, paddingVertical: 6 },
+  searchIcon:      { fontSize: 14, marginRight: 6, color: C.TEXT2 },
+  searchInput:     { flex: 1, fontSize: 13, color: C.TEXT, paddingVertical: 0 },
 
   infoBanner:      { margin: 10, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', borderRadius: 9, padding: 9 },
   infoBannerText:  { fontSize: 11, color: '#92400E', lineHeight: 15 },

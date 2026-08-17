@@ -170,6 +170,19 @@ export interface UserApplication {
   skillRatings?: { skillName: string; rating: number }[];
   // Certificate status — 1 if cert issued, 0/undefined otherwise (from HasCertificate column)
   hasCertificate?: number;
+  // 1 if admin removed this volunteer (StatusUpdatedBy ≠ UserId); 0/undefined = self-withdrawn
+  wasRemovedByAdmin?: number;
+  // v5.1 RECURRING/FLEXIBLE progress fields
+  userId?: number;
+  myAttendedSessions?: number;  // RECURRING: sessions attended
+  myEligibleSessions?: number;  // RECURRING: sessions eligible (from approval date)
+  myHoursLogged?: number;       // FLEXIBLE: total hours logged
+  myRequiredHours?: number;     // FLEXIBLE: hours needed for cert (available × minAttendPct%)
+  minAttendPct?: number;        // project override (null = use global setting)
+  maxDailyHours?: number;       // FLEXIBLE: max hours per day cap
+  activeCheckInId?: number;     // FLEXIBLE: open CHECKED_IN record (null = not checked in)
+  activeCheckInTime?: string;   // FLEXIBLE: when the open check-in started
+  myCertCode?: string;          // cert code if certificate already issued
 }
 
 export interface UserBadge {
@@ -331,6 +344,9 @@ export interface Organisation {
   followerCount?: number;         // denormalized — from Organisations.FollowerCount
   isFollowing?: number | boolean; // 0|1 from SP (use !! to convert to boolean)
   verificationStatusCode?: string; // PENDING | VERIFIED | REJECTED (from ORG_VERIFICATION_STATUS lookup)
+  canCreateRecurring?: boolean;   // Super Admin permission gate — 0 by default
+  canCreateFlexible?: boolean;    // Super Admin permission gate — 0 by default
+  orgMaxVolunteers?: number;      // Super Admin per-org max volunteers per project (default 100)
 }
 
 export interface OrgMember {

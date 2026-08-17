@@ -244,8 +244,9 @@ export default function ProjectDetailScreen() {
   const isFull     = spots !== null && spots <= 0 && max > 0;
   const pct        = max > 0 ? Math.min(Math.round((curr / max) * 100), 100) : 0;
   const spotColor  = isFull ? '#EF4444' : (spots !== null && spots <= 5 ? '#F59E0B' : C.TEAL);
-  const isApproved = project.applicationStatusCode === 'APPROVED';
-  const isPending  = project.applicationStatusCode === 'PENDING';
+  const isApproved  = project.applicationStatusCode === 'APPROVED';
+  const isPending   = project.applicationStatusCode === 'PENDING';
+  const isWithdrawn = project.applicationStatusCode === 'WITHDRAWN';
   // Projects reached via Explore > NGO profile > Projects/Volunteer tabs include
   // past/inactive ones (history), but applying only makes sense on a live project.
   const isClosed   = ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(project.statusCode ?? '')
@@ -424,6 +425,10 @@ export default function ProjectDetailScreen() {
         ) : isPending ? (
           <View style={[s.footerBtn, { backgroundColor: '#F59E0B' }]}>
             <Text style={s.footerBtnText}>⏳ Application Pending</Text>
+          </View>
+        ) : isWithdrawn ? (
+          <View style={[s.footerBtn, { backgroundColor: C.BORDER }]}>
+            <Text style={[s.footerBtnText, { color: C.TEXT2 }]}>Removed from Project</Text>
           </View>
         ) : applied ? (
           <View style={[s.footerBtn, { backgroundColor: C.TEAL }]}>
