@@ -847,18 +847,16 @@ export default function ParticipantsScreen() {
           <Text style={s.backArrow}>← Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Participants</Text>
-        {counts.pending > 0
-          ? <View style={s.pendingBadge}><Text style={s.pendingBadgeText}>{counts.pending} pending</Text></View>
-          : <View style={{ width: 72 }} />}
+        <View style={{ width: 72 }} />
       </View>
 
       {/* ── KPI strip ── */}
       <View style={s.kpiStrip}>
         {[
+          ...(counts.pending > 0 ? [{ val: counts.pending, lbl: 'Pending', color: '#D97706' }] : []),
           ...(showApprovedAsNoShow ? [] : [
             { val: counts.approved, lbl: isReadOnly ? 'Not marked' : 'Approved', color: C.PRIMARY },
           ]),
-          ...(isReadOnly ? [] : [{ val: counts.pending, lbl: 'Pending', color: '#D97706' }]),
           { val: counts.noShow,   lbl: 'No shows', color: '#EF4444'  },
           { val: counts.attended, lbl: 'Attended', color: '#2563EB'  },
         ].map((k, i) => (
