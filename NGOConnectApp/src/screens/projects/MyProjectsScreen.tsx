@@ -107,10 +107,10 @@ function ProjectCard({ item, tab }: { item: any; tab: Tab }) {
       {tab === 'completed' && (
         <>
           <View style={styles.completedRow}>
-            {item.hoursLogged != null && (
+            {(item.myHoursLogged ?? 0) > 0 && (
               <View>
                 <Text style={styles.completedLabel}>Hours</Text>
-                <Text style={styles.completedValue}>{item.hoursLogged}h</Text>
+                <Text style={styles.completedValue}>{item.myHoursLogged}h</Text>
               </View>
             )}
             {item.rating != null && (

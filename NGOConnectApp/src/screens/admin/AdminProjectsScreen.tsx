@@ -599,6 +599,8 @@ export default function AdminProjectsScreen() {
   // Apply filters to every tab so tab counts also reflect filtered state.
   // UPCOMING status projects that have expired are pushed into the CANCELLED bucket.
   // ACTIVE status projects always stay in UPCOMING (admin must manually complete them).
+  // CLOSING projects whose statusCode has changed to COMPLETED/CANCELLED (stale cache after
+  // finalization/cancellation from AdminProjectDetailScreen) are redirected to their correct tab.
   const filteredAll = useMemo<Record<Tab, AdminProject[]>>(() => {
     const expiredUnstarted = projects['UPCOMING'].filter(
       p => p.statusCode === 'UPCOMING' && isProjectExpired(p),
@@ -607,11 +609,17 @@ export default function AdminProjectsScreen() {
       p => !(p.statusCode === 'UPCOMING' && isProjectExpired(p)),
     );
 
+    // Redirect stale CLOSING entries that were finalized or cancelled elsewhere
+    const genuineClosing   = projects['CLOSING'].filter(p => p.statusCode === 'CLOSING');
+    const closingCompleted = projects['CLOSING'].filter(p => p.statusCode === 'COMPLETED');
+    const closingCancelled = projects['CLOSING'].filter(p => p.statusCode === 'CANCELLED');
+
     const source: Record<Tab, AdminProject[]> = {
       ...projects,
       UPCOMING:  stillUpcoming,
-      CLOSING:   projects['CLOSING'],
-      CANCELLED: [...projects['CANCELLED'], ...expiredUnstarted],
+      CLOSING:   genuineClosing,
+      COMPLETED: [...projects['COMPLETED'], ...closingCompleted],
+      CANCELLED: [...projects['CANCELLED'], ...expiredUnstarted, ...closingCancelled],
     };
 
     const result = {} as Record<Tab, AdminProject[]>;

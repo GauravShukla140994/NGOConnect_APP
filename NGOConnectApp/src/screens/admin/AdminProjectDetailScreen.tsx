@@ -422,10 +422,11 @@ export default function AdminProjectDetailScreen() {
     );
   }
 
-  // An expired-unstarted project still has statusCode='UPCOMING' in the DB
-  // but its scheduled end datetime has already passed. We disable Edit and
-  // the Complete/Cancel actions for these — nothing can be done to them.
-  const isExpiredUnstarted  = project?.statusCode === 'UPCOMING' && isProjectExpired(project);
+  // A project that is still UPCOMING in the DB but whose session end time has passed.
+  const isExpiredUpcoming   = project?.statusCode === 'UPCOMING' && isProjectExpired(project);
+  // "Never started" = expired UPCOMING AND no volunteer was marked ATTENDED (QR/self-check-in).
+  // If even one volunteer attended, the admin must be able to mark the project Complete.
+  const isExpiredUnstarted  = !loading && isExpiredUpcoming && counts.attended === 0;
   // Completed and cancelled projects are read-only — editing is not allowed.
   const isReadOnly  = project?.statusCode === 'COMPLETED' || project?.statusCode === 'CANCELLED';
   const isClosing   = project?.statusCode === 'CLOSING';
@@ -747,7 +748,7 @@ export default function AdminProjectDetailScreen() {
         <View style={styles.card}>
           <View style={styles.rowBetween}>
             <Text style={styles.sectionTitle}>Participants</Text>
-            <TouchableOpacity onPress={() => nav.navigate('Participants', { projectId, orgId, projectStatus: project?.statusCode })}>
+            <TouchableOpacity onPress={() => nav.navigate('Participants', { projectId, orgId, projectStatus: project?.statusCode, isExpiredUpcoming })}>
               <Text style={styles.viewAll}>View All →</Text>
             </TouchableOpacity>
           </View>

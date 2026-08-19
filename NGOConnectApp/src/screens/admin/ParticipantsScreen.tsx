@@ -167,7 +167,7 @@ function PendingCard({
 // ─── APPROVED CARD ────────────────────────────────────────────────────────────
 
 function ApprovedCard({
-  app, onProfile, onMarkAttended, marking, onRemove, removing,
+  app, onProfile, onMarkAttended, marking, onRemove, removing, canMark,
 }: {
   app: any;
   onProfile: () => void;
@@ -175,6 +175,7 @@ function ApprovedCard({
   marking: boolean;
   onRemove: () => void;
   removing: boolean;
+  canMark: boolean;   // false for expired projects — session time has passed
 }) {
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
   const subParts = [app.city, app.profession].filter(Boolean);
@@ -191,24 +192,31 @@ function ApprovedCard({
         </View>
         <View style={s.approvedChip}><Text style={s.approvedChipText}>✓ Approved</Text></View>
       </View>
-      <View style={s.approvedCardFooter}>
-        <View style={{ flex: 1 }}>
-          <TouchableOpacity
-            style={[s.markAttendedBtn, marking && s.btnDisabled]}
-            onPress={onMarkAttended}
-            disabled={marking || removing}
-            activeOpacity={0.85}
-          >
-            {marking
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.markAttendedBtnText}>✓  Mark Attended</Text>}
+      {canMark && (
+        <View style={s.approvedCardFooter}>
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity
+              style={[s.markAttendedBtn, marking && s.btnDisabled]}
+              onPress={onMarkAttended}
+              disabled={marking || removing}
+              activeOpacity={0.85}
+            >
+              {marking
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={s.markAttendedBtnText}>✓  Mark Attended</Text>}
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity onPress={onProfile} activeOpacity={0.75}>
+            <Text style={s.viewProfileText}>View profile →</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={onProfile} activeOpacity={0.75}>
+      )}
+      {!canMark && (
+        <TouchableOpacity onPress={onProfile} activeOpacity={0.75} style={{ alignSelf: 'flex-end', marginTop: 6 }}>
           <Text style={s.viewProfileText}>View profile →</Text>
         </TouchableOpacity>
-      </View>
-      {/* Remove from project — for when volunteer has confirmed unavailability */}
+      )}
+      {/* Remove from project — available even for expired projects */}
       <TouchableOpacity
         style={[s.removeVolBtn, (removing || marking) && s.btnDisabled]}
         onPress={onRemove}
@@ -440,11 +448,13 @@ export default function ParticipantsScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
 
-  const { projectId, orgId, projectStatus, sessionId } = route.params ?? {};
+  const { projectId, orgId, projectStatus, sessionId, isExpiredUpcoming } = route.params ?? {};
   const isCompleted  = projectStatus === 'COMPLETED';
   const isClosing    = projectStatus === 'CLOSING';
   const isCancelled  = projectStatus === 'CANCELLED';
-  const isReadOnly   = isCompleted || isClosing || isCancelled;
+  // isExpiredUpcoming: UPCOMING project whose session end time has already passed.
+  // Treat as read-only so Approve and Mark Attended are hidden (session time passed).
+  const isReadOnly   = isCompleted || isClosing || isCancelled || (isExpiredUpcoming ?? false);
 
   const [apps,          setApps]          = useState<any[]>([]);
   const [projectSkills, setProjectSkills] = useState<ProjectSkill[]>([]);
@@ -797,10 +807,20 @@ export default function ParticipantsScreen() {
   const attendedApps = apps.filter(a => a.statusCode === 'ATTENDED' && matchName(a));
   const noShowApps   = apps.filter(a => a.statusCode === 'NO_SHOW'  && matchName(a));
 
+  // For CLOSING/COMPLETED projects: APPROVED volunteers with no attendance record are
+  // effectively no-shows — the session is over and they never checked in. Show them in
+  // the NO SHOWS section (NoShowCard) instead of the "APPROVED — NOT MARKED" section.
+  // CANCELLED and expired-UPCOMING keep "NOT MARKED" (volunteer had no opportunity).
+  const showApprovedAsNoShow = isClosing || isCompleted;
+  const displayApprovedApps  = showApprovedAsNoShow ? [] : approvedApps;
+  const displayNoShowApps    = showApprovedAsNoShow
+    ? [...noShowApps, ...approvedApps]
+    : noShowApps;
+
   const counts = {
-    approved: approvedApps.length,
+    approved: displayApprovedApps.length,
     pending:  pendingApps.length,
-    noShow:   noShowApps.length,
+    noShow:   displayNoShowApps.length,
     attended: attendedApps.length,
   };
 
@@ -835,7 +855,9 @@ export default function ParticipantsScreen() {
       {/* ── KPI strip ── */}
       <View style={s.kpiStrip}>
         {[
-          { val: counts.approved, lbl: isReadOnly ? 'Not marked' : 'Approved', color: C.PRIMARY },
+          ...(showApprovedAsNoShow ? [] : [
+            { val: counts.approved, lbl: isReadOnly ? 'Not marked' : 'Approved', color: C.PRIMARY },
+          ]),
           ...(isReadOnly ? [] : [{ val: counts.pending, lbl: 'Pending', color: '#D97706' }]),
           { val: counts.noShow,   lbl: 'No shows', color: '#EF4444'  },
           { val: counts.attended, lbl: 'Attended', color: '#2563EB'  },
@@ -915,14 +937,15 @@ export default function ParticipantsScreen() {
         )}
 
         {/* ── APPROVED — UPCOMING / NOT MARKED ── */}
-        {approvedApps.length > 0 && (
+        {displayApprovedApps.length > 0 && (
           <>
             <SectionHeader title={isReadOnly
-              ? `APPROVED — NOT MARKED (${approvedApps.length})`
-              : `APPROVED — UPCOMING (${approvedApps.length})`} />
-            {approvedApps.map(app => (
+              ? `APPROVED — NOT MARKED (${displayApprovedApps.length})`
+              : `APPROVED — UPCOMING (${displayApprovedApps.length})`} />
+            {displayApprovedApps.map(app => (
               <ApprovedCard
                 key={app.applicationId}
+                canMark={!isExpiredUpcoming}
                 app={app}
                 onProfile={() => nav.navigate('VolunteerProfile', {
                   app,
@@ -969,10 +992,10 @@ export default function ParticipantsScreen() {
         )}
 
         {/* ── NO SHOWS ── */}
-        {noShowApps.length > 0 && (
+        {displayNoShowApps.length > 0 && (
           <>
-            <SectionHeader title={isReadOnly ? `NO SHOWS (${noShowApps.length})` : 'NO SHOWS — LAST SESSION'} />
-            {noShowApps.map(app => (
+            <SectionHeader title={isReadOnly ? `NO SHOWS (${displayNoShowApps.length})` : 'NO SHOWS — LAST SESSION'} />
+            {displayNoShowApps.map(app => (
               <NoShowCard
                 key={app.applicationId}
                 app={app}

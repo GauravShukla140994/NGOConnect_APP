@@ -309,7 +309,7 @@ function ProjectCard({
           <View style={styles.completedRow}>
             <View>
               <Text style={styles.completedLabel}>Hours</Text>
-              <Text style={styles.completedValue}>{(item.hoursLogged ?? 0) > 0 ? `${item.hoursLogged}h` : '—'}</Text>
+              <Text style={styles.completedValue}>{(item.myHoursLogged ?? 0) > 0 ? `${item.myHoursLogged}h` : '—'}</Text>
             </View>
             {item.skillRatings && item.skillRatings.length > 0 && (
               <View>
