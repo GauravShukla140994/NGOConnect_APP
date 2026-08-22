@@ -487,6 +487,7 @@ export interface Project {
   approvedCount?: number;
   isPublic?: boolean;
   requiresApproval?: boolean;
+  ageRestriction?: number;  // 1 = 18+ only, 0 = no restriction
   coverImageUrl?: string;
   statusCode?: string;
   statusName?: string;

@@ -313,6 +313,11 @@ export default function ProjectDetailScreen() {
               <Text style={s.approvalText}>⚠️ Requires admin approval after applying</Text>
             </View>
           ) : null}
+          {project.ageRestriction ? (
+            <View style={[s.approvalBadge, { backgroundColor: '#7c3aed18', borderColor: '#7c3aed40' }]}>
+              <Text style={[s.approvalText, { color: '#7c3aed' }]}>🔞 This project is for volunteers aged 18 and above only</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* 2 ── Schedule ──────────────────────────────────────────────────── */}
