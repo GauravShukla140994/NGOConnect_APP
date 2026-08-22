@@ -169,15 +169,24 @@ function ActionBtn({ icon, label, onPress, outlined = true }: { icon: string; la
 
 // fmtTime12 replaced by _fmtTime from dateUtils
 
-function ParticipantRow({ app }: { app: any }) {
+function ParticipantRow({ app, showApprovedAsNoShow }: { app: any; showApprovedAsNoShow?: boolean }) {
+  // For COMPLETED/CLOSING projects, APPROVED with no attendance = effectively No Show
+  const displayCode = (showApprovedAsNoShow && app.statusCode === 'APPROVED') ? 'NO_SHOW' : app.statusCode;
+
+  // Excused / confirmed no-show get distinct badges
+  const isExcused   = displayCode === 'NO_SHOW' && app.isExcused;
+  const isConfirmed = displayCode === 'NO_SHOW' && !isExcused && app.isNoShowConfirmed;
+
   const STATUS_CFG: Record<string, { label: string; bg: string; color: string }> = {
-    APPROVED: { label: 'Approved', bg: '#D1FAE5', color: '#059669' },
-    ATTENDED: { label: 'Attended', bg: '#D1FAE5', color: '#059669' },
-    PENDING:  { label: 'Pending',  bg: '#FEF3C7', color: '#D97706' },
-    REJECTED: { label: 'Rejected', bg: '#FEE2E2', color: '#EF4444' },
-    NO_SHOW:  { label: 'No show',  bg: '#FEE2E2', color: '#EF4444' },
+    APPROVED: { label: 'Approved',  bg: '#D1FAE5', color: '#059669' },
+    ATTENDED: { label: 'Attended',  bg: '#D1FAE5', color: '#059669' },
+    PENDING:  { label: 'Pending',   bg: '#FEF3C7', color: '#D97706' },
+    REJECTED: { label: 'Rejected',  bg: '#FEE2E2', color: '#EF4444' },
+    NO_SHOW:  { label: isExcused ? 'Excused' : isConfirmed ? 'Confirmed' : 'No show',
+                bg:    isExcused ? '#E8F5E9' : '#FEE2E2',
+                color: isExcused ? '#2E7D32' : '#EF4444' },
   };
-  const cfg  = STATUS_CFG[app.statusCode] ?? { label: app.statusCode, bg: '#F3F4F6', color: '#6B7280' };
+  const cfg  = STATUS_CFG[displayCode] ?? { label: displayCode, bg: '#F3F4F6', color: '#6B7280' };
   const aName = app.applicantName ?? app.fullName ?? 'Volunteer';
 
   // Build subtitle: "QR 9:02 AM · 4 hrs" / "Self Check-in …" / "Manual" for attended
@@ -189,8 +198,8 @@ function ParticipantRow({ app }: { app: any }) {
       app.hoursLogged  ? `${app.hoursLogged} hrs` : null,
     ].filter(Boolean);
     subtitle = parts.join(' · ') || subtitle;
-  } else if (app.statusCode === 'NO_SHOW') {
-    subtitle = 'Did not check in';
+  } else if (displayCode === 'NO_SHOW') {
+    subtitle = isExcused ? 'Absence excused' : isConfirmed ? 'Absence confirmed' : 'Did not check in';
   }
 
   return (
@@ -247,10 +256,13 @@ export default function AdminProjectDetailScreen() {
       if (appsSettled.status === 'fulfilled' && appsSettled.value.data?.isSuccess) {
         const all = appsSettled.value.data.data?.items ?? [];
         setApps(all);
+        const pStatus = projRes.data.data?.statusCode;
+        const mergeApproved = pStatus === 'COMPLETED' || pStatus === 'CLOSING' || pStatus === 'CANCELLED';
+        const approvedN = all.filter((a: any) => a.statusCode === 'APPROVED').length;
         setCounts({
-          approved: all.filter((a: any) => a.statusCode === 'APPROVED').length,
+          approved: mergeApproved ? 0 : approvedN,
           attended: all.filter((a: any) => a.statusCode === 'ATTENDED').length,
-          noShow:   all.filter((a: any) => a.statusCode === 'NO_SHOW').length,
+          noShow:   all.filter((a: any) => a.statusCode === 'NO_SHOW').length + (mergeApproved ? approvedN : 0),
           pending:  all.filter((a: any) => a.statusCode === 'PENDING').length,
         });
       }
@@ -282,10 +294,13 @@ export default function AdminProjectDetailScreen() {
       if (appsSettled.status === 'fulfilled' && appsSettled.value.data?.isSuccess) {
         const all = appsSettled.value.data.data?.items ?? [];
         setApps(all);
+        const pStatus = projRes.data?.data?.statusCode;
+        const mergeApproved = pStatus === 'COMPLETED' || pStatus === 'CLOSING' || pStatus === 'CANCELLED';
+        const approvedN = all.filter((a: any) => a.statusCode === 'APPROVED').length;
         setCounts({
-          approved: all.filter((a: any) => a.statusCode === 'APPROVED').length,
+          approved: mergeApproved ? 0 : approvedN,
           attended: all.filter((a: any) => a.statusCode === 'ATTENDED').length,
-          noShow:   all.filter((a: any) => a.statusCode === 'NO_SHOW').length,
+          noShow:   all.filter((a: any) => a.statusCode === 'NO_SHOW').length + (mergeApproved ? approvedN : 0),
           pending:  all.filter((a: any) => a.statusCode === 'PENDING').length,
         });
       }
@@ -467,10 +482,13 @@ export default function AdminProjectDetailScreen() {
   const schedule     = project ? fmtSchedule(project) : '';
   const timeStr      = project ? buildTimeRange(project) : null;
   const skills: string[] = project?.skills?.map((s: any) => s.skillName ?? s) ?? [];
-  // For completed/cancelled projects, surface ATTENDED volunteers first
-  const recentApps = isReadOnly
+  // For completed/closing/cancelled projects, APPROVED with no attendance = No Show
+  const showApprovedAsNoShow = isReadOnly || isClosing;
+
+  // Surface ATTENDED first, then No Show (including reclassified APPROVED), then others
+  const recentApps = (isReadOnly || isClosing)
     ? [...apps].sort((a, b) => {
-        const order: Record<string, number> = { ATTENDED: 0, NO_SHOW: 1, APPROVED: 2, PENDING: 3 };
+        const order: Record<string, number> = { ATTENDED: 0, NO_SHOW: 1, APPROVED: 1, PENDING: 3 };
         return (order[a.statusCode] ?? 4) - (order[b.statusCode] ?? 4);
       }).slice(0, 3)
     : apps.slice(0, 3);
@@ -541,6 +559,9 @@ export default function AdminProjectDetailScreen() {
           {/* Title + Status */}
           <View style={styles.cardTitleRow}>
             <Text style={styles.projectName} numberOfLines={2}>{project?.projectName ?? 'Project'}</Text>
+            {!!project?.projectId && (
+              <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>#{project.projectId}</Text>
+            )}
             <View style={[styles.badge, { backgroundColor: badge.bg }]}>
               <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
             </View>
@@ -756,7 +777,7 @@ export default function AdminProjectDetailScreen() {
           {recentApps.length === 0 ? (
             <Text style={styles.emptyText}>No applications yet.</Text>
           ) : (
-            recentApps.map((app, i) => <ParticipantRow key={app.applicationId ?? i} app={app} />)
+            recentApps.map((app, i) => <ParticipantRow key={app.applicationId ?? i} app={app} showApprovedAsNoShow={showApprovedAsNoShow} />)
           )}
         </View>
 

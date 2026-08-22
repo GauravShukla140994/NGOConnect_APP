@@ -27,7 +27,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RNBlobUtil from 'react-native-blob-util';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
+import { generatePDF } from 'react-native-html-to-pdf';
 import AppConfig from '../../config/AppConfig';
 import { userApi } from '../../api/user.api';
 
@@ -123,15 +123,13 @@ export default function CertificateModal({ visible, projectId, projectName, onCl
    */
   const handleDownload = useCallback(async () => {
     if (!certHtml || downloading) return;
+
     setDownloading(true);
     try {
       const fileName = `RippleHub_Certificate_${certCode ?? 'cert'}`;
 
-      // Verify the native module is linked — requires a full native rebuild after npm install.
-      // If this throws "RNHTMLtoPDF is null / could not be found", run:
-      //   Android → cd android && ./gradlew clean && cd .. && npx react-native run-android
-      //   iOS     → cd ios && pod install && cd .. && npx react-native run-ios
-      const result = await RNHTMLtoPDF.convert({
+      // generatePDF is the correct named export from react-native-html-to-pdf v1.x
+      const result = await generatePDF({
         html: certHtml,
         fileName,
         width: 595,   // A4 width in points

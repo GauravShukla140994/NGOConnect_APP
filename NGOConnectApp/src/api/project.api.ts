@@ -219,6 +219,13 @@ export const projectApi = {
   manualAttendance: (projectId: number, applicationId: number) =>
     apiClient.post<ApiResponse<null>>(`/project/${projectId}/attendance/manual`, { applicationId }),
 
+  // Excuse a no-show (marks IsNoShowExcused = 1, reliability score unaffected)
+  excuseNoShow: (attendanceId: number) =>
+    apiClient.put<ApiResponse<null>>(`/project/attendance/${attendanceId}/excuse`),
+
+  confirmNoShow: (attendanceId: number) =>
+    apiClient.put<ApiResponse<null>>(`/project/attendance/${attendanceId}/confirm-noshow`),
+
   // Admin remove volunteer (sets application WITHDRAWN, frees slot)
   // POST instead of DELETE: Railway's Nginx proxy drops DELETE response bodies.
   adminRemoveVolunteer: (projectId: number, userId: number) =>

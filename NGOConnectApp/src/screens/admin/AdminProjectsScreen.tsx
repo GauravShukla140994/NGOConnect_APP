@@ -618,8 +618,12 @@ export default function AdminProjectsScreen() {
       ...projects,
       UPCOMING:  stillUpcoming,
       CLOSING:   genuineClosing,
-      COMPLETED: [...projects['COMPLETED'], ...closingCompleted],
-      CANCELLED: [...projects['CANCELLED'], ...expiredUnstarted, ...closingCancelled],
+      COMPLETED: [...projects['COMPLETED'], ...closingCompleted].filter(
+        (p, i, arr) => arr.findIndex(x => x.projectId === p.projectId) === i,
+      ),
+      CANCELLED: [...projects['CANCELLED'], ...expiredUnstarted, ...closingCancelled].filter(
+        (p, i, arr) => arr.findIndex(x => x.projectId === p.projectId) === i,
+      ),
     };
 
     const result = {} as Record<Tab, AdminProject[]>;

@@ -394,6 +394,56 @@ function NoShowCard({
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
   const dateStr = fmtDate(app.sessionDate ?? app.lastSessionDate ?? app.statusUpdatedAt);
 
+  // Already excused — read-only card, no action buttons
+  if (app.isExcused) {
+    return (
+      <View style={s.card}>
+        <View style={s.cardTopRow}>
+          <UserAvatar name={name} photoUrl={app.profilePhoto} size={40} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.cardName}>{name}</Text>
+            <Text style={s.noShowSubtitle}>
+              Absence excused{dateStr ? ` — ${dateStr}` : ''}
+            </Text>
+          </View>
+          <View style={[s.noShowChip, { backgroundColor: '#E8F5E9' }]}>
+            <Text style={[s.noShowChipText, { color: '#2E7D32' }]}>Excused</Text>
+          </View>
+        </View>
+        <View style={s.noShowNote}>
+          <Text style={s.noShowNoteText}>
+            Absence excused. This will not affect the volunteer's reliability score.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Already confirmed by admin — read-only card, no action buttons
+  if (app.isNoShowConfirmed) {
+    return (
+      <View style={s.card}>
+        <View style={s.cardTopRow}>
+          <UserAvatar name={name} photoUrl={app.profilePhoto} size={40} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.cardName}>{name}</Text>
+            <Text style={s.noShowSubtitle}>
+              No-show confirmed{dateStr ? ` — ${dateStr}` : ''}
+            </Text>
+          </View>
+          <View style={[s.noShowChip, { backgroundColor: '#FEE2E2' }]}>
+            <Text style={[s.noShowChipText, { color: '#EF4444' }]}>Confirmed</Text>
+          </View>
+        </View>
+        <View style={s.noShowNote}>
+          <Text style={s.noShowNoteText}>
+            No-show confirmed. This will affect the volunteer's reliability score.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={s.card}>
       {/* Top row */}
@@ -649,18 +699,30 @@ export default function ParticipantsScreen() {
   }, [projectId]);
 
   // ── Excuse no-show ──
-  const handleExcuse = useCallback((applicationId: number, name: string) => {
+  const handleExcuse = useCallback((applicationId: number, attendanceId: number | undefined, name: string) => {
+    if (!attendanceId) {
+      Alert.alert('Error', 'Attendance record not found. Cannot mark as excused.');
+      return;
+    }
     Alert.alert(
       'Mark as Excused',
       `Mark ${name}'s absence as excused? Their reliability score won't be affected.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Mark Excused', onPress: () => {
-            setApps(prev => prev.map(a =>
-              a.applicationId === applicationId ? { ...a, isExcused: true } : a,
-            ));
-            Alert.alert('Excused', `${name}'s absence has been marked as excused.`);
+          text: 'Mark Excused', onPress: async () => {
+            try {
+              const res = await projectApi.excuseNoShow(attendanceId);
+              if (res.data?.isSuccess) {
+                setApps(prev => prev.map(a =>
+                  a.applicationId === applicationId ? { ...a, isExcused: true } : a,
+                ));
+              } else {
+                Alert.alert('Error', res.data?.message ?? 'Could not mark as excused.');
+              }
+            } catch {
+              Alert.alert('Error', 'Network error. Please try again.');
+            }
           },
         },
       ],
@@ -668,14 +730,33 @@ export default function ParticipantsScreen() {
   }, []);
 
   // ── Confirm no-show ──
-  const handleConfirmNoShow = useCallback((applicationId: number, name: string) => {
+  const handleConfirmNoShow = useCallback((applicationId: number, attendanceId: number | undefined, name: string) => {
+    if (!attendanceId) {
+      Alert.alert('Error', 'Attendance record not found. Cannot confirm no-show.');
+      return;
+    }
     Alert.alert(
       'Confirm No Show',
       `Confirm ${name} did not attend? This will be recorded on their reliability profile.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Confirm', style: 'destructive', onPress: () =>
-            Alert.alert('Confirmed', 'No show recorded on reliability profile.'),
+        {
+          text: 'Confirm',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await projectApi.confirmNoShow(attendanceId);
+              if (res.data?.isSuccess) {
+                setApps(prev => prev.map(a =>
+                  a.applicationId === applicationId ? { ...a, isNoShowConfirmed: true } : a,
+                ));
+              } else {
+                Alert.alert('Error', res.data?.message ?? 'Could not confirm no-show.');
+              }
+            } catch {
+              Alert.alert('Error', 'Network error. Please try again.');
+            }
+          },
         },
       ],
     );
@@ -997,8 +1078,8 @@ export default function ParticipantsScreen() {
               <NoShowCard
                 key={app.applicationId}
                 app={app}
-                onExcuse={() => handleExcuse(app.applicationId, app.applicantName ?? 'Volunteer')}
-                onConfirm={() => handleConfirmNoShow(app.applicationId, app.applicantName ?? 'Volunteer')}
+                onExcuse={() => handleExcuse(app.applicationId, app.attendanceId, app.applicantName ?? 'Volunteer')}
+                onConfirm={() => handleConfirmNoShow(app.applicationId, app.attendanceId, app.applicantName ?? 'Volunteer')}
                 onMarkAttended={() => handleManualAttendance(app.applicationId, app.applicantName ?? 'Volunteer')}
                 marking={markingAttended === app.applicationId}
               />

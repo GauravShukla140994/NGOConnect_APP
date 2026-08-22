@@ -105,7 +105,8 @@ interface Props {
 export default function DocumentUploadSection({ onDocsChange, initialDocs, compactMode = false }: Props) {
   const [docs,      setDocs]      = useState<UserDocument[]>(initialDocs ?? []);
   const [loading,   setLoading]   = useState(initialDocs === undefined); // only show spinner in self-fetch mode
-  const [uploading, setUploading] = useState<string | null>(null); // valueCode being uploaded
+  const [uploading,     setUploading]     = useState<string | null>(null); // valueCode being uploaded
+  const [uploadingName, setUploadingName] = useState<string>('');          // filename shown during upload
   // keyed by userDocumentId
   const [dlState, setDlState] = useState<Record<number, DlState>>({});
 
@@ -166,7 +167,11 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
       return;
     }
 
-    // ── 2. Resolve lkpId (after file is selected so picker is already closed) ──
+    // ── 2. Show progress immediately after file is chosen ─────────────────────
+    setUploadingName(pickedName);
+    setUploading(typeCode);
+
+    // ── 3. Resolve lkpId (after file is selected so picker is already closed) ──
     let lkpId = typeLkpId;
     if (!lkpId) {
       try {
@@ -185,8 +190,7 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
       return;
     }
 
-    // ── 3. Upload to Azure Blob ────────────────────────────────────────────────
-    setUploading(typeCode);
+    // ── 4. Upload to Azure Blob ────────────────────────────────────────────────
     try {
       const fileUrl = await uploadFile(
         pickedUri,
@@ -214,6 +218,7 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
       Alert.alert('Upload Failed', err?.message ?? 'Could not upload document.');
     } finally {
       setUploading(null);
+      setUploadingName('');
     }
   };
 
@@ -376,7 +381,14 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
                 accessibilityLabel={`Upload ${type.label}`}
               >
                 {isUploading ? (
-                  <ActivityIndicator color={C.PRIMARY} />
+                  <>
+                    <ActivityIndicator color={C.PRIMARY} />
+                    {uploadingName ? (
+                      <Text style={[styles.uploadText, { marginTop: 8, fontSize: 12 }]} numberOfLines={1}>
+                        Uploading: {uploadingName}
+                      </Text>
+                    ) : null}
+                  </>
                 ) : (
                   <>
                     <Text style={styles.uploadIcon}>📤</Text>

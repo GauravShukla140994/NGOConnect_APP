@@ -349,17 +349,52 @@ function UpcomingCard({
 
 // ─── Completed Card ───────────────────────────────────────────────────────────
 
+function completedAttendanceChip(app: UserApplication): { bg: string; color: string; label: string } {
+  const type = app.scheduleTypeCode;
+
+  if (type === 'RECURRING') {
+    const attended = app.myAttendedSessions ?? 0;
+    const eligible = app.myEligibleSessions ?? 0;
+    const pct      = eligible > 0 ? (attended / eligible) * 100 : 0;
+    const thresh   = app.minAttendPct ?? 70;
+    const label    = eligible > 0 ? `${attended}/${eligible} Sessions` : `${attended} Sessions`;
+    return pct >= thresh
+      ? { bg: '#D1FAE5', color: '#059669', label: `✓ ${label}` }
+      : { bg: '#FEF3C7', color: '#D97706', label: `⚠ ${label}` };
+  }
+
+  if (type === 'FLEXIBLE') {
+    const logged   = app.myHoursLogged   ?? 0;
+    const required = app.myRequiredHours ?? 0;
+    const label    = required > 0 ? `${logged}h / ${required}h` : `${logged}h Logged`;
+    return logged >= required && required > 0
+      ? { bg: '#D1FAE5', color: '#059669', label: `✓ ${label}` }
+      : logged > 0
+        ? { bg: '#FEF3C7', color: '#D97706', label: `⚠ ${label}` }
+        : { bg: '#FEE2E2', color: '#EF4444', label: 'No Hours' };
+  }
+
+  // ONE_TIME — show actual attendance status
+  const attCode  = app.attendanceStatusCode;
+  const excused  = app.attendanceIsExcused === 1;
+  if (attCode === 'ATTENDED') return { bg: '#D1FAE5', color: '#059669', label: '✓ Attended' };
+  if (attCode === 'NO_SHOW' && excused) return { bg: '#E8F5E9', color: '#2E7D32', label: 'Excused' };
+  if (attCode === 'NO_SHOW') return { bg: '#FEE2E2', color: '#EF4444', label: 'No Show' };
+  return { bg: '#D1FAE5', color: '#059669', label: '✓ Completed' };
+}
+
 function CompletedCard({ app, onPress, onCertPress }: { app: UserApplication; onPress: () => void; onCertPress?: () => void }) {
   // Reuse the shared helper so date display is consistent across all card types
   const scheduleLine = scheduleOneLiner(app) ? `📅 ${scheduleOneLiner(app)}` : null;
+  const chip = completedAttendanceChip(app);
 
   return (
     <TouchableOpacity style={[s.projectCard, { borderLeftColor: '#059669' }]} onPress={onPress} activeOpacity={0.85}>
       {/* Top row */}
       <View style={s.cardRow}>
         <Text style={s.projectName} numberOfLines={1}>{app.projectName}</Text>
-        <View style={[s.chip, { backgroundColor: '#D1FAE5' }]}>
-          <Text style={[s.chipText, { color: '#059669' }]}>✓ Completed</Text>
+        <View style={[s.chip, { backgroundColor: chip.bg }]}>
+          <Text style={[s.chipText, { color: chip.color }]}>{chip.label}</Text>
         </View>
       </View>
       <Text style={s.orgName}>{app.orgName}</Text>

@@ -183,6 +183,10 @@ export interface UserApplication {
   activeCheckInId?: number;     // FLEXIBLE: open CHECKED_IN record (null = not checked in)
   activeCheckInTime?: string;   // FLEXIBLE: when the open check-in started
   myCertCode?: string;          // cert code if certificate already issued
+  // Attendance status for completed projects (most recent session record)
+  attendanceStatusCode?: string;    // ATTENDED | NO_SHOW | null
+  attendanceIsExcused?: number;     // 1 if the no-show was excused by admin
+  isNoShowConfirmed?: number;       // 1 if admin explicitly confirmed the no-show (Application_GetByProject)
 }
 
 export interface UserBadge {
