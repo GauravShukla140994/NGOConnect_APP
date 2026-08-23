@@ -51,6 +51,7 @@ import WebViewScreen                   from '../screens/common/WebViewScreen';
 import HelpSupportScreen               from '../screens/profile/HelpSupportScreen';
 import CommunicationPreferencesScreen  from '../screens/profile/CommunicationPreferencesScreen';
 import SavedPostsScreen                from '../screens/profile/SavedPostsScreen';
+import MyPostsScreen                   from '../screens/profile/MyPostsScreen';
 import AllBadgesScreen                 from '../screens/profile/AllBadgesScreen';
 
 const Tab   = createBottomTabNavigator();
@@ -216,6 +217,9 @@ const AppNavigator = () => (
 
     {/* Saved Posts */}
     <Stack.Screen name="SavedPosts" component={SavedPostsScreen} />
+
+    {/* My Posts */}
+    <Stack.Screen name="MyPosts" component={MyPostsScreen} />
 
     {/* All Badges */}
     <Stack.Screen name="AllBadges" component={AllBadgesScreen} options={{ headerShown: false }} />

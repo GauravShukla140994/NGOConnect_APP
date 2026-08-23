@@ -59,6 +59,9 @@ export const feedApi = {
   getSavedPosts: (params?: { pageNumber?: number; pageSize?: number }) =>
     apiClient.get<ApiResponse<PagedResult<Post>>>('/feed/saved', { params }),
 
+  getMyPosts: (params?: { pageNumber?: number; pageSize?: number }) =>
+    apiClient.get<ApiResponse<PagedResult<Post>>>('/feed/myposts', { params }),
+
   trackInteraction: (data: { postId: number; interactionType: string; durationMs?: number }) =>
     apiClient.post<ApiResponse<null>>('/feed/interaction', data),
 
@@ -76,6 +79,7 @@ export const unlikePost          = (postId: number) => feedApi.unlikePost(postId
 export const savePost            = (postId: number) => feedApi.savePost(postId);
 export const unsavePost          = (postId: number) => feedApi.unsavePost(postId);
 export const getSavedPosts       = (params?: { pageNumber?: number; pageSize?: number }) => feedApi.getSavedPosts(params);
+export const getMyPosts          = (params?: { pageNumber?: number; pageSize?: number }) => feedApi.getMyPosts(params);
 export const trackInteraction    = (data: Parameters<typeof feedApi.trackInteraction>[0]) => feedApi.trackInteraction(data);
 export const markPostsViewed     = (postIds: number[]) => feedApi.markPostsViewed(postIds);
 export const addComment          = (postId: number, content: string, parentCommentId?: number) => feedApi.addComment(postId, content, parentCommentId);

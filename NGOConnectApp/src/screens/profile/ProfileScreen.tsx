@@ -36,6 +36,7 @@ const ACTIVITY_ITEMS = [
   { icon: '🏛', label: 'My Organizations',   screen: 'MyOrgs' },
   // { icon: '💛', label: 'My Donations',        screen: 'MyDonations' },   // hidden: not yet functional
   { icon: '🔖', label: 'Saved Posts',         screen: 'SavedPosts' },
+  { icon: '✍️', label: 'My Posts',            screen: 'MyPosts'    },
 ];
 
 // Returns true if the org is one the user administers (ADMIN or FOUNDER role).
@@ -257,7 +258,7 @@ export default function ProfileScreen() {
             {ACTIVITY_ITEMS.map((item, index) => (
               <TouchableOpacity
                 key={item.screen}
-                style={[styles.menuItem, index < ACTIVITY_ITEMS.length - 1 && styles.menuItemBorder]}
+                style={[styles.menuItem, index > 0 && styles.menuItemBorder]}
                 onPress={item.screen === 'AdminTabs' ? handleAdminDashboard : () => nav.navigate(item.screen)}
                 accessibilityLabel={item.label}
               >
