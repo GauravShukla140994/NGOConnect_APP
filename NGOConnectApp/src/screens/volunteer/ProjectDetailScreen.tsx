@@ -29,7 +29,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
 import AppConfig from '../../config/AppConfig';
-import { get, apply } from '../../api/project.api';
+import {
+  get, apply,
+  flexCheckIn, flexCheckOut,
+  sessionOptOut, getMySessionList, getVolunteerEligibility,
+} from '../../api/project.api';
+import { useAuthStore } from '../../store/authStore';
 import type { Project } from '../../types/api.types';
 import { fmtDate, fmtDateRange, fmtTime, fmtTimeRange, isProjectExpired } from '../../utils/dateUtils';
 
@@ -63,6 +68,13 @@ const CAT_COLOR: Record<string, string> = {
   'Animal Welfare': '#8B5CF6',
   Sports: '#EF4444',
   Arts: '#EC4899',
+};
+
+const ATTEND_CHIP: Record<string, { bg: string; text: string; label: string }> = {
+  CHECKED_IN: { bg: '#DBEAFE', text: '#1D4ED8', label: '🟢 Checked In' },
+  ATTENDED:   { bg: '#D1FAE5', text: '#065F46', label: '✓ Attended' },
+  NO_SHOW:    { bg: '#FEE2E2', text: '#DC2626', label: '✗ No Show' },
+  EXCUSED:    { bg: '#FEF3C7', text: '#92400E', label: '⚡ Excused' },
 };
 
 // ── OSM/Leaflet map HTML (no API key) ─────────────────────────────────────────
@@ -125,14 +137,24 @@ export default function ProjectDetailScreen() {
   const route     = useRoute<any>();
   const projectId: number = route.params?.projectId ?? 1;
 
-  const webRef = useRef<any>(null);
-  const [project,    setProject]    = useState<Project | null>(null);
-  const [loading,    setLoading]    = useState(true);
-  const [applying,   setApplying]   = useState(false);
-  const [applied,    setApplied]    = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [mapReady,   setMapReady]   = useState(false);
+  const webRef    = useRef<any>(null);
+  const currentUserId = (useAuthStore.getState().user as any)?.userId ?? 0;
+
+  const [project,     setProject]     = useState<Project | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [applying,    setApplying]    = useState(false);
+  const [applied,     setApplied]     = useState(false);
+  const [refreshing,  setRefreshing]  = useState(false);
+  const [userCoords,  setUserCoords]  = useState<{ lat: number; lng: number } | null>(null);
+  const [mapReady,    setMapReady]    = useState(false);
+
+  // Session list + eligibility (RECURRING / FLEXIBLE only, APPROVED volunteers)
+  const [sessions,        setSessions]        = useState<any[]>([]);
+  const [eligibility,     setEligibility]     = useState<any | null>(null);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [checkingIn,      setCheckingIn]      = useState(false);
+  const [checkingOut,     setCheckingOut]     = useState(false);
+  const [optingOut,       setOptingOut]       = useState<number | null>(null); // sessionId being opted-out
 
   // Load project data — called on mount AND on every focus return
   const load = useCallback(async () => {
@@ -140,25 +162,32 @@ export default function ProjectDetailScreen() {
     try {
       const res = await get(projectId);
       if (res.data?.isSuccess) {
-        setProject(res.data.data);
-        setApplied(false); // server data now reflects true application state
+        const proj = res.data.data;
+        setProject(proj);
+        setApplied(false);
+        loadSessions(proj);
       }
     } catch {
       Alert.alert('Error', 'Could not load project details.');
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, loadSessions]);
 
   // Pull-to-refresh: silent reload — no full-page spinner, only the pull indicator
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       const res = await get(projectId);
-      if (res.data?.isSuccess) { setProject(res.data.data); setApplied(false); }
+      if (res.data?.isSuccess) {
+        const proj = res.data.data;
+        setProject(proj);
+        setApplied(false);
+        loadSessions(proj);
+      }
     } catch { /* silent on pull-to-refresh failure */ }
     finally { setRefreshing(false); }
-  }, [projectId]);
+  }, [projectId, loadSessions]);
 
   // Re-fetch every time the screen comes into focus (catches changes from child screens)
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -196,6 +225,83 @@ export default function ProjectDetailScreen() {
       setApplying(false);
     }
   }, [projectId, applied]);
+
+  // Load session list + eligibility for APPROVED RECURRING/FLEXIBLE volunteers
+  const loadSessions = useCallback(async (proj: Project | null) => {
+    if (!proj || !currentUserId) { return; }
+    const sType = (proj.scheduleType ?? proj.projectTypeCode ?? '').toUpperCase();
+    const isAppr = proj.applicationStatusCode === 'APPROVED';
+    if (!isAppr || !['RECURRING', 'FLEXIBLE'].includes(sType)) { return; }
+    setLoadingSessions(true);
+    try {
+      const [sessRes, eligRes] = await Promise.all([
+        getMySessionList(proj.projectId ?? (proj as any).id, currentUserId),
+        getVolunteerEligibility(proj.projectId ?? (proj as any).id, currentUserId),
+      ]);
+      if (sessRes.data?.isSuccess) { setSessions(sessRes.data.data ?? []); }
+      if (eligRes.data?.isSuccess) { setEligibility(eligRes.data.data ?? null); }
+    } catch { /* silent */ }
+    finally { setLoadingSessions(false); }
+  }, [currentUserId]);
+
+  const handleFlexCheckIn = useCallback(async () => {
+    if (!project || checkingIn) { return; }
+    setCheckingIn(true);
+    try {
+      const res = await flexCheckIn(project.projectId ?? (project as any).id);
+      if (res.data?.isSuccess) {
+        Alert.alert('✓ Checked In', 'Your check-in has been recorded. Remember to check out before the session ends!');
+        load();
+        loadSessions(project);
+      } else {
+        Alert.alert('Check-in Failed', res.data?.message ?? 'Could not check in.');
+      }
+    } catch { Alert.alert('Error', 'Network error. Please try again.'); }
+    finally { setCheckingIn(false); }
+  }, [project, checkingIn, load, loadSessions]);
+
+  const handleFlexCheckOut = useCallback(async () => {
+    if (!project || checkingOut) { return; }
+    setCheckingOut(true);
+    try {
+      const res = await flexCheckOut(project.projectId ?? (project as any).id);
+      if (res.data?.isSuccess) {
+        const hrs = res.data.data?.hoursLogged ?? 0;
+        Alert.alert('✓ Checked Out', `${hrs > 0 ? `${hrs} hour${hrs === 1 ? '' : 's'} logged!` : 'Checked out successfully.'}`);
+        load();
+        loadSessions(project);
+      } else {
+        Alert.alert('Check-out Failed', res.data?.message ?? 'Could not check out.');
+      }
+    } catch { Alert.alert('Error', 'Network error. Please try again.'); }
+    finally { setCheckingOut(false); }
+  }, [project, checkingOut, load, loadSessions]);
+
+  const handleOptOut = useCallback(async (sess: any) => {
+    if (!project || optingOut !== null) { return; }
+    Alert.alert(
+      'Opt Out of Session',
+      `Can't attend the session on ${fmtDate(sess.sessionDate)}? We'll mark it as excused so you won't get a no-show.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, Opt Out', style: 'destructive',
+          onPress: async () => {
+            setOptingOut(sess.sessionId);
+            try {
+              const res = await sessionOptOut(project.projectId ?? (project as any).id, { sessionId: sess.sessionId, reason: '' });
+              if (res.data?.isSuccess) {
+                loadSessions(project);
+              } else {
+                Alert.alert('Error', res.data?.message ?? 'Could not opt out.');
+              }
+            } catch { Alert.alert('Error', 'Network error.'); }
+            finally { setOptingOut(null); }
+          },
+        },
+      ],
+    );
+  }, [project, optingOut, loadSessions]);
 
   const openDirections = useCallback(() => {
     if (!project) { return; }
@@ -247,6 +353,14 @@ export default function ProjectDetailScreen() {
   const isApproved  = project.applicationStatusCode === 'APPROVED';
   const isPending   = project.applicationStatusCode === 'PENDING';
   const isWithdrawn = project.applicationStatusCode === 'WITHDRAWN';
+  const scheduleType = ((project as any).scheduleType ?? (project as any).projectTypeCode ?? '').toUpperCase();
+  const isRecurring = scheduleType === 'RECURRING';
+  const isFlexible  = scheduleType === 'FLEXIBLE';
+  const showProgress = isApproved && (isRecurring || isFlexible);
+
+  // FLEXIBLE: check if volunteer has an active (not-yet-checked-out) check-in today
+  const today = new Date().toISOString().split('T')[0];
+  const activeCheckIn = sessions.find(s => s.sessionDate === today && s.attendanceStatus === 'CHECKED_IN');
   // Projects reached via Explore > NGO profile > Projects/Volunteer tabs include
   // past/inactive ones (history), but applying only makes sense on a live project.
   const isClosed   = ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(project.statusCode ?? '')
@@ -419,6 +533,190 @@ export default function ProjectDetailScreen() {
             )}
           </View>
         ) : null}
+
+        {/* 7 ── My Progress (APPROVED + RECURRING/FLEXIBLE only) ───────────── */}
+        {showProgress ? (
+          <View style={s.card}>
+            <Text style={s.sectionLabel}>MY PROGRESS</Text>
+
+            {/* FLEXIBLE: daily check-in / check-out */}
+            {isFlexible ? (
+              <>
+                {activeCheckIn ? (
+                  <>
+                    <View style={s.checkedInBanner}>
+                      <Text style={s.checkedInText}>🟢 You are checked in today</Text>
+                      <Text style={s.checkedInSub}>Remember to check out before the session ends!</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[s.actionBtn, { backgroundColor: '#EF4444' }]}
+                      onPress={handleFlexCheckOut}
+                      disabled={checkingOut}
+                    >
+                      {checkingOut
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Text style={s.actionBtnText}>⏹  Check Out</Text>
+                      }
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={[s.actionBtn, { backgroundColor: C.TEAL }]}
+                    onPress={handleFlexCheckIn}
+                    disabled={checkingIn}
+                  >
+                    {checkingIn
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={s.actionBtnText}>▶  Check In for Today</Text>
+                    }
+                  </TouchableOpacity>
+                )}
+
+                {/* Hours progress bar */}
+                {eligibility ? (
+                  <View style={s.progressBlock}>
+                    <View style={s.progressLabelRow}>
+                      <Text style={s.progressLabel}>Hours logged</Text>
+                      <Text style={s.progressValue}>
+                        {(eligibility.totalHoursLogged ?? 0).toFixed(1)} h
+                        {eligibility.minAttendPct != null
+                          ? `  ·  Need ≥${Math.ceil((eligibility.eligibleSessions ?? 0) * (eligibility.minAttendPct / 100))} h`
+                          : ''}
+                      </Text>
+                    </View>
+                    <View style={s.progressTrack}>
+                      <View style={[
+                        s.progressFill,
+                        {
+                          width: `${Math.min(Math.round(eligibility.attendancePct ?? 0), 100)}%` as any,
+                          backgroundColor: eligibility.isEligibleForCert ? C.TEAL : C.PRIMARY,
+                        },
+                      ]} />
+                    </View>
+                    <View style={s.eligRow}>
+                      <Text style={s.eligPct}>{(eligibility.attendancePct ?? 0).toFixed(1)}%</Text>
+                      {eligibility.isEligibleForCert
+                        ? <View style={[s.eligChip, { backgroundColor: '#D1FAE5' }]}>
+                            <Text style={[s.eligChipText, { color: '#065F46' }]}>✓ Eligible for Certificate</Text>
+                          </View>
+                        : <View style={[s.eligChip, { backgroundColor: '#FEF3C7' }]}>
+                            <Text style={[s.eligChipText, { color: '#92400E' }]}>Not yet eligible</Text>
+                          </View>
+                      }
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+
+            {/* RECURRING: session attendance progress */}
+            {isRecurring && eligibility ? (
+              <View style={s.progressBlock}>
+                <View style={s.progressLabelRow}>
+                  <Text style={s.progressLabel}>Sessions attended</Text>
+                  <Text style={s.progressValue}>
+                    {eligibility.attendedCount ?? 0} / {eligibility.eligibleSessions ?? 0}
+                    {eligibility.minAttendPct != null ? `  (${eligibility.minAttendPct}% req.)` : ''}
+                  </Text>
+                </View>
+                <View style={s.progressTrack}>
+                  <View style={[
+                    s.progressFill,
+                    {
+                      width: `${Math.min(Math.round(eligibility.attendancePct ?? 0), 100)}%` as any,
+                      backgroundColor: eligibility.isEligibleForCert ? C.TEAL : C.PRIMARY,
+                    },
+                  ]} />
+                </View>
+                <View style={s.eligRow}>
+                  <Text style={s.eligPct}>{(eligibility.attendancePct ?? 0).toFixed(1)}%</Text>
+                  {eligibility.isEligibleForCert
+                    ? <View style={[s.eligChip, { backgroundColor: '#D1FAE5' }]}>
+                        <Text style={[s.eligChipText, { color: '#065F46' }]}>✓ Eligible for Certificate</Text>
+                      </View>
+                    : <View style={[s.eligChip, { backgroundColor: '#FEF3C7' }]}>
+                        <Text style={[s.eligChipText, { color: '#92400E' }]}>Not yet eligible</Text>
+                      </View>
+                  }
+                </View>
+              </View>
+            ) : null}
+
+            {loadingSessions && !eligibility ? (
+              <ActivityIndicator size="small" color={C.PRIMARY} style={{ marginTop: 8 }} />
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* 8 ── My Sessions (APPROVED + RECURRING/FLEXIBLE only) ───────────── */}
+        {showProgress && sessions.length > 0 ? (
+          <View style={s.card}>
+            <Text style={s.sectionLabel}>MY SESSIONS</Text>
+            {sessions.map(sess => {
+              const isPast      = sess.sessionDate < today;
+              const isToday     = sess.sessionDate === today;
+              const isCancelled = sess.sessionStatus === 'CANCELLED';
+              const hasOptOut   = !!sess.optOutId;
+              const status      = sess.attendanceStatus as string | null;
+              const d           = new Date(sess.sessionDate + 'T00:00:00');
+              const dayLabel    = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+
+              return (
+                <View key={sess.sessionId} style={[s.sessionRow, isCancelled && { opacity: 0.5 }]}>
+                  <View style={s.sessionDateCol}>
+                    <Text style={s.sessionDay}>{dayLabel}</Text>
+                    <Text style={s.sessionDateText}>{fmtDate(sess.sessionDate)}</Text>
+                    {isToday && <Text style={[s.sessionDay, { color: C.PRIMARY, fontSize: 9 }]}>TODAY</Text>}
+                  </View>
+                  <View style={s.sessionInfo}>
+                    <Text style={s.sessionTime}>
+                      {fmtTime(sess.startTime)} – {fmtTime(sess.endTime)}
+                    </Text>
+                    {status ? (
+                      <View style={[s.statusChip, { backgroundColor: ATTEND_CHIP[status]?.bg ?? '#F3F4F6' }]}>
+                        <Text style={[s.statusChipText, { color: ATTEND_CHIP[status]?.text ?? C.TEXT2 }]}>
+                          {ATTEND_CHIP[status]?.label ?? status}
+                        </Text>
+                      </View>
+                    ) : isCancelled ? (
+                      <View style={[s.statusChip, { backgroundColor: '#FEE2E2' }]}>
+                        <Text style={[s.statusChipText, { color: '#DC2626' }]}>Cancelled</Text>
+                      </View>
+                    ) : hasOptOut ? (
+                      <View style={[s.statusChip, { backgroundColor: '#EDE9FE' }]}>
+                        <Text style={[s.statusChipText, { color: '#7C3AED' }]}>Opted Out</Text>
+                      </View>
+                    ) : !isPast ? (
+                      <View style={[s.statusChip, { backgroundColor: '#E0F2FE' }]}>
+                        <Text style={[s.statusChipText, { color: '#0369A1' }]}>Upcoming</Text>
+                      </View>
+                    ) : (
+                      <View style={[s.statusChip, { backgroundColor: '#F3F4F6' }]}>
+                        <Text style={[s.statusChipText, { color: C.TEXT3 }]}>No record</Text>
+                      </View>
+                    )}
+                    {isFlexible && status === 'ATTENDED' && sess.hoursLogged != null ? (
+                      <Text style={s.sessionHours}>{(sess.hoursLogged as number).toFixed(1)} hrs logged</Text>
+                    ) : null}
+                  </View>
+                  {/* Opt-out for upcoming RECURRING sessions */}
+                  {isRecurring && !isPast && !isCancelled && !hasOptOut && !status ? (
+                    <TouchableOpacity
+                      style={s.optOutBtn}
+                      onPress={() => handleOptOut(sess)}
+                      disabled={optingOut === sess.sessionId}
+                    >
+                      {optingOut === sess.sessionId
+                        ? <ActivityIndicator size="small" color="#EF4444" />
+                        : <Text style={s.optOutText}>Can't attend</Text>
+                      }
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
       </ScrollView>
 
       {/* ── Sticky footer — paddingBottom clears Android nav buttons ──────── */}
@@ -546,4 +844,34 @@ const s = StyleSheet.create({
   footer:        { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 14, paddingTop: 12, backgroundColor: C.CARD, borderTopWidth: 1, borderTopColor: C.BORDER },
   footerBtn:     { backgroundColor: C.PRIMARY, borderRadius: 12, paddingVertical: 15, alignItems: 'center' },
   footerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Progress section (section 7)
+  actionBtn:        { borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginBottom: 14 },
+  actionBtnText:    { color: '#fff', fontSize: 14, fontWeight: '700' },
+  checkedInBanner:  { backgroundColor: '#ECFDF5', borderRadius: 10, padding: 10, marginBottom: 10 },
+  checkedInText:    { fontSize: 13, fontWeight: '700', color: '#065F46' },
+  checkedInSub:     { fontSize: 11, color: '#047857', marginTop: 2 },
+  progressBlock:    { marginTop: 10 },
+  progressLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  progressLabel:    { fontSize: 12, fontWeight: '600', color: C.TEXT2 },
+  progressValue:    { fontSize: 12, fontWeight: '600', color: C.TEXT },
+  progressTrack:    { height: 8, backgroundColor: C.BG, borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
+  progressFill:     { height: '100%' as any, borderRadius: 4 },
+  eligRow:          { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  eligPct:          { fontSize: 12, fontWeight: '700', color: C.TEXT2 },
+  eligChip:         { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
+  eligChipText:     { fontSize: 11, fontWeight: '700' },
+
+  // Session list (section 8)
+  sessionRow:       { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.BORDER, gap: 10 },
+  sessionDateCol:   { width: 44, alignItems: 'center' },
+  sessionDay:       { fontSize: 10, fontWeight: '700', color: C.TEXT3, textTransform: 'uppercase' },
+  sessionDateText:  { fontSize: 12, fontWeight: '700', color: C.TEXT, textAlign: 'center' },
+  sessionInfo:      { flex: 1, gap: 4 },
+  sessionTime:      { fontSize: 12, color: C.TEXT2 },
+  sessionHours:     { fontSize: 11, color: C.TEAL, fontWeight: '600' },
+  statusChip:       { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 20, alignSelf: 'flex-start' },
+  statusChipText:   { fontSize: 10, fontWeight: '700' },
+  optOutBtn:        { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#EF4444', alignSelf: 'flex-start' },
+  optOutText:       { fontSize: 11, color: '#EF4444', fontWeight: '600' },
 });

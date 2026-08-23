@@ -99,6 +99,9 @@ export interface UserProfile {
   impactScore?: number;
   ngosJoined?: number;
   skills?: UserSkill[];
+  // v5.1: Super Admin profile-verification state + remarks (for the "action required" banner)
+  profileVerificationStatusCode?: string;  // PENDING | VERIFIED | NEEDS_UPDATE | REJECTED
+  profileUpdateReason?: string;            // Super Admin's reason, only meaningful when status = NEEDS_UPDATE
 }
 
 export interface UserImpact {

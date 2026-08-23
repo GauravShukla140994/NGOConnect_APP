@@ -53,6 +53,7 @@ function notifMeta(type: string): { emoji: string; color: string } {
     case 'BADGE_AWARDED':           return { emoji: '🏅', color: '#D97706' };
     case 'SKILL_RATING':            return { emoji: '⭐', color: '#F59E0B' };
     case 'PROFILE_VERIFIED':        return { emoji: '✅', color: '#2ECC71' };
+    case 'PROFILE_UPDATE_REQUIRED': return { emoji: '⚠️', color: C.YELLOW };
     case 'ACCOUNT_SUSPENDED':       return { emoji: '⚠️', color: C.YELLOW };
     case 'INVITE_ACCEPTED':         return { emoji: '✅', color: '#2ECC71' };
     case 'INVITE_DECLINED':         return { emoji: '❌', color: C.RED };
@@ -122,6 +123,12 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
     case 'SKILL_RATING':
     case 'PROFILE_VERIFIED':
       return { screen: 'Impact' };
+    // Super Admin requested a profile update — open Profile so the user sees the
+    // "action required" banner with the reason. PROFILE_UPDATE_REQUESTED is the old
+    // (pre-2026-08-23) NotifType kept here for any historical rows still in the DB.
+    case 'PROFILE_UPDATE_REQUIRED':
+    case 'PROFILE_UPDATE_REQUESTED':
+      return { screen: 'Profile' };
     case 'MEMBER_INVITE':
       return refId
         ? { screen: 'InviteAccept', params: { orgId: refId } }
@@ -308,10 +315,21 @@ const NotificationsScreen = () => {
       return;
     }
 
-    // Navigate to relevant screen
+    // Navigate to relevant screen.
+    // Profile / Community / Impact / Home / Explore are TAB screens nested inside
+    // the "Tabs" stack entry — they cannot be navigated to directly from a stack
+    // screen. All other destinations are top-level stack screens.
+    const TAB_SCREENS = new Set(['Home', 'Explore', 'Impact', 'Community', 'Profile']);
     const target = resolveScreen(item);
     if (target) {
-      nav.navigate(target.screen, target.params ?? {});
+      if (TAB_SCREENS.has(target.screen)) {
+        nav.navigate('Tabs' as never, {
+          screen: target.screen,
+          params: target.params,
+        } as never);
+      } else {
+        nav.navigate(target.screen as never, (target.params ?? {}) as never);
+      }
     }
   }, [nav]);
 

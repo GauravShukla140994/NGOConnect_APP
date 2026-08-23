@@ -251,6 +251,28 @@ export default function ProfileScreen() {
       >
         {/* Stats row hidden — will be re-enabled in a future release */}
 
+        {/* Profile update required banner — Super Admin flagged this profile for
+            re-submission. Shows the actual admin remarks (v5.1: User_GetProfile now
+            returns ProfileVerificationStatusCode + ProfileUpdateReason). */}
+        {profile?.profileVerificationStatusCode === 'NEEDS_UPDATE' ? (
+          <View style={styles.updateBanner}>
+            <Text style={styles.updateBannerIcon}>⚠️</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.updateBannerTitle}>Action required: update your profile</Text>
+              {profile?.profileUpdateReason ? (
+                <Text style={styles.updateBannerReason}>{profile.profileUpdateReason}</Text>
+              ) : null}
+              <TouchableOpacity
+                style={styles.updateBannerBtn}
+                onPress={() => nav.navigate('EditProfile')}
+                accessibilityLabel="Update profile now"
+              >
+                <Text style={styles.updateBannerBtnText}>Update Profile</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
         {/* MY ACTIVITY Menu */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>MY ACTIVITY</Text>
@@ -415,6 +437,12 @@ const styles = StyleSheet.create({
   statValue:         { fontSize: 18, fontWeight: '800', color: C.TEXT },
   statLabel:         { fontSize: 11, color: C.TEXT2, marginTop: 2 },
   statDivider:       { width: 1, backgroundColor: C.BORDER },
+  updateBanner:      { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', borderRadius: 12, padding: 14, marginHorizontal: 14, marginTop: 14 },
+  updateBannerIcon:  { fontSize: 20 },
+  updateBannerTitle: { fontSize: 14, fontWeight: '700', color: '#92400E' },
+  updateBannerReason:{ fontSize: 13, color: '#92400E', marginTop: 4, lineHeight: 18 },
+  updateBannerBtn:   { alignSelf: 'flex-start', marginTop: 10, backgroundColor: '#D97706', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },
+  updateBannerBtnText:{ color: '#fff', fontSize: 13, fontWeight: '700' },
   section:           { padding: 14 },
   sectionTitle:      { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 10 },
   sectionLabel:      { fontSize: 11, fontWeight: '700', color: C.TEXT2, letterSpacing: 1.2, marginBottom: 10 },
