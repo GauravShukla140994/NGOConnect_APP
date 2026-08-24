@@ -125,8 +125,10 @@ function ProjectCard({
 }) {
   const C = AppConfig.COLORS;
 
-  // Projects injected into CANCELLED from UPCOMING still carry statusCode='UPCOMING'
+  // UPCOMING-status projects moved client-side into CANCELLED bucket (date passed, never started)
   const isExpiredUnstarted = tab === 'CANCELLED' && p.statusCode === 'UPCOMING';
+  // ACTIVE projects whose end date has already passed — still on UPCOMING tab, need admin action
+  const isExpiredActive    = tab === 'UPCOMING'  && p.statusCode === 'ACTIVE' && isProjectExpired(p);
 
   const max       = p.maxVolunteers ?? 0;
   const approved  = p.approvedCount ?? 0;
@@ -136,7 +138,9 @@ function ProjectCard({
 
   const type  = TYPE_CONFIG[p.projectTypeCode] ?? { label: p.projectType ?? p.projectTypeCode, bg: '#f3f4f6', text: '#6b7280' };
   const di    = getDateInfo(p);
-  const badge = isExpiredUnstarted ? BADGE_CONFIG.EXPIRED : BADGE_CONFIG[p.statusCode] ?? BADGE_CONFIG.CANCELLED;
+  const badge = (isExpiredUnstarted || isExpiredActive)
+    ? BADGE_CONFIG.EXPIRED
+    : BADGE_CONFIG[p.statusCode] ?? BADGE_CONFIG.CANCELLED;
 
   return (
     <View style={s.card}>
@@ -220,6 +224,15 @@ function ProjectCard({
           <Text style={[s.cancelLabel, { color: '#c2410c' }]}>NOT STARTED</Text>
           <Text style={[s.cancelText, { color: '#9a3412' }]}>
             This project passed its scheduled date without being started.
+          </Text>
+        </View>
+      ) : null}
+
+      {isExpiredActive ? (
+        <View style={[s.cancelBox, { backgroundColor: '#fff7ed', borderColor: '#fed7aa', marginTop: 10 }]}>
+          <Text style={[s.cancelLabel, { color: '#c2410c' }]}>PAST DUE</Text>
+          <Text style={[s.cancelText, { color: '#9a3412' }]}>
+            This project's schedule has ended. Please mark it as Completed or Closed.
           </Text>
         </View>
       ) : null}

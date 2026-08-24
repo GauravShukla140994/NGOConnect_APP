@@ -10,9 +10,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
+  findNodeHandle,
+  Keyboard,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -131,6 +131,41 @@ export default function NewPostModal({
   const [resourceFile, setResourceFile]     = useState<ResourceFileItem | null>(null);
 
   const [submitting, setSubmitting]         = useState(false);
+
+  // ── keyboard visibility + height ──────────────────────────────────────────
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (e) => {
+      setKeyboardVisible(true);
+      setKbHeight(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+      setKbHeight(0);
+    });
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  // ── scroll-to-input refs ──────────────────────────────────────────────────
+  const scrollRef        = useRef<ScrollView>(null);
+  const textareaWrapRef  = useRef<View | null>(null);
+
+  const scrollToInput = () => {
+    const node = textareaWrapRef.current;
+    if (!node || !scrollRef.current) { return; }
+    setTimeout(() => {
+      const scrollHandle = findNodeHandle(scrollRef.current!);
+      if (!scrollHandle) { return; }
+      (node as any).measureLayout(
+        scrollHandle,
+        (_x: number, y: number) => {
+          scrollRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
+        },
+        () => {},
+      );
+    }, 300);
+  };
 
   // ── load lookups on first open ────────────────────────────────────────────
   const lookupsLoaded = useRef(false);
@@ -301,11 +336,7 @@ export default function NewPostModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <Pressable style={styles.backdrop} onPress={handleClose}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.kavWrapper}
-        >
-          <Pressable style={styles.sheet}>
+          <Pressable style={[styles.sheet, kbHeight > 0 && { marginBottom: kbHeight }]}>
             {/* Handle */}
             <View style={styles.handle} />
 
@@ -323,47 +354,51 @@ export default function NewPostModal({
               {'Private - ' + orgName + ' members only - Never shown on Feed'}
             </Text>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-              {/* POST TYPE chips */}
-              <Text style={styles.sectionLabel}>POST TYPE</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.typeRow}
-              >
-                {POST_TYPES.map((pt) => {
-                  const active = selectedType === pt.code;
-                  return (
-                    <TouchableOpacity
-                      key={pt.code}
-                      style={[
-                        styles.typeChip,
-                        active
-                          ? { backgroundColor: pt.color, borderColor: pt.color }
-                          : { backgroundColor: C.BG, borderColor: C.BORDER },
-                      ]}
-                      onPress={() => setSelectedType(pt.code)}
-                      accessibilityLabel={pt.label}
-                    >
-                      <Text style={[styles.typeChipText, { color: active ? '#fff' : C.TEXT2 }]}>
-                        {pt.label}
+              {/* POST TYPE chips — hidden while keyboard is open */}
+              {!keyboardVisible && (
+                <>
+                  <Text style={styles.sectionLabel}>POST TYPE</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.typeRow}
+                  >
+                    {POST_TYPES.map((pt) => {
+                      const active = selectedType === pt.code;
+                      return (
+                        <TouchableOpacity
+                          key={pt.code}
+                          style={[
+                            styles.typeChip,
+                            active
+                              ? { backgroundColor: pt.color, borderColor: pt.color }
+                              : { backgroundColor: C.BG, borderColor: C.BORDER },
+                          ]}
+                          onPress={() => setSelectedType(pt.code)}
+                          accessibilityLabel={pt.label}
+                        >
+                          <Text style={[styles.typeChipText, { color: active ? '#fff' : C.TEXT2 }]}>
+                            {pt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  {/* Author row */}
+                  <View style={styles.authorRow}>
+                    <UserAvatar name={userName} photoUrl={userPhotoUrl} size={32} />
+                    <View>
+                      <Text style={styles.authorName}>{userName}</Text>
+                      <Text style={styles.authorSub}>
+                        {(userRole || 'Member') + ' - ' + orgName}
                       </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {/* Author row */}
-              <View style={styles.authorRow}>
-                <UserAvatar name={userName} photoUrl={userPhotoUrl} size={32} />
-                <View>
-                  <Text style={styles.authorName}>{userName}</Text>
-                  <Text style={styles.authorSub}>
-                    {(userRole || 'Member') + ' - ' + orgName}
-                  </Text>
-                </View>
-              </View>
+                    </View>
+                  </View>
+                </>
+              )}
 
               {/* ── DISCUSSION ────────────────────────────────────── */}
               {selectedType === 'DISCUSSION' && (
@@ -377,15 +412,19 @@ export default function NewPostModal({
                     onChangeText={setTitle}
                   />
                   <FormLabel>Details</FormLabel>
-                  <TextInput
-                    style={styles.textarea}
-                    placeholder="Add more context to spark a conversation..."
-                    placeholderTextColor={C.TEXT3}
-                    multiline
-                    numberOfLines={4}
-                    value={content}
-                    onChangeText={setContent}
-                  />
+                  <View ref={(r) => { textareaWrapRef.current = r; }}>
+                    <TextInput
+                      style={[styles.textarea, keyboardVisible && styles.textareaExpanded]}
+                      placeholder="Add more context to spark a conversation..."
+                      placeholderTextColor={C.TEXT3}
+                      multiline
+                      blurOnSubmit={false}
+                      numberOfLines={4}
+                      value={content}
+                      onChangeText={setContent}
+                      onFocus={scrollToInput}
+                    />
+                  </View>
                 </View>
               )}
 
@@ -401,15 +440,19 @@ export default function NewPostModal({
                     onChangeText={setTitle}
                   />
                   <FormLabel>Additional context</FormLabel>
-                  <TextInput
-                    style={styles.textarea}
-                    placeholder="Add details that help members answer..."
-                    placeholderTextColor={C.TEXT3}
-                    multiline
-                    numberOfLines={3}
-                    value={content}
-                    onChangeText={setContent}
-                  />
+                  <View ref={(r) => { textareaWrapRef.current = r; }}>
+                    <TextInput
+                      style={[styles.textarea, keyboardVisible && styles.textareaExpanded]}
+                      placeholder="Add details that help members answer..."
+                      placeholderTextColor={C.TEXT3}
+                      multiline
+                      blurOnSubmit={false}
+                      numberOfLines={3}
+                      value={content}
+                      onChangeText={setContent}
+                      onFocus={scrollToInput}
+                    />
+                  </View>
                   <ToggleRow
                     label="Allow Best Answer marking"
                     value={allowBestAnswer}
@@ -495,15 +538,19 @@ export default function NewPostModal({
                     onChangeText={setTitle}
                   />
                   <FormLabel required>Message</FormLabel>
-                  <TextInput
-                    style={styles.textarea}
-                    placeholder="Write your announcement message..."
-                    placeholderTextColor={C.TEXT3}
-                    multiline
-                    numberOfLines={4}
-                    value={content}
-                    onChangeText={setContent}
-                  />
+                  <View ref={(r) => { textareaWrapRef.current = r; }}>
+                    <TextInput
+                      style={[styles.textarea, keyboardVisible && styles.textareaExpanded]}
+                      placeholder="Write your announcement message..."
+                      placeholderTextColor={C.TEXT3}
+                      multiline
+                      blurOnSubmit={false}
+                      numberOfLines={4}
+                      value={content}
+                      onChangeText={setContent}
+                      onFocus={scrollToInput}
+                    />
+                  </View>
                   <ToggleRow label="Pin to top"          value={isPinned}   onToggle={setIsPinned} />
                   <ToggleRow label="Notify all members"  value={notifyAll}  onToggle={setNotifyAll} />
                 </View>
@@ -535,15 +582,19 @@ export default function NewPostModal({
                     ))}
                   </View>
                   <FormLabel required>Update details</FormLabel>
-                  <TextInput
-                    style={styles.textarea}
-                    placeholder="Describe the update clearly..."
-                    placeholderTextColor={C.TEXT3}
-                    multiline
-                    numberOfLines={4}
-                    value={updateDetails}
-                    onChangeText={setUpdateDetails}
-                  />
+                  <View ref={(r) => { textareaWrapRef.current = r; }}>
+                    <TextInput
+                      style={[styles.textarea, keyboardVisible && styles.textareaExpanded]}
+                      placeholder="Describe the update clearly..."
+                      placeholderTextColor={C.TEXT3}
+                      multiline
+                      blurOnSubmit={false}
+                      numberOfLines={4}
+                      value={updateDetails}
+                      onChangeText={setUpdateDetails}
+                      onFocus={scrollToInput}
+                    />
+                  </View>
                 </View>
               )}
 
@@ -605,15 +656,19 @@ export default function NewPostModal({
                     onChangeText={setTaskTitle}
                   />
                   <FormLabel>Task Description</FormLabel>
-                  <TextInput
-                    style={styles.textarea}
-                    placeholder="Describe what needs to be done..."
-                    placeholderTextColor={C.TEXT3}
-                    multiline
-                    numberOfLines={3}
-                    value={taskDesc}
-                    onChangeText={setTaskDesc}
-                  />
+                  <View ref={(r) => { textareaWrapRef.current = r; }}>
+                    <TextInput
+                      style={[styles.textarea, keyboardVisible && styles.textareaExpanded]}
+                      placeholder="Describe what needs to be done..."
+                      placeholderTextColor={C.TEXT3}
+                      multiline
+                      blurOnSubmit={false}
+                      numberOfLines={3}
+                      value={taskDesc}
+                      onChangeText={setTaskDesc}
+                      onFocus={scrollToInput}
+                    />
+                  </View>
                   <View style={styles.twoCol}>
                     <View style={{ flex: 1 }}>
                       <FormLabel>Assign to</FormLabel>
@@ -652,15 +707,19 @@ export default function NewPostModal({
                     onChangeText={setResourceTitle}
                   />
                   <FormLabel>Description</FormLabel>
-                  <TextInput
-                    style={styles.textarea}
-                    placeholder="What does this resource cover?"
-                    placeholderTextColor={C.TEXT3}
-                    multiline
-                    numberOfLines={3}
-                    value={resourceDesc}
-                    onChangeText={setResourceDesc}
-                  />
+                  <View ref={(r) => { textareaWrapRef.current = r; }}>
+                    <TextInput
+                      style={[styles.textarea, keyboardVisible && styles.textareaExpanded]}
+                      placeholder="What does this resource cover?"
+                      placeholderTextColor={C.TEXT3}
+                      multiline
+                      blurOnSubmit={false}
+                      numberOfLines={3}
+                      value={resourceDesc}
+                      onChangeText={setResourceDesc}
+                      onFocus={scrollToInput}
+                    />
+                  </View>
                   {resourceFile ? (
                     <View style={styles.uploadedFileRow}>
                       <Text style={styles.uploadedFileIcon}>📎</Text>
@@ -683,38 +742,42 @@ export default function NewPostModal({
                 </View>
               )}
 
-              {/* ── AUDIENCE ──────────────────────────────────────── */}
-              <FormLabel>Visible to</FormLabel>
-              <TouchableOpacity
-                style={[styles.audienceOption, audience === 'ALL_MEMBERS' && styles.audienceOptionActive]}
-                onPress={() => setAudience('ALL_MEMBERS')}
-                accessibilityLabel="All Members"
-              >
-                <View style={styles.audienceCheck}>
-                  {audience === 'ALL_MEMBERS' && <View style={styles.audienceCheckFill} />}
-                </View>
-                <View>
-                  <Text style={[styles.audienceTitle, audience === 'ALL_MEMBERS' && { color: C.PRIMARY }]}>
-                    All Members
-                  </Text>
-                  <Text style={styles.audienceSub}>{'All ' + orgName + ' members'}</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.audienceOption, audience === 'ADMINS_ONLY' && styles.audienceOptionActive]}
-                onPress={() => setAudience('ADMINS_ONLY')}
-                accessibilityLabel="Admins only"
-              >
-                <View style={styles.audienceCheck}>
-                  {audience === 'ADMINS_ONLY' && <View style={styles.audienceCheckFill} />}
-                </View>
-                <View>
-                  <Text style={[styles.audienceTitle, audience === 'ADMINS_ONLY' && { color: C.PRIMARY }]}>
-                    Only Admins
-                  </Text>
-                  <Text style={styles.audienceSub}>Internal moderation only</Text>
-                </View>
-              </TouchableOpacity>
+              {/* ── AUDIENCE — hidden while keyboard is open ───────── */}
+              {!keyboardVisible && (
+                <>
+                  <FormLabel>Visible to</FormLabel>
+                  <TouchableOpacity
+                    style={[styles.audienceOption, audience === 'ALL_MEMBERS' && styles.audienceOptionActive]}
+                    onPress={() => setAudience('ALL_MEMBERS')}
+                    accessibilityLabel="All Members"
+                  >
+                    <View style={styles.audienceCheck}>
+                      {audience === 'ALL_MEMBERS' && <View style={styles.audienceCheckFill} />}
+                    </View>
+                    <View>
+                      <Text style={[styles.audienceTitle, audience === 'ALL_MEMBERS' && { color: C.PRIMARY }]}>
+                        All Members
+                      </Text>
+                      <Text style={styles.audienceSub}>{'All ' + orgName + ' members'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.audienceOption, audience === 'ADMINS_ONLY' && styles.audienceOptionActive]}
+                    onPress={() => setAudience('ADMINS_ONLY')}
+                    accessibilityLabel="Admins only"
+                  >
+                    <View style={styles.audienceCheck}>
+                      {audience === 'ADMINS_ONLY' && <View style={styles.audienceCheckFill} />}
+                    </View>
+                    <View>
+                      <Text style={[styles.audienceTitle, audience === 'ADMINS_ONLY' && { color: C.PRIMARY }]}>
+                        Only Admins
+                      </Text>
+                      <Text style={styles.audienceSub}>Internal moderation only</Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
 
             </ScrollView>
 
@@ -733,7 +796,6 @@ export default function NewPostModal({
               </TouchableOpacity>
             </View>
           </Pressable>
-        </KeyboardAvoidingView>
       </Pressable>
     </Modal>
   );
@@ -767,7 +829,6 @@ function ToggleRow({ label, value, onToggle }: { label: string; value: boolean; 
 const C2 = AppConfig.COLORS;
 const styles = StyleSheet.create({
   backdrop:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  kavWrapper:   { justifyContent: 'flex-end' },
   sheet:        { backgroundColor: C2.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 10, maxHeight: '92%' },
   handle:       { width: 36, height: 4, borderRadius: 2, backgroundColor: C2.BORDER, alignSelf: 'center', marginBottom: 14 },
 
@@ -790,7 +851,8 @@ const styles = StyleSheet.create({
 
   fieldLabel:   { fontSize: 12, fontWeight: '600', color: C2.TEXT, marginBottom: 5 },
   input:        { borderWidth: 1, borderColor: C2.BORDER, borderRadius: 10, padding: 11, fontSize: 13, color: C2.TEXT, backgroundColor: C2.BG, marginBottom: 12 },
-  textarea:     { borderWidth: 1, borderColor: C2.BORDER, borderRadius: 10, padding: 11, fontSize: 13, color: C2.TEXT, backgroundColor: C2.BG, marginBottom: 12, minHeight: 90, textAlignVertical: 'top' },
+  textarea:          { borderWidth: 1, borderColor: C2.BORDER, borderRadius: 10, padding: 11, fontSize: 13, color: C2.TEXT, backgroundColor: C2.BG, marginBottom: 12, minHeight: 90, maxHeight: 160, textAlignVertical: 'top' },
+  textareaExpanded:  { minHeight: 220, maxHeight: 320 },
 
   pollTypeRow:  { flexDirection: 'row', gap: 8, marginBottom: 12 },
   pollTypeBtn:  { flex: 1, paddingVertical: 9, borderRadius: 10, borderWidth: 1.5, borderColor: C2.BORDER, alignItems: 'center' },

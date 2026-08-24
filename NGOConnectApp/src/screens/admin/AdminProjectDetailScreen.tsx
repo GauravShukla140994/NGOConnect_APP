@@ -25,8 +25,10 @@ function statusBadge(code?: string) {
   const map: Record<string, { label: string; bg: string; color: string }> = {
     ACTIVE:    { label: 'Active',    bg: '#ECFDF5', color: '#16A34A' },
     UPCOMING:  { label: 'Upcoming',  bg: '#EFF6FF', color: '#2563EB' },
+    CLOSING:   { label: 'Closing',   bg: '#FFFBEB', color: '#D97706' },
     COMPLETED: { label: 'Completed', bg: '#F3F4F6', color: '#6B7280' },
     CANCELLED: { label: 'Cancelled', bg: '#FEF2F2', color: '#EF4444' },
+    EXPIRED:   { label: 'Expired',   bg: '#FFF7ED', color: '#C2410C' },
   };
   return map[(code ?? '').toUpperCase()] ?? { label: code ?? '', bg: '#F3F4F6', color: '#6B7280' };
 }
@@ -478,7 +480,9 @@ export default function AdminProjectDetailScreen() {
     ]);
   };
 
-  const badge        = statusBadge(project?.statusCode);
+  // Show "Expired" badge when an ACTIVE project's schedule has already ended
+  const isExpiredActive = project?.statusCode === 'ACTIVE' && isProjectExpired(project);
+  const badge        = statusBadge(isExpiredActive ? 'EXPIRED' : project?.statusCode);
   const schedule     = project ? fmtSchedule(project) : '';
   const timeStr      = project ? buildTimeRange(project) : null;
   const skills: string[] = project?.skills?.map((s: any) => s.skillName ?? s) ?? [];

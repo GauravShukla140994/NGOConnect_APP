@@ -67,6 +67,13 @@ function formatDOB(d: Date): string {
     String(d.getDate()).padStart(2, '0'),
   ].join('-');
 }
+const DOB_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function displayDOB(s: string): string {
+  if (!s || s.length < 10) return '';
+  const [y, m, d] = s.split('-').map(Number);
+  if (!y || !m || !d) return s;
+  return `${String(d).padStart(2, '0')}-${DOB_MONTHS[m - 1]}-${y}`;
+}
 
 // -----------------------------------------------------------------
 // Step Indicator — circles + connecting lines
@@ -747,7 +754,7 @@ export default function EditProfileScreen() {
                 accessibilityLabel="Select date of birth"
               >
                 <Text style={[styles.dobPickerBtnText, !dob && styles.dobPickerPlaceholder]}>
-                  {dob || 'Select date of birth'}
+                  {dob ? displayDOB(dob) : 'Select date of birth'}
                 </Text>
                 <Text style={styles.dobPickerIcon}>📅</Text>
               </TouchableOpacity>
@@ -1116,17 +1123,29 @@ export default function EditProfileScreen() {
             ) : null}
 
             {[
-              ['Full Name', [firstName, lastName].filter(Boolean).join(' ')],
-              ['Email', email],
-              ['Date of Birth', dob],
-              ['Occupation', occupation],
-              ['Organisation', organisation],
-              ['Field of Study', fieldOfStudy],
-              ['Volunteer Experience', volunteerExp],
-              ['Bio', bio],
-              ['City', city],
-              ['State', state],
-              ['Country', country],
+              // ── Basic ─────────────────────────────────────────────────
+              ['First Name',       firstName],
+              ['Last Name',        lastName],
+              ['Gender',           genderOptions.find(o => o.lookupValueId === genderLkpId)?.valueName ?? ''],
+              ['Mobile',           mobile ? `${countryCode || '+91'} ${mobile}` : ''],
+              ['Email',            email],
+              ['Date of Birth',    displayDOB(dob)],
+              // ── Professional ─────────────────────────────────────────
+              ['Occupation',       occupation],
+              ['Organisation',     organisation],
+              ['Education',        educationOptions.find(o => o.lookupValueId === educationLkpId)?.valueName ?? ''],
+              ['Work Experience',  workExpOptions.find(o => o.lookupValueId === workExpLkpId)?.valueName ?? ''],
+              ['Field of Study',   fieldOfStudy],
+              ['Volunteer Exp.',   volunteerExp],
+              ['Bio',              bio],
+              // ── Location ─────────────────────────────────────────────
+              ['Address',          [addressLine1, addressLine2].filter(Boolean).join(', ')],
+              ['City',             city],
+              ['State',            state],
+              ['Pincode',          pincode],
+              ['Country',          country],
+              // ── Safety ───────────────────────────────────────────────
+              ['Emergency Visibility', emergVisOptions.find(o => o.lookupValueId === emergVisibilityLkpId)?.valueName ?? ''],
             ].filter(([, v]) => v).map(([label, value]) => (
               <View key={label} style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>{label}</Text>
