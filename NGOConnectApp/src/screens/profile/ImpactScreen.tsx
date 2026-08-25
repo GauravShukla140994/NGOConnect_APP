@@ -16,7 +16,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getImpactSummary, withdrawApplication } from '../../api/user.api';
 import { projectApi } from '../../api/project.api';
@@ -629,6 +629,9 @@ export default function ImpactScreen() {
   }, [load]);
 
   useEffect(() => { init(); }, [init]);
+
+  // Re-fetch whenever the screen comes back into focus (e.g. after applying to a project)
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true); await load(); setRefreshing(false);
