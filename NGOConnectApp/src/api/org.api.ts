@@ -31,6 +31,7 @@ export const orgApi = {
     country?: string;
     registrationNumber?: string;
     isNonRegistered?: boolean;
+    registrationDate?: string;     // ISO date string (YYYY-MM-DD) — null when isNonRegistered
     is80GEligible?: boolean;
     is12AEligible?: boolean;
   }) =>

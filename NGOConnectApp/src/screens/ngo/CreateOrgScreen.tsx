@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   ActivityIndicator,
   Alert,
@@ -38,6 +39,7 @@ interface FormData {
   orgTypeLkpId: number | null;
   registrationNumber: string;
   isNonRegistered: boolean;   // true = organisation has no govt registration number
+  registrationDate: string;   // ISO date (YYYY-MM-DD) of govt registration — '' when isNonRegistered
   categoryLkpId: number | null;
   logoUrl: string;
   logoLocalUri: string;
@@ -69,7 +71,7 @@ interface FormData {
 }
 
 const INITIAL: FormData = {
-  orgName: '', orgTypeLkpId: null, registrationNumber: '', isNonRegistered: false, categoryLkpId: null, logoUrl: '', logoLocalUri: '',
+  orgName: '', orgTypeLkpId: null, registrationNumber: '', isNonRegistered: false, registrationDate: '', categoryLkpId: null, logoUrl: '', logoLocalUri: '',
   contactPerson: '', contactEmail: '',
   contactPhoneCountry: DEFAULT_COUNTRY, contactPhone: '',
   website: '',
@@ -334,6 +336,9 @@ export default function CreateOrgScreen() {
   const [loadingProfile,     setLoadingProfile]     = useState(isResubmit);
   const [prefillCategoryCode,setPrefillCategoryCode]= useState<string | null>(null);
 
+  // Date picker state (registration date)
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   // Country picker state
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countrySearch,     setCountrySearch]     = useState('');
@@ -414,6 +419,7 @@ export default function CreateOrgScreen() {
           // When org was created as non-registered, the DB may still hold an old RegNumber
           // value from a prior attempt — clear it so the field stays hidden and empty.
           registrationNumber: !!(o.isNonRegistered) ? '' : ((o as any).regNumber ?? o.registrationNumber ?? ''),
+          registrationDate:   !!(o.isNonRegistered) ? '' : (o.registrationDate ? o.registrationDate.substring(0, 10) : ''),
           logoUrl:            o.logoUrl ?? '',
           contactPerson:      o.contactPerson ?? '',
           contactEmail:       o.contactEmail ?? '',
@@ -561,6 +567,7 @@ export default function CreateOrgScreen() {
         orgTypeLkpId:       form.orgTypeLkpId!,
         registrationNumber: form.isNonRegistered ? undefined : form.registrationNumber.trim() || undefined,
         isNonRegistered:    form.isNonRegistered,
+        registrationDate:   form.isNonRegistered ? undefined : form.registrationDate || undefined,
         category:           categories.find(c => c.lookupValueId === form.categoryLkpId)?.valueCode ?? '',
         logoUrl:            finalLogoUrl || undefined,
         contactPerson:      form.contactPerson.trim(),
@@ -707,6 +714,7 @@ export default function CreateOrgScreen() {
         country:          form.country.trim() || 'India',
         isNonRegistered:    form.isNonRegistered,
         registrationNumber: form.isNonRegistered ? undefined : (form.registrationNumber.trim() || undefined),
+        registrationDate:   form.isNonRegistered ? undefined : form.registrationDate || undefined,
         is80GEligible:    form.is80G,
         is12AEligible:    form.is12A,
       });
@@ -783,7 +791,11 @@ export default function CreateOrgScreen() {
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}
                 onPress={() => {
                   set('isNonRegistered', !form.isNonRegistered);
-                  if (!form.isNonRegistered) set('registrationNumber', '');
+                  if (!form.isNonRegistered) {
+                    set('registrationNumber', '');
+                    set('registrationDate', '');
+                    setShowDatePicker(false);
+                  }
                 }}
                 activeOpacity={0.7}
               >
@@ -800,10 +812,45 @@ export default function CreateOrgScreen() {
                 </Text>
               </TouchableOpacity>
               {!form.isNonRegistered && (
-                <Field
-                  label="Registration Number" required value={form.registrationNumber}
-                  onChange={v => set('registrationNumber', v)} placeholder="REG/2024/12345"
-                />
+                <>
+                  <Field
+                    label="Registration Number" required value={form.registrationNumber}
+                    onChange={v => set('registrationNumber', v)} placeholder="REG/2024/12345"
+                  />
+                  {/* Organisation Registration Date — govt date, NOT the RippleHub join date */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Registration Date</Text>
+                    <TouchableOpacity
+                      style={{
+                        borderWidth: 1, borderColor: '#CBD5E0', borderRadius: 8,
+                        paddingHorizontal: 12, paddingVertical: 12, backgroundColor: '#FAFAFA',
+                        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      }}
+                      onPress={() => setShowDatePicker(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={{ fontSize: 14, color: form.registrationDate ? '#1F2937' : '#9CA3AF' }}>
+                        {form.registrationDate || 'Select registration date'}
+                      </Text>
+                      <Text style={{ fontSize: 16, color: '#6B7280' }}>📅</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={form.registrationDate ? new Date(form.registrationDate) : new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      maximumDate={new Date()}
+                      onChange={(_, selectedDate) => {
+                        setShowDatePicker(Platform.OS === 'ios');
+                        if (selectedDate) {
+                          const iso = selectedDate.toISOString().substring(0, 10);
+                          set('registrationDate', iso);
+                        }
+                      }}
+                    />
+                  )}
+                </>
               )}
               <DropdownPicker
                 label="Category" placeholder="Select category"

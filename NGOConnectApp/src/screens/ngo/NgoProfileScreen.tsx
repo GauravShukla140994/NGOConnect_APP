@@ -48,6 +48,25 @@ const CATEGORY_COLOR: Record<string, string> = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Format an ISO date string as DD-MMM-YYYY e.g. "26-Aug-2026" */
+function formatDDMMMYYYY(iso: string | undefined | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dd  = String(d.getDate()).padStart(2, '0');
+  return `${dd}-${months[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+/** Format an ISO date string as "Month YYYY" e.g. "August 2026" */
+function formatMonthYear(iso: string | undefined | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 const AVATAR_COLORS = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A', '#7C3AED'];
 function avatarColor(name: string) {
   let h = 0;
@@ -905,9 +924,10 @@ export default function NgoProfileScreen() {
               {isFollowing ? '✓ Following' : '+ Follow'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtnOutline} onPress={handleDonate} activeOpacity={0.85}>
+          {/* Donate button hidden — feature coming soon */}
+          {/* <TouchableOpacity style={styles.actionBtnOutline} onPress={handleDonate} activeOpacity={0.85}>
             <Text style={styles.actionBtnOutlineText}>💛 Donate</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
           <TouchableOpacity
             style={[styles.actionBtnShare, sharing && { opacity: 0.55 }]}
             onPress={handleShare}
@@ -1002,9 +1022,19 @@ export default function NgoProfileScreen() {
                   <Text style={[styles.contactItem, styles.websiteLink]}>🌐  {org.website}</Text>
                 </TouchableOpacity>
               )}
+              {!org.isNonRegistered && !!org.registrationDate && (
+                <Text style={styles.contactItem}>
+                  🗓  Registered on: {formatDDMMMYYYY(org.registrationDate)}
+                </Text>
+              )}
+              {!!org.createdAt && (
+                <Text style={styles.contactItem}>
+                  🤝  On RippleHub since {formatMonthYear(org.createdAt)}
+                </Text>
+              )}
               {!org.about && !org.description && !org.mission && !org.vision
                 && !org.areasOfWork?.length && !org.email && !org.contactEmail
-                && !org.website && (
+                && !org.website && !org.registrationDate && !org.createdAt && (
                 <Text style={styles.emptyText}>No details available yet.</Text>
               )}
             </>

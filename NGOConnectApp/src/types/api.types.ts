@@ -352,6 +352,8 @@ export interface Organisation {
   isFollowing?: number | boolean; // 0|1 from SP (use !! to convert to boolean)
   verificationStatusCode?: string; // PENDING | VERIFIED | REJECTED (from ORG_VERIFICATION_STATUS lookup)
   isNonRegistered?: boolean;       // true = approved as non-registered (no govt reg number)
+  registrationDate?: string;       // Govt registration date (ISO date) — null when isNonRegistered
+  createdAt?: string;              // ISO datetime when org joined RippleHub (Organisations.CreatedAt)
   canCreateRecurring?: boolean;   // Super Admin permission gate — 0 by default
   canCreateFlexible?: boolean;    // Super Admin permission gate — 0 by default
   orgMaxVolunteers?: number;      // Super Admin per-org max volunteers per project (default 100)
