@@ -410,8 +410,10 @@ export default function CreateOrgScreen() {
           ...prev,
           orgName:            o.orgName ?? '',
           orgTypeLkpId:       o.orgTypeLkpId ?? null,
-          registrationNumber: (o as any).regNumber ?? o.registrationNumber ?? '',
           isNonRegistered:    !!(o.isNonRegistered),
+          // When org was created as non-registered, the DB may still hold an old RegNumber
+          // value from a prior attempt — clear it so the field stays hidden and empty.
+          registrationNumber: !!(o.isNonRegistered) ? '' : ((o as any).regNumber ?? o.registrationNumber ?? ''),
           logoUrl:            o.logoUrl ?? '',
           contactPerson:      o.contactPerson ?? '',
           contactEmail:       o.contactEmail ?? '',
@@ -703,6 +705,8 @@ export default function CreateOrgScreen() {
         city:          form.city.trim() || undefined,
         state:         form.state.trim() || undefined,
         country:          form.country.trim() || 'India',
+        isNonRegistered:    form.isNonRegistered,
+        registrationNumber: form.isNonRegistered ? undefined : (form.registrationNumber.trim() || undefined),
         is80GEligible:    form.is80G,
         is12AEligible:    form.is12A,
       });

@@ -29,6 +29,8 @@ export const orgApi = {
     city?: string;
     state?: string;
     country?: string;
+    registrationNumber?: string;
+    isNonRegistered?: boolean;
     is80GEligible?: boolean;
     is12AEligible?: boolean;
   }) =>
