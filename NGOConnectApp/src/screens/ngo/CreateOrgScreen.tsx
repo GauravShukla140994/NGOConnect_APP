@@ -37,6 +37,7 @@ interface FormData {
   orgName: string;
   orgTypeLkpId: number | null;
   registrationNumber: string;
+  isNonRegistered: boolean;   // true = organisation has no govt registration number
   categoryLkpId: number | null;
   logoUrl: string;
   logoLocalUri: string;
@@ -68,7 +69,7 @@ interface FormData {
 }
 
 const INITIAL: FormData = {
-  orgName: '', orgTypeLkpId: null, registrationNumber: '', categoryLkpId: null, logoUrl: '', logoLocalUri: '',
+  orgName: '', orgTypeLkpId: null, registrationNumber: '', isNonRegistered: false, categoryLkpId: null, logoUrl: '', logoLocalUri: '',
   contactPerson: '', contactEmail: '',
   contactPhoneCountry: DEFAULT_COUNTRY, contactPhone: '',
   website: '',
@@ -410,6 +411,7 @@ export default function CreateOrgScreen() {
           orgName:            o.orgName ?? '',
           orgTypeLkpId:       o.orgTypeLkpId ?? null,
           registrationNumber: (o as any).regNumber ?? o.registrationNumber ?? '',
+          isNonRegistered:    !!(o.isNonRegistered),
           logoUrl:            o.logoUrl ?? '',
           contactPerson:      o.contactPerson ?? '',
           contactEmail:       o.contactEmail ?? '',
@@ -476,7 +478,8 @@ export default function CreateOrgScreen() {
     if (step === 1) {
       if (!form.orgName.trim())              return 'Organisation Name is required.';
       if (!form.orgTypeLkpId)                return 'Please select an Organisation Type.';
-      if (!form.registrationNumber.trim())   return 'Registration Number is required.';
+      if (!form.isNonRegistered && !form.registrationNumber.trim())
+        return 'Registration Number is required, or select "Not Registered".';
       if (!form.categoryLkpId)               return 'Please select a Category.';
     }
     if (step === 2) {
@@ -554,7 +557,8 @@ export default function CreateOrgScreen() {
       const res = await orgApi.register({
         orgName:            form.orgName.trim(),
         orgTypeLkpId:       form.orgTypeLkpId!,
-        registrationNumber: form.registrationNumber.trim(),
+        registrationNumber: form.isNonRegistered ? undefined : form.registrationNumber.trim() || undefined,
+        isNonRegistered:    form.isNonRegistered,
         category:           categories.find(c => c.lookupValueId === form.categoryLkpId)?.valueCode ?? '',
         logoUrl:            finalLogoUrl || undefined,
         contactPerson:      form.contactPerson.trim(),
@@ -771,10 +775,32 @@ export default function CreateOrgScreen() {
                 items={orgTypes} selectedId={form.orgTypeLkpId}
                 onSelect={(id) => set('orgTypeLkpId', id)}
               />
-              <Field
-                label="Registration Number" required value={form.registrationNumber}
-                onChange={v => set('registrationNumber', v)} placeholder="REG/2024/12345"
-              />
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}
+                onPress={() => {
+                  set('isNonRegistered', !form.isNonRegistered);
+                  if (!form.isNonRegistered) set('registrationNumber', '');
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={{
+                  width: 20, height: 20, borderRadius: 4,
+                  borderWidth: 2, borderColor: form.isNonRegistered ? '#7C3AED' : '#CBD5E0',
+                  backgroundColor: form.isNonRegistered ? '#7C3AED' : 'transparent',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {form.isNonRegistered && <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>✓</Text>}
+                </View>
+                <Text style={{ fontSize: 13, color: '#4B5563', flex: 1 }}>
+                  Organisation is not registered / no registration number available
+                </Text>
+              </TouchableOpacity>
+              {!form.isNonRegistered && (
+                <Field
+                  label="Registration Number" required value={form.registrationNumber}
+                  onChange={v => set('registrationNumber', v)} placeholder="REG/2024/12345"
+                />
+              )}
               <DropdownPicker
                 label="Category" placeholder="Select category"
                 items={categories} selectedId={form.categoryLkpId}
@@ -938,7 +964,7 @@ export default function CreateOrgScreen() {
               <ReviewSection title="Basic Information">
                 <ReviewRow label="Organisation Name"    value={form.orgName} />
                 <ReviewRow label="Organisation Type"   value={orgTypes.find(t => t.lookupValueId === form.orgTypeLkpId)?.valueName} />
-                <ReviewRow label="Registration No."   value={form.registrationNumber} />
+                <ReviewRow label="Registration No."   value={form.isNonRegistered ? 'Not Registered' : form.registrationNumber} />
                 <ReviewRow label="Category"            value={categories.find(c => c.lookupValueId === form.categoryLkpId)?.valueName} />
               </ReviewSection>
 

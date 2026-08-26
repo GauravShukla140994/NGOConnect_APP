@@ -833,10 +833,10 @@ export default function NgoProfileScreen() {
           <View style={styles.heroInfo}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <Text style={styles.heroName}>{name}</Text>
-              {org.verificationStatusCode === 'VERIFIED' && (
-                <View style={styles.orgVerifiedBadge}>
-                  <Text style={styles.orgVerifiedBadgeText}>✓ Verified</Text>
-                </View>
+              {org.orgStatusCode === 'APPROVED' && (
+                org.isNonRegistered
+                  ? <View style={styles.orgNonRegBadge}><Text style={styles.orgNonRegBadgeText}>Non-Registered</Text></View>
+                  : <View style={styles.orgVerifiedBadge}><Text style={styles.orgVerifiedBadgeText}>✓ Registered</Text></View>
               )}
             </View>
             <View style={styles.heroTagRow}>
@@ -1189,6 +1189,8 @@ const styles = StyleSheet.create({
   badge80G:          { backgroundColor: '#DCFCE7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   orgVerifiedBadge:     { backgroundColor: '#ECFDF5', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: '#6EE7B7' },
   orgVerifiedBadgeText: { fontSize: 11, fontWeight: '700', color: '#059669' },
+  orgNonRegBadge:       { backgroundColor: '#FFF7ED', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: '#FED7AA' },
+  orgNonRegBadgeText:   { fontSize: 11, fontWeight: '700', color: '#C2410C' },
   badge80GText:      { fontSize: 11, fontWeight: '700', color: '#16A34A' },
   heroMeta:          { fontSize: 12, color: C.TEXT2 },
   ratingChip:        { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 5, alignSelf: 'flex-start', backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },

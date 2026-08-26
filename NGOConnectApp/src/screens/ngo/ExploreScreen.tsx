@@ -49,7 +49,7 @@ type TabKey = 'recommended' | 'trending' | 'all';
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'recommended', label: 'Recommended' },
   { key: 'trending',    label: 'Trending'    },
-  { key: 'all',         label: 'All NGOs'    },
+  { key: 'all',         label: 'All Orgs'    },
 ];
 
 const AVATAR_COLORS = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A', '#7C3AED'];
@@ -87,9 +87,9 @@ function OrgRowCard({ org, distKm, memberStatusCode, onPress }: {
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
           <Text style={styles.rowName} numberOfLines={1}>{name}</Text>
-          {org.verificationStatusCode === 'VERIFIED' && (
-            <View style={styles.verifiedBadge}><Text style={styles.verifiedBadgeText}>✓</Text></View>
-          )}
+          {org.isNonRegistered
+            ? <View style={styles.nonRegBadge}><Text style={styles.nonRegBadgeText}>Non-Reg</Text></View>
+            : <View style={styles.verifiedBadge}><Text style={styles.verifiedBadgeText}>✓ Reg</Text></View>}
           {isMember  && <View style={styles.memberChipInline}><Text style={styles.memberChipInlineText}>✓ Member</Text></View>}
           {isPending && <View style={styles.pendingChipInline}><Text style={styles.pendingChipInlineText}>⏳ Pending</Text></View>}
         </View>
@@ -117,11 +117,11 @@ function OrgGridCard({ org, memberStatusCode, onPress }: {
         ? <Image key={org.logoUrl ?? org.orgLogoUrl} source={{ uri: (org.logoUrl ?? org.orgLogoUrl)! }} style={styles.gridAvatar} resizeMode="cover" />
         : <View style={[styles.gridAvatar, { backgroundColor: color }]}><Text style={styles.gridAvatarText}>{initials(name)}</Text></View>
       }
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 3 }}>
-        <Text style={[styles.gridName, { marginBottom: 0 }]} numberOfLines={2}>{name}</Text>
-        {org.verificationStatusCode === 'VERIFIED' && (
-          <View style={styles.verifiedBadge}><Text style={styles.verifiedBadgeText}>✓</Text></View>
-        )}
+      <Text style={styles.gridName} numberOfLines={2}>{name}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 3 }}>
+        {org.isNonRegistered
+          ? <View style={styles.nonRegBadge}><Text style={styles.nonRegBadgeText}>Non-Reg</Text></View>
+          : <View style={styles.verifiedBadge}><Text style={styles.verifiedBadgeText}>✓ Reg</Text></View>}
       </View>
       <Text style={styles.gridMeta} numberOfLines={1}>
         {(org.categoryName ?? org.category ?? 'NGO')}{rating > 0 ? ` · ⭐${rating.toFixed(1)}` : ''}
@@ -757,8 +757,8 @@ export default function ExploreScreen() {
             <View style={styles.secHead}>
               <Text style={styles.secTitle}>
                 {categoryCode !== 'ALL'
-                  ? `${categories.find(c => c.code === categoryCode)?.label} NGOs`
-                  : orgs.length > 0 ? `${orgs.length}+ NGOs` : 'All NGOs'}
+                  ? `${categories.find(c => c.code === categoryCode)?.label} Orgs`
+                  : orgs.length > 0 ? `${orgs.length}+ Orgs` : 'All Orgs'}
               </Text>
               {userLat && <Text style={styles.secSub}>Sorted by distance</Text>}
             </View>
@@ -854,6 +854,8 @@ const styles = StyleSheet.create({
   rowName:       { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
   verifiedBadge:     { backgroundColor: '#ECFDF5', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#6EE7B7' },
   verifiedBadgeText: { fontSize: 10, fontWeight: '700', color: '#059669' },
+  nonRegBadge:       { backgroundColor: '#FFF7ED', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#FED7AA' },
+  nonRegBadgeText:   { fontSize: 10, fontWeight: '700', color: '#C2410C' },
   rowMeta:       { fontSize: 11, color: C.TEXT2 },
   viewBtn:       { backgroundColor: C.PRIMARY, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12 },
   viewBtnText:   { color: '#fff', fontSize: 13, fontWeight: '600' },
@@ -861,7 +863,7 @@ const styles = StyleSheet.create({
   gridCard:      { flex: 1, margin: 6, backgroundColor: C.CARD, borderRadius: 14, padding: 12, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
   gridAvatar:    { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 8, overflow: 'hidden' },
   gridAvatarText:{ color: '#fff', fontSize: 15, fontWeight: '800' },
-  gridName:      { fontSize: 13, fontWeight: '700', color: C.TEXT, textAlign: 'center', marginBottom: 3 },
+  gridName:      { fontSize: 13, fontWeight: '700', color: C.TEXT, textAlign: 'center', width: '100%', marginBottom: 4 },
   gridMeta:      { fontSize: 11, color: C.TEXT2, textAlign: 'center', marginBottom: 10 },
   joinBtn:       { backgroundColor: C.PRIMARY, paddingHorizontal: 20, paddingVertical: 7, borderRadius: 20, width: '100%', alignItems: 'center' },
   joinBtnText:   { color: '#fff', fontSize: 13, fontWeight: '600' },
