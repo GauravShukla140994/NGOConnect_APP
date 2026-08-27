@@ -24,7 +24,7 @@ export const feedApi = {
     apiClient.delete<ApiResponse<null>>(`/post/${postId}/like`),
 
   addComment: (postId: number, content: string, parentCommentId?: number) =>
-    apiClient.post<ApiResponse<null>>(`/post/${postId}/comments`, {content, parentCommentId}),
+    apiClient.post<ApiResponse<{ commentId: number }>>(`/post/${postId}/comments`, {content, parentCommentId}),
 
   getComments: (postId: number, params: {pageNumber?: number; pageSize?: number}) =>
     apiClient.get(`/post/${postId}/comments`, {params}),

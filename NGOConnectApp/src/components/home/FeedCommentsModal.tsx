@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Keyboard,
   Modal,
@@ -128,11 +129,19 @@ export default function FeedCommentsModal({ visible, post, onClose, onCommentAdd
     setSubmitting(true);
     Keyboard.dismiss();
     try {
-      await addComment(post.postId, trimmed);
+      const res = await addComment(post.postId, trimmed);
+      const body = res.data;
+      if (body?.isSuccess === 0) {
+        Alert.alert('Cannot Post Comment', body.message ?? 'Failed to post comment.');
+        return;
+      }
       setText('');
       onCommentAdded?.(post.postId);
       await load(); // refresh to get server-side author name & timestamp
-    } catch { /* silently fail */ }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? err?.message ?? 'Failed to post comment.';
+      Alert.alert('Comment Error', msg);
+    }
     finally { setSubmitting(false); }
   };
 
