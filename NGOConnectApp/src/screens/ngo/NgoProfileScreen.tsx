@@ -592,6 +592,9 @@ export default function NgoProfileScreen() {
   const [activeProjects,    setActiveProjects]    = useState<Project[]>([]);
   const [upcomingProjects,  setUpcomingProjects]  = useState<Project[]>([]);
   const [completedProjects, setCompletedProjects] = useState<Project[]>([]);
+  const [completedPage,     setCompletedPage]     = useState(1);
+  const [completedTotal,    setCompletedTotal]    = useState(0);
+  const [completedLoadingMore, setCompletedLoadingMore] = useState(false);
   const [openProjects,      setOpenProjects]      = useState<Project[]>([]);
   const [feedPosts,         setFeedPosts]         = useState<Post[]>([]);
   const [feedLoading,       setFeedLoading]       = useState(false);
@@ -636,28 +639,51 @@ export default function NgoProfileScreen() {
         getProfile(orgId),
         listProjects({ orgId, statusCode: 'ACTIVE',    pageNumber: 1, pageSize: 20 }),
         listProjects({ orgId, statusCode: 'UPCOMING',  pageNumber: 1, pageSize: 20 }),
-        listProjects({ orgId, statusCode: 'COMPLETED', pageNumber: 1, pageSize: 3  }),
+        listProjects({ orgId, statusCode: 'COMPLETED', pageNumber: 1, pageSize: 20 }),
       ]);
       if (orgRes.data?.isSuccess) {
         const orgData = orgRes.data.data ?? null;
         setOrg(orgData);
         setIsFollowing(!!orgData?.isFollowing);
       }
-      const activeItems   = (activeRes.data?.isSuccess   ? (activeRes.data.data?.items   ?? []) : []).filter((p: Project) => !isProjectExpired(p));
-      const upcomingItems = (upcomingRes.data?.isSuccess  ? (upcomingRes.data.data?.items  ?? []) : []).filter((p: Project) => !isProjectExpired(p));
+      // Projects tab: show whatever the DB says is ACTIVE/UPCOMING — don't second-guess with
+      // isProjectExpired here, as the DB status is the source of truth for display.
+      const activeItems   = activeRes.data?.isSuccess   ? (activeRes.data.data?.items   ?? []) : [];
+      const upcomingItems = upcomingRes.data?.isSuccess  ? (upcomingRes.data.data?.items  ?? []) : [];
       setActiveProjects(activeItems);
       setUpcomingProjects(upcomingItems);
-      // Volunteer tab = active + upcoming projects that still have spots (expired excluded above)
+      // Volunteer tab = active + upcoming projects that still have open spots AND haven't passed
       setOpenProjects(
-        [...activeItems, ...upcomingItems].filter((p: Project) => (p.spotsLeft ?? 1) > 0)
+        [...activeItems, ...upcomingItems]
+          .filter((p: Project) => !isProjectExpired(p) && (p.spotsLeft ?? 1) > 0)
       );
-      if (completedRes.data?.isSuccess) setCompletedProjects(completedRes.data.data?.items ?? []);
+      if (completedRes.data?.isSuccess) {
+        setCompletedProjects(completedRes.data.data?.items ?? []);
+        setCompletedTotal(completedRes.data.data?.totalCount ?? 0);
+        setCompletedPage(1);
+      }
     } catch {
       Alert.alert('Error', 'Could not load NGO profile.');
     } finally {
       setLoading(false);
     }
   }, [orgId]);
+
+  // Load next page of completed projects (called on scroll near-bottom while on Projects tab)
+  const loadMoreCompleted = useCallback(async () => {
+    if (completedLoadingMore) return;
+    if (completedProjects.length >= completedTotal) return; // all loaded
+    const nextPage = completedPage + 1;
+    setCompletedLoadingMore(true);
+    try {
+      const res = await listProjects({ orgId, statusCode: 'COMPLETED', pageNumber: nextPage, pageSize: 20 });
+      if (res.data?.isSuccess) {
+        setCompletedProjects(prev => [...prev, ...(res.data.data?.items ?? [])]);
+        setCompletedPage(nextPage);
+      }
+    } catch { /* silent — don't disrupt the screen */ }
+    finally { setCompletedLoadingMore(false); }
+  }, [orgId, completedPage, completedTotal, completedProjects.length, completedLoadingMore]);
 
   // Lazy-load gallery — only when Gallery tab first opened
   const loadGallery = useCallback(async () => {
@@ -842,6 +868,14 @@ export default function NgoProfileScreen() {
         )}
         contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
         showsVerticalScrollIndicator={false}
+        onScroll={({ nativeEvent: { layoutMeasurement, contentOffset, contentSize } }) => {
+          // Trigger load-more when 150px from the bottom, only on Projects tab
+          if (tab === 'Projects' &&
+              layoutMeasurement.height + contentOffset.y >= contentSize.height - 150) {
+            loadMoreCompleted();
+          }
+        }}
+        scrollEventThrottle={400}
         ListHeaderComponent={<>
         {/* Hero */}
         <View style={styles.hero}>
@@ -950,7 +984,7 @@ export default function NgoProfileScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{org.activeProjects ?? activeProjects.length}</Text>
+            <Text style={styles.statValue}>{org.totalProjectCount ?? (activeProjects.length + completedProjects.length)}</Text>
             <Text style={styles.statLabel}>Projects</Text>
           </View>
           <View style={styles.statDivider} />
@@ -1102,6 +1136,15 @@ export default function NgoProfileScreen() {
                       onDetails={() => setModalProjectId(p.projectId)}
                     />
                   ))}
+                  {/* Infinite scroll footer */}
+                  {completedLoadingMore && (
+                    <ActivityIndicator style={{ marginVertical: 16 }} color="#4F46E5" />
+                  )}
+                  {!completedLoadingMore && completedProjects.length < completedTotal && (
+                    <Text style={[styles.emptyText, { marginVertical: 8 }]}>
+                      Scroll down to load more…
+                    </Text>
+                  )}
                 </>
               )}
             </>
