@@ -364,7 +364,7 @@ function completedAttendanceChip(app: UserApplication): { bg: string; color: str
   }
 
   if (type === 'FLEXIBLE') {
-    const logged   = app.myHoursLogged   ?? 0;
+    const logged   = (app.hoursLogged ?? app.myHoursLogged) ?? 0;
     const required = app.myRequiredHours ?? 0;
     const label    = required > 0 ? `${logged}h / ${required}h` : `${logged}h Logged`;
     return logged >= required && required > 0
@@ -406,7 +406,7 @@ function CompletedCard({ app, onPress, onCertPress }: { app: UserApplication; on
       <View style={[s.cardRow, { marginBottom: app.skillRatings?.length ? 10 : 0 }]}>
         <View style={{ flex: 1 }}>
           <Text style={s.metaLabel}>Hours Volunteered</Text>
-          <Text style={s.metaValue}>{(app.myHoursLogged ?? 0) > 0 ? `${app.myHoursLogged}h` : '—'}</Text>
+          <Text style={s.metaValue}>{((app.hoursLogged ?? app.myHoursLogged) ?? 0) > 0 ? `${app.hoursLogged ?? app.myHoursLogged}h` : '—'}</Text>
         </View>
         {app.impactNote ? (
           <View style={{ flex: 1 }}>
