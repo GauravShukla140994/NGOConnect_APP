@@ -79,6 +79,12 @@ export const userApi = {
   verifyContactOtp: (type: 'EMAIL' | 'PHONE', value: string, otpCode: string) =>
     apiClient.post<ApiResponse<null>>('/user/contact/verify', { type, value, otpCode }),
 
+  // Account deletion — Google Play + App Store compliance.
+  // Soft-deletes the user and revokes all refresh tokens.
+  // Backend blocks if user is the sole Founder of any APPROVED org.
+  deleteAccount: () =>
+    apiClient.delete<ApiResponse<null>>('/user/account'),
+
   // getMyProjects — no backend endpoint yet (ProjectController has no /user/my-projects route)
   // Will be added when the "My Projects" screen (s-all-projects) is built
 };
@@ -108,3 +114,4 @@ export const uploadDocument    = (data: {documentTypeLkpId: number; fileUrl: str
 export const deleteDocument    = (userDocumentId: number) => userApi.deleteDocument(userDocumentId);
 export const sendContactOtp    = (type: 'EMAIL' | 'PHONE', value: string, countryCode?: string) => userApi.sendContactOtp(type, value, countryCode);
 export const verifyContactOtp  = (type: 'EMAIL' | 'PHONE', value: string, otpCode: string) => userApi.verifyContactOtp(type, value, otpCode);
+export const deleteAccount     = () => userApi.deleteAccount();

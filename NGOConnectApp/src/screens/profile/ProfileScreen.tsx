@@ -1,22 +1,25 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { getMyProfile, getMyOrgs, getMyDocuments } from '../../api/user.api';
+import { getMyProfile, getMyOrgs, getMyDocuments, deleteAccount } from '../../api/user.api';
 import { sosApi } from '../../api/sos.api';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminStore } from '../../store/adminStore';
@@ -74,6 +77,10 @@ export default function ProfileScreen() {
   const [sosChecking, setSosChecking] = useState(false);
   const [showAdminPicker, setShowAdminPicker] = useState(false);
   const [adminPickerOrgs, setAdminPickerOrgs] = useState<Organisation[]>([]);
+  const [deleteInfoVisible,  setDeleteInfoVisible]  = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteConfirmText,  setDeleteConfirmText]  = useState('');
+  const [deleteLoading,      setDeleteLoading]      = useState(false);
   const [gateVisible,    setGateVisible]    = useState(false);
   const [gateMissing,    setGateMissing]    = useState<string[]>([]);
   const [gateTargetStep, setGateTargetStep] = useState(0);
@@ -130,6 +137,41 @@ export default function ProfileScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: logout },
     ]);
+  }, [logout]);
+
+  // Step 1 — open the info sheet (explains 30-day grace period)
+  const handleDeleteAccount = useCallback(() => {
+    setDeleteInfoVisible(true);
+  }, []);
+
+  // Step 2 — user read the info, taps "I Understand, Proceed" → open typed confirmation
+  const handleDeleteProceed = useCallback(() => {
+    setDeleteInfoVisible(false);
+    setDeleteConfirmText('');
+    setDeleteModalVisible(true);
+  }, []);
+
+  // Step 3 — typed DELETE, taps confirm → API call
+  const handleConfirmDelete = useCallback(async () => {
+    setDeleteLoading(true);
+    try {
+      const res = await deleteAccount();
+      setDeleteModalVisible(false);
+      if (res.data?.isSuccess) {
+        Alert.alert(
+          'Request Submitted',
+          'Your account has been scheduled for deletion. You have 30 days to sign back in and change your mind. After that, all your data will be permanently removed.',
+          [{ text: 'OK', onPress: logout }],
+        );
+      } else {
+        Alert.alert('Cannot Delete Account', res.data?.message ?? 'Something went wrong. Please try again.');
+      }
+    } catch {
+      setDeleteModalVisible(false);
+      Alert.alert('Error', 'Unable to process your request. Please check your connection and try again.');
+    } finally {
+      setDeleteLoading(false);
+    }
   }, [logout]);
 
   // Profile gate check — same logic as MyOrgsScreen
@@ -355,6 +397,15 @@ export default function ProfileScreen() {
         >
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
+
+        {/* Delete Account */}
+        <TouchableOpacity
+          style={styles.deleteAccountBtn}
+          onPress={handleDeleteAccount}
+          accessibilityLabel="Delete account"
+        >
+          <Text style={styles.deleteAccountText}>Delete Account</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* ── Admin org picker (shown when user admins multiple orgs) ─────── */}
@@ -405,6 +456,123 @@ export default function ProfileScreen() {
         </Pressable>
       </Modal>
       )}
+
+      {/* ── Delete Account — info sheet (Step 1) ────────────────────────── */}
+      <Modal
+        visible={deleteInfoVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDeleteInfoVisible(false)}
+      >
+        <Pressable style={styles.deleteInfoOverlay} onPress={() => setDeleteInfoVisible(false)}>
+          <Pressable style={[styles.deleteInfoSheet, { paddingBottom: insets.bottom + 24 }]}>
+            <View style={styles.deleteInfoHandle} />
+
+            <Text style={styles.deleteInfoTitle}>Before you go… 👋</Text>
+
+            <View style={styles.deleteInfoRow}>
+              <Text style={styles.deleteInfoIcon}>🕐</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.deleteInfoItemTitle}>30-day recovery window</Text>
+                <Text style={styles.deleteInfoItemBody}>
+                  Your account won't be gone instantly. You have <Text style={styles.deleteInfoBold}>30 days</Text> to sign back in and cancel the deletion — no questions asked.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.deleteInfoRow}>
+              <Text style={styles.deleteInfoIcon}>🗑️</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.deleteInfoItemTitle}>Permanent removal after 30 days</Text>
+                <Text style={styles.deleteInfoItemBody}>
+                  If you don't sign back in within 30 days, your profile, volunteer history, impact data, and all associated content will be permanently and irreversibly deleted.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.deleteInfoRow}>
+              <Text style={styles.deleteInfoIcon}>💚</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.deleteInfoItemTitle}>You can always return</Text>
+                <Text style={styles.deleteInfoItemBody}>
+                  Even after permanent deletion, you're always welcome back. Simply sign up again with your email or phone and start fresh on RippleHub.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.deleteInfoRow}>
+              <Text style={styles.deleteInfoIcon}>🔒</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.deleteInfoItemTitle}>Immediate session revocation</Text>
+                <Text style={styles.deleteInfoItemBody}>
+                  All your active sessions and devices will be signed out immediately when you confirm.
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.deleteInfoProceedBtn} onPress={handleDeleteProceed}>
+              <Text style={styles.deleteInfoProceedText}>I Understand, Proceed to Delete</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.deleteInfoCancelBtn} onPress={() => setDeleteInfoVisible(false)}>
+              <Text style={styles.deleteInfoCancelText}>Keep My Account</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Delete Account confirmation modal ───────────────────────────── */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !deleteLoading && setDeleteModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.deleteModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.deleteModalSheet}>
+            <Text style={styles.deleteModalTitle}>⚠️ Final Confirmation</Text>
+            <Text style={styles.deleteModalBody}>
+              Your account will be scheduled for deletion. You have <Text style={styles.deleteModalBold}>30 days</Text> to sign back in and recover it.{'\n\n'}
+              To confirm, type <Text style={styles.deleteModalKeyword}>DELETE</Text> below.
+            </Text>
+            <TextInput
+              style={[
+                styles.deleteModalInput,
+                deleteConfirmText === 'DELETE' && styles.deleteModalInputValid,
+              ]}
+              placeholder="Type DELETE here"
+              placeholderTextColor={C.TEXT3}
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!deleteLoading}
+            />
+            <TouchableOpacity
+              style={[
+                styles.deleteModalConfirmBtn,
+                deleteConfirmText !== 'DELETE' && styles.deleteModalConfirmBtnDisabled,
+              ]}
+              onPress={handleConfirmDelete}
+              disabled={deleteConfirmText !== 'DELETE' || deleteLoading}
+            >
+              {deleteLoading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.deleteModalConfirmText}>Delete My Account</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.deleteModalCancelBtn}
+              onPress={() => setDeleteModalVisible(false)}
+              disabled={deleteLoading}
+            >
+              <Text style={styles.deleteModalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {gateVisible && (
       <ProfileIncompleteSheet
@@ -460,6 +628,40 @@ const styles = StyleSheet.create({
   // Sign out
   signOutBtn:  { margin: 16, marginTop: 8, borderRadius: 12, padding: 14, alignItems: 'center', borderWidth: 1.5, borderColor: '#EF4444' },
   signOutText: { fontSize: 15, fontWeight: '700', color: '#EF4444' },
+
+  // Delete account — muted appearance so it doesn't compete with Sign Out
+  deleteAccountBtn:  { marginHorizontal: 16, marginBottom: 8, paddingVertical: 12, alignItems: 'center' },
+  deleteAccountText: { fontSize: 13, color: C.TEXT3, textDecorationLine: 'underline' },
+
+  // Delete account — info sheet (Step 1)
+  deleteInfoOverlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  deleteInfoSheet:          { backgroundColor: C.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, maxHeight: '90%' },
+  deleteInfoHandle:         { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 20 },
+  deleteInfoTitle:          { fontSize: 20, fontWeight: '800', color: C.TEXT, marginBottom: 20 },
+  deleteInfoRow:            { flexDirection: 'row', gap: 14, marginBottom: 18, alignItems: 'flex-start' },
+  deleteInfoIcon:           { fontSize: 22, marginTop: 1 },
+  deleteInfoItemTitle:      { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
+  deleteInfoItemBody:       { fontSize: 13, color: C.TEXT2, lineHeight: 19 },
+  deleteInfoBold:           { fontWeight: '700', color: C.TEXT },
+  deleteInfoProceedBtn:     { marginTop: 8, borderWidth: 1.5, borderColor: '#EF4444', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 4 },
+  deleteInfoProceedText:    { fontSize: 14, fontWeight: '700', color: '#EF4444' },
+  deleteInfoCancelBtn:      { paddingVertical: 8, alignItems: 'center' },
+  deleteInfoCancelText:     { fontSize: 15, fontWeight: '700', color: C.PRIMARY },
+
+  // Delete account — typed confirmation modal (Step 2)
+  deleteModalOverlay:       { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  deleteModalSheet:         { backgroundColor: C.CARD, borderRadius: 16, padding: 24, width: '100%' },
+  deleteModalTitle:         { fontSize: 18, fontWeight: '800', color: '#EF4444', marginBottom: 12 },
+  deleteModalBody:          { fontSize: 14, color: C.TEXT, lineHeight: 21, marginBottom: 20 },
+  deleteModalBold:          { fontWeight: '700', color: C.TEXT },
+  deleteModalKeyword:       { fontWeight: '800', color: '#EF4444', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  deleteModalInput:         { borderWidth: 1.5, borderColor: C.BORDER, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, fontWeight: '700', color: C.TEXT, backgroundColor: C.BG, marginBottom: 16, letterSpacing: 2 },
+  deleteModalInputValid:    { borderColor: '#EF4444' },
+  deleteModalConfirmBtn:    { backgroundColor: '#EF4444', borderRadius: 10, paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
+  deleteModalConfirmBtnDisabled: { backgroundColor: '#FECACA' },
+  deleteModalConfirmText:   { fontSize: 15, fontWeight: '700', color: '#fff' },
+  deleteModalCancelBtn:     { paddingVertical: 12, alignItems: 'center' },
+  deleteModalCancelText:    { fontSize: 15, color: C.TEXT2 },
 
   // Tags (interests)
   tagRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
