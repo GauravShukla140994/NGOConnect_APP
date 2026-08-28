@@ -49,6 +49,9 @@ export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
+  /** True when account is soft-deleted but within the 30-day grace window.
+   *  Tokens are valid — mobile must show revival flow before navigating home. */
+  isPendingDeletion?: boolean;
 }
 
 export interface RefreshTokenRequest {

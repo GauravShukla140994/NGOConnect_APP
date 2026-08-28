@@ -80,10 +80,15 @@ export const userApi = {
     apiClient.post<ApiResponse<null>>('/user/contact/verify', { type, value, otpCode }),
 
   // Account deletion — Google Play + App Store compliance.
-  // Soft-deletes the user and revokes all refresh tokens.
+  // Soft-deletes the user, sets 30-day grace period, revokes all refresh tokens.
   // Backend blocks if user is the sole Founder of any APPROVED org.
   deleteAccount: () =>
     apiClient.delete<ApiResponse<null>>('/user/account'),
+
+  // Account revival — restores a soft-deleted account within the 30-day grace window.
+  // Called right after OTP login when the server returns isPendingDeletion=true.
+  reviveAccount: () =>
+    apiClient.post<ApiResponse<null>>('/user/account/revive', {}),
 
   // getMyProjects — no backend endpoint yet (ProjectController has no /user/my-projects route)
   // Will be added when the "My Projects" screen (s-all-projects) is built
@@ -115,3 +120,4 @@ export const deleteDocument    = (userDocumentId: number) => userApi.deleteDocum
 export const sendContactOtp    = (type: 'EMAIL' | 'PHONE', value: string, countryCode?: string) => userApi.sendContactOtp(type, value, countryCode);
 export const verifyContactOtp  = (type: 'EMAIL' | 'PHONE', value: string, otpCode: string) => userApi.verifyContactOtp(type, value, otpCode);
 export const deleteAccount     = () => userApi.deleteAccount();
+export const reviveAccount     = () => userApi.reviveAccount();
