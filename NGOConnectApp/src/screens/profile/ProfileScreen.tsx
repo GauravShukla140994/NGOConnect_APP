@@ -163,6 +163,17 @@ export default function ProfileScreen() {
           'Your account has been scheduled for deletion. You have 30 days to sign back in and change your mind. After that, all your data will be permanently removed.',
           [{ text: 'OK', onPress: logout }],
         );
+      } else if (res.data?.errorCode === 'SOLE_FOUNDER' && res.data?.data) {
+        // User is sole founder of an org with other members — they must transfer
+        // ownership first. Navigate to the dedicated transfer screen.
+        const info = res.data.data;
+        nav.navigate('TransferFounder', {
+          orgId:               info.orgId,
+          orgName:             info.orgName,
+          orgLogoUrl:          info.orgLogoUrl,
+          totalMembers:        info.totalMembers,
+          availableAdminCount: info.availableAdminCount,
+        });
       } else {
         Alert.alert('Cannot Delete Account', res.data?.message ?? 'Something went wrong. Please try again.');
       }
@@ -172,7 +183,7 @@ export default function ProfileScreen() {
     } finally {
       setDeleteLoading(false);
     }
-  }, [logout]);
+  }, [logout, nav]);
 
   // Profile gate check — same logic as MyOrgsScreen
   const handleCreateOrg = useCallback(async () => {

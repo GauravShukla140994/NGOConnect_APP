@@ -126,6 +126,11 @@ export const orgApi = {
   uploadDocument: (orgId: number, data: { documentTypeLkpId: number; fileUrl: string; fileName: string }) =>
     apiClient.post<ApiResponse<null>>(`/org/${orgId}/documents`, data),
 
+  // Transfer FOUNDER role to another member (called before account deletion
+  // when user is sole founder of an org with other members).
+  transferFounder: (orgId: number, newFounderUserId: number) =>
+    apiClient.post<ApiResponse<null>>(`/org/${orgId}/transfer-founder`, { newFounderUserId }),
+
   getDonationDashboard: (orgId: number) =>
     apiClient.get(`/org/${orgId}/donation-dashboard`),
 

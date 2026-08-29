@@ -53,6 +53,7 @@ import CommunicationPreferencesScreen  from '../screens/profile/CommunicationPre
 import SavedPostsScreen                from '../screens/profile/SavedPostsScreen';
 import MyPostsScreen                   from '../screens/profile/MyPostsScreen';
 import AllBadgesScreen                 from '../screens/profile/AllBadgesScreen';
+import TransferFounderScreen           from '../screens/profile/TransferFounderScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -223,6 +224,9 @@ const AppNavigator = () => (
 
     {/* All Badges */}
     <Stack.Screen name="AllBadges" component={AllBadgesScreen} options={{ headerShown: false }} />
+
+    {/* Transfer Founder — shown during account deletion when user is sole founder */}
+    <Stack.Screen name="TransferFounder" component={TransferFounderScreen} options={{ headerShown: false }} />
   </Stack.Navigator>
 );
 

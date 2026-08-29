@@ -1,5 +1,5 @@
 import apiClient from './apiClient';
-import {ApiResponse, PagedResult, UserProfile, UserImpact, UserBadge, UserSkill, UserInterest, UserDocument, SafetyPrefs, Organisation, UserApplication, UserCert, ImpactSummary} from '../types/api.types';
+import {ApiResponse, PagedResult, UserProfile, UserImpact, UserBadge, UserSkill, UserInterest, UserDocument, SafetyPrefs, Organisation, UserApplication, UserCert, ImpactSummary, SoleFounderOrgInfo} from '../types/api.types';
 
 export const userApi = {
   getMyProfile: () =>
@@ -81,9 +81,10 @@ export const userApi = {
 
   // Account deletion — Google Play + App Store compliance.
   // Soft-deletes the user, sets 30-day grace period, revokes all refresh tokens.
-  // Backend blocks if user is the sole Founder of any APPROVED org.
+  // If the user is the sole Founder of an org with other members, returns
+  // isSuccess=0, errorCode='SOLE_FOUNDER', data=SoleFounderOrgInfo.
   deleteAccount: () =>
-    apiClient.delete<ApiResponse<null>>('/user/account'),
+    apiClient.delete<ApiResponse<SoleFounderOrgInfo | null>>('/user/account'),
 
   // Account revival — restores a soft-deleted account within the 30-day grace window.
   // Called right after OTP login when the server returns isPendingDeletion=true.

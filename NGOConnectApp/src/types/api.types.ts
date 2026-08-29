@@ -362,6 +362,15 @@ export interface Organisation {
   orgMaxVolunteers?: number;      // Super Admin per-org max volunteers per project (default 100)
 }
 
+// Returned in deleteAccount() response when errorCode === 'SOLE_FOUNDER'
+export interface SoleFounderOrgInfo {
+  orgId:               number;
+  orgName:             string;
+  orgLogoUrl?:         string;
+  totalMembers:        number;
+  availableAdminCount: number;   // existing ADMINs who can be directly promoted
+}
+
 export interface OrgMember {
   userId: number;
   memberId?: number;              // OrgMembers PK — used for role/permission updates
