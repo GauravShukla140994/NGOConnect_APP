@@ -724,8 +724,12 @@ export default function AdminVolunteersScreen() {
 
   const deactivateMember = useCallback(async (userId: number) => {
     try {
-      await orgApi.removeMember(orgId, userId);
-      setMemberList(prev => prev.filter(m => m.userId !== userId));
+      const res = await orgApi.removeMember(orgId, userId);
+      if (res.data?.isSuccess === 1) {
+        setMemberList(prev => prev.filter(m => m.userId !== userId));
+      } else {
+        Alert.alert('Could Not Remove', res.data?.message ?? 'Member could not be removed.');
+      }
     } catch { Alert.alert('Error', 'Could not deactivate member.'); }
   }, [orgId]);
 

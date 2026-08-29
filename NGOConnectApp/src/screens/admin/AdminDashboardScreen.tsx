@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Image,
@@ -174,7 +175,9 @@ export default function AdminDashboardScreen() {
     setLoading(false);
   }, [loadOrgs, loadDashboard]);
 
-  useEffect(() => { init(); }, []); // eslint-disable-line
+  // Refetch every time the screen comes into focus so KPIs stay current
+  // after actions on child screens (remove member, complete project, etc.)
+  useFocusEffect(useCallback(() => { init(); }, [init]));
   useEffect(() => {
     if (selectedOrg) { loadDashboard(selectedOrg.orgId); }
   }, [selectedOrg, loadDashboard]);
