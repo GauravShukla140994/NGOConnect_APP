@@ -18,6 +18,7 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 import AppConfig from '../../config/AppConfig';
 import type { CommunityPost } from '../../types/api.types';
 import { UserAvatar } from '../ui';
+import { communityApi } from '../../api/community.api';
 
 const C = AppConfig.COLORS;
 
@@ -427,7 +428,8 @@ function VolRequestCard({ item, onLike, onComment, onMorePress }: {
   onMorePress?: () => void;
 }) {
   const [volunteered, setVolunteered] = useState(item.isVolunteered ?? false);
-  const filled = item.filledCount ?? 0;
+  const [filledCount, setFilledCount] = useState(item.filledCount ?? 0);
+  const [volLoading, setVolLoading]   = useState(false);
   // SP returns VolunteersNeeded → volunteersNeeded; totalNeeded is a legacy alias
   const total  = item.volunteersNeeded ?? item.totalNeeded ?? 0;
   // eventRef holds the date/time text saved by the form (e.g. "Jun 14, 6:30 AM")
@@ -447,7 +449,7 @@ function VolRequestCard({ item, onLike, onComment, onMorePress }: {
           <View style={css.statsRow}>
             {total > 0 ? (
               <View style={[css.statBox, { backgroundColor: `${C.PRIMARY}12` }]}>
-                <Text style={[css.statVal, { color: C.PRIMARY }]}>{filled}/{total}</Text>
+                <Text style={[css.statVal, { color: C.PRIMARY }]}>{filledCount}/{total}</Text>
                 <Text style={css.statLbl}>Volunteers</Text>
               </View>
             ) : null}
@@ -467,7 +469,31 @@ function VolRequestCard({ item, onLike, onComment, onMorePress }: {
         rightSlot={
           <TouchableOpacity
             style={[css.volBtn, volunteered && css.volBtnDone]}
-            onPress={() => setVolunteered(!volunteered)}
+            disabled={volLoading}
+            onPress={async () => {
+              // Optimistic update
+              const prev = { volunteered, filledCount };
+              setVolunteered(!volunteered);
+              setFilledCount(c => volunteered ? Math.max(0, c - 1) : c + 1);
+              setVolLoading(true);
+              try {
+                const res = await communityApi.volunteerSignup(item.communityPostId);
+                if (res.data?.isSuccess) {
+                  setVolunteered(res.data.data?.isVolunteered ?? !volunteered);
+                  setFilledCount(res.data.data?.filledCount   ?? (volunteered ? Math.max(0, prev.filledCount - 1) : prev.filledCount + 1));
+                } else {
+                  // Revert on failure
+                  setVolunteered(prev.volunteered);
+                  setFilledCount(prev.filledCount);
+                  Alert.alert('', res.data?.message ?? 'Could not update volunteer status.');
+                }
+              } catch {
+                setVolunteered(prev.volunteered);
+                setFilledCount(prev.filledCount);
+              } finally {
+                setVolLoading(false);
+              }
+            }}
             accessibilityLabel="Volunteer Now"
           >
             <Text style={[css.volBtnTxt, volunteered && { color: '#fff' }]}>

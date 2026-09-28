@@ -62,6 +62,9 @@ export const communityApi = {
   likePost: (communityPostId: number) =>
     apiClient.post<ApiResponse<{ isLiked: boolean; likeCount: number }>>(`/community/post/${communityPostId}/like`),
 
+  volunteerSignup: (communityPostId: number) =>
+    apiClient.post<ApiResponse<{ isVolunteered: boolean; filledCount: number }>>(`/community/post/${communityPostId}/volunteer`),
+
   getComments: (communityPostId: number) =>
     apiClient.get<ApiResponse<CommunityComment[]>>(`/community/post/${communityPostId}/comments`),
 
@@ -84,3 +87,4 @@ export const likePost            = (communityPostId: number) => communityApi.lik
 export const getComments         = (communityPostId: number) => communityApi.getComments(communityPostId);
 export const addComment          = (communityPostId: number, content: string) => communityApi.addComment(communityPostId, content);
 export const likeComment         = (commentId: number) => communityApi.likeComment(commentId);
+export const volunteerSignup     = (communityPostId: number) => communityApi.volunteerSignup(communityPostId);
