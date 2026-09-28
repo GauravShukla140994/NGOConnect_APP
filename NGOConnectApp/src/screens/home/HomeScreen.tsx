@@ -566,6 +566,11 @@ const PostCard = React.memo(function PostCard({
             <View style={styles.menuHandle} />
             {[
               ...(post.orgId ? [{
+                icon: '🏢',
+                label: 'View Organisation Profile',
+                onPress: () => { setShowMenu(false); nav.navigate('NgoProfile', { orgId: post.orgId }); },
+              }] : []),
+              ...(post.orgId ? [{
                 icon: isFollowingOrg ? '✓' : '➕',
                 label: isFollowingOrg ? 'Unfollow NGO' : 'Follow NGO',
                 onPress: handleFollowNGO,
