@@ -916,6 +916,11 @@ export default function HomeScreen() {
   // Lives in a ref so the frozen onViewableItemsChanged callback can still write to it.
   const seenBufferRef = useRef<Set<number>>(new Set());
 
+  // Session-level dedup: once a post has been successfully reported this session,
+  // never send it again. The DB SP also deduplicates permanently (NOT EXISTS check),
+  // but this ref saves unnecessary network calls on re-scrolls within the same session.
+  const reportedPostIdsRef = useRef<Set<number>>(new Set());
+
   // Viewability handler MUST be a stable ref — FlatList freezes it on mount.
   // Never pass an inline arrow function here or video auto-play breaks on scroll.
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
@@ -937,11 +942,17 @@ export default function HomeScreen() {
 
   // ── Seen-post flush: every 10 s + on unmount ─────────────────────────────
   // Drains seenBufferRef and fires POST /feed/viewed (fire-and-forget).
+  // Filters out already-reported posts so the same user-post pair is never
+  // sent twice in the same session (DB also deduplicates, but this saves the call).
   const flushSeenBuffer = useCallback(() => {
-    const ids = Array.from(seenBufferRef.current);
-    if (ids.length === 0) return;
+    const allIds = Array.from(seenBufferRef.current);
     seenBufferRef.current.clear();
-    feedApi.markPostsViewed(ids).catch(() => {/* fire-and-forget — errors silently discarded */});
+    // Only send IDs that haven't been reported this session
+    const newIds = allIds.filter(id => !reportedPostIdsRef.current.has(id));
+    if (newIds.length === 0) return;
+    // Mark as reported before the async call — prevents a race if two flushes overlap
+    newIds.forEach(id => reportedPostIdsRef.current.add(id));
+    feedApi.markPostsViewed(newIds).catch(() => {/* fire-and-forget — errors silently discarded */});
   }, []);
 
   useEffect(() => {
@@ -985,6 +996,14 @@ export default function HomeScreen() {
   const [loading,        setLoading]        = useState(true);
   const [refreshing,     setRefreshing]     = useState(false);
   const [error,          setError]          = useState<string | null>(null);
+  // ── Feed tab: "for_you" (personalised) | "org" (My Orgs chronological) ────
+  // MMKV is synchronous so we can use its value directly as the useState initializer —
+  // no useEffect/AsyncStorage dance needed. Preference persists across app restarts.
+  const [feedTab, setFeedTab] = useState<'for_you' | 'org'>(
+    () => (storage.getString('home_feed_tab') === 'org' ? 'org' : 'for_you'),
+  );
+  const [orgPage,        setOrgPage]        = useState(1);
+  const [orgHasMore,     setOrgHasMore]     = useState(true);
   // ── Pending invite banners ────────────────────────────────────────────────
   const [pendingInvites,    setPendingInvites]    = useState<PendingInviteItem[]>([]);
   const [dismissedInviteIds, setDismissedInviteIds] = useState<Set<number>>(new Set());
@@ -1186,6 +1205,29 @@ export default function HomeScreen() {
     }
   }, []);
 
+  // ── My Orgs feed — simple page-based, strict chronological ─────────────────
+  const loadOrgFeed = useCallback(async (page: number, reset = false) => {
+    try {
+      const res = await feedApi.getFeed({ pageNumber: page, pageSize: AppConfig.DEFAULT_PAGE_SIZE, feedType: 'org' });
+      if (res.data?.isSuccess) {
+        const data       = res.data.data;
+        const items      = (data?.items ?? []) as Post[];
+        const totalCount = data?.totalCount ?? 0;
+        // hasMore: if fetched items reach totalCount we're done
+        const fetched    = page * AppConfig.DEFAULT_PAGE_SIZE;
+        setFeed(prev => {
+          const next = reset ? items : [...prev, ...items];
+          if (reset && next.length > 0) setActivePostId(String(next[0].postId));
+          return next;
+        });
+        setOrgHasMore(fetched < totalCount);
+        setOrgPage(page);
+      }
+    } catch {
+      setError('Could not load feed. Pull to refresh.');
+    }
+  }, []);
+
   const init = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -1238,9 +1280,15 @@ export default function HomeScreen() {
   }, [init]);
 
   const onEndReached = useCallback(async () => {
-    if (!hasMore || loading) return;
-    await loadFeed(cursorPostId, cursorScore);
-  }, [hasMore, loading, cursorPostId, cursorScore, loadFeed]);
+    if (loading) return;
+    if (feedTab === 'org') {
+      if (!orgHasMore) return;
+      await loadOrgFeed(orgPage + 1);
+    } else {
+      if (!hasMore) return;
+      await loadFeed(cursorPostId, cursorScore);
+    }
+  }, [loading, feedTab, hasMore, orgHasMore, orgPage, cursorPostId, cursorScore, loadFeed, loadOrgFeed]);
 
   const handleCommentAdded = useCallback((postId: number) => {
     setFeed(prev =>
@@ -1590,9 +1638,49 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 )}
               </View>
+              {/* ── Feed tab chips: For You | My Orgs ──────────────────── */}
+              <View style={styles.feedChipRow}>
+                <TouchableOpacity
+                  style={[styles.feedChip, feedTab === 'for_you' && styles.feedChipActive]}
+                  onPress={() => {
+                    if (feedTab === 'for_you') return;
+                    storage.set('home_feed_tab', 'for_you');
+                    setFeedTab('for_you');
+                    setFeed([]);
+                    setCursorPostId(null);
+                    setCursorScore(null);
+                    setHasMore(true);
+                    loadFeed(null, null, true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.feedChipText, feedTab === 'for_you' && styles.feedChipTextActive]}>
+                    For You
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.feedChip, feedTab === 'org' && styles.feedChipActive]}
+                  onPress={() => {
+                    if (feedTab === 'org') return;
+                    storage.set('home_feed_tab', 'org');
+                    setFeedTab('org');
+                    setFeed([]);
+                    setOrgPage(1);
+                    setOrgHasMore(true);
+                    loadOrgFeed(1, true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.feedChipText, feedTab === 'org' && styles.feedChipTextActive]}>
+                    🏢 My Orgs
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.feedDivider}>
                 <View style={styles.feedDividerLine} />
-                <Text style={styles.feedLabel}>FEED</Text>
+                <Text style={styles.feedLabel}>{feedTab === 'org' ? 'MY ORGANISATIONS' : 'FEED'}</Text>
                 <View style={styles.feedDividerLine} />
               </View>
             </>
@@ -1615,15 +1703,36 @@ export default function HomeScreen() {
             </View>
           )}
           ListFooterComponent={
-            hasMore ? <ActivityIndicator style={{ margin: 20 }} color={C.PRIMARY} /> : null
+            (feedTab === 'org' ? orgHasMore : hasMore)
+              ? <ActivityIndicator style={{ margin: 20 }} color={C.PRIMARY} />
+              : null
           }
           ListEmptyComponent={
-            <View style={styles.centered}>
-              <Text style={{ fontSize: 36, marginBottom: 12 }}>🌱</Text>
-              <Text style={styles.emptyText}>
-                No posts yet.{'\n'}Follow some NGOs to see their updates.
-              </Text>
-            </View>
+            feedTab === 'org' ? (
+              <View style={styles.centered}>
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>🏢</Text>
+                <Text style={styles.emptyText}>
+                  No posts from your organisations yet.
+                </Text>
+                <Text style={[styles.emptyText, { fontSize: 13, marginTop: 4, color: C.TEXT3 }]}>
+                  Join NGOs to see their updates here.
+                </Text>
+                <TouchableOpacity
+                  style={styles.emptyExploreBtn}
+                  onPress={() => nav.navigate('Explore')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.emptyExploreBtnText}>Explore NGOs →</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.centered}>
+                <Text style={{ fontSize: 36, marginBottom: 12 }}>🌱</Text>
+                <Text style={styles.emptyText}>
+                  No posts yet.{'\n'}Follow some NGOs to see their updates.
+                </Text>
+              </View>
+            )
           }
           contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
         />
@@ -1875,6 +1984,49 @@ const styles = StyleSheet.create({
   feedDivider:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   feedDividerLine: { flex: 1, height: 1, backgroundColor: C.BORDER },
   feedLabel:       { fontSize: 10, fontWeight: '700', color: C.TEXT3, letterSpacing: 1.5 },
+
+  // ── Feed tab chips ──────────────────────────────────────────────────────────
+  feedChipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 2,
+  },
+  feedChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: C.BORDER,
+    backgroundColor: C.CARD,
+  },
+  feedChipActive: {
+    backgroundColor: C.PRIMARY,
+    borderColor: C.PRIMARY,
+  },
+  feedChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.TEXT2,
+  },
+  feedChipTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // ── My Orgs zero-state CTA ──────────────────────────────────────────────────
+  emptyExploreBtn: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: C.PRIMARY,
+  },
+  emptyExploreBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
 
   // ── Opportunity Card ─────────────────────────────────────────────────────────
   oppCard: {

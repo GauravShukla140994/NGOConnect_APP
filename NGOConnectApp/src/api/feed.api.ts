@@ -2,7 +2,7 @@ import apiClient from './apiClient';
 import {ApiResponse, Post, PagedResult, PostPermissions, FeedPageResult} from '../types/api.types';
 
 export const feedApi = {
-  getFeed: (params: {pageNumber?: number; pageSize?: number}) =>
+  getFeed: (params: {pageNumber?: number; pageSize?: number; feedType?: 'for_you' | 'org'}) =>
     apiClient.get<ApiResponse<PagedResult<Post>>>('/feed', {params}),
 
   createPost: (data: {content: string; orgId?: number; mediaUrls?: string[]; postTypeLkpId?: number; visibilityLkpId?: number}) =>
