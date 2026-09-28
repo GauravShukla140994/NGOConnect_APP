@@ -313,6 +313,28 @@ function OppCard({ project, onApply }: { project: Project; onApply?: (p: Project
   );
 }
 
+/* ─── MediaImage — auto-sizes to natural aspect ratio (no cropping) ─────────── */
+function MediaImage({ uri, style, ...touchProps }: { uri: string; style: any; [key: string]: any }) {
+  const [imgH, setImgH] = useState(SCREEN_W);           // default 1:1 until loaded
+  return (
+    // Spread touchProps so TouchableWithoutFeedback can inject its responder handlers
+    <View {...touchProps}>
+      <Image
+        source={{ uri }}
+        style={[style, { height: imgH }]}
+        resizeMode="cover"
+        onLoad={e => {
+          const { width: w, height: h } = e.nativeEvent.source;
+          if (w && h) {
+            // Scale to full screen width, cap at 1.5× to avoid overly tall portraits
+            setImgH(Math.min(Math.round(SCREEN_W * h / w), SCREEN_W * 1.5));
+          }
+        }}
+      />
+    </View>
+  );
+}
+
 /* ─── Post Card (Instagram style) ──────────────────────────────────────────── */
 const PostCard = React.memo(function PostCard({
   post,
@@ -703,7 +725,7 @@ const PostCard = React.memo(function PostCard({
               />
             ) : (
               <TouchableWithoutFeedback onPress={() => handleImageTapAtIndex(0)}>
-                <Image source={{ uri: mediaUrls[0] }} style={styles.igMedia} resizeMode="cover" />
+                <MediaImage uri={mediaUrls[0]} style={styles.igMedia} />
               </TouchableWithoutFeedback>
             )
           ) : (
@@ -734,7 +756,7 @@ const PostCard = React.memo(function PostCard({
                   />
                 ) : (
                   <TouchableWithoutFeedback key={i} onPress={() => handleImageTapAtIndex(i)}>
-                    <Image source={{ uri: url }} style={styles.igMedia} resizeMode="cover" />
+                    <MediaImage uri={url} style={styles.igMedia} />
                   </TouchableWithoutFeedback>
                 )
               )}
@@ -1926,7 +1948,7 @@ const styles = StyleSheet.create({
   },
   igTypePillText: { fontSize: 10, fontWeight: '700' },
   igMore:         { fontSize: 17, color: C.TEXT3, letterSpacing: 1.5 },
-  igMedia:        { width: SCREEN_W, height: SCREEN_W },
+  igMedia:        { width: SCREEN_W },
   heartAnim:      {
     position:  'absolute',
     alignSelf: 'center',
