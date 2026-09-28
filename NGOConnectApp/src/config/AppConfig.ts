@@ -15,7 +15,7 @@ const AppConfig = {
   // ── Base URL ─────────────────────────────────────────────────────────────
   // Dev: local machine  |  Release: production
   // For Stage APK: swap PROD_API_URL → STAGE_API_URL before building
-  BASE_URL: STAGE_API_URL,
+  BASE_URL: PROD_API_URL,
 
   // ── Auth ─────────────────────────────────────────────────────────────────
   JWT_EXPIRY_MINUTES: 15,

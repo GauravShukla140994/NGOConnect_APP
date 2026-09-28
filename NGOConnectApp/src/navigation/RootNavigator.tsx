@@ -36,6 +36,14 @@ type NotifData = {
   campaignRecipientId?:  string;   // delivery ack ID — POST /campaign-recipients/{id}/delivered
 };
 
+// Test Send (admin dashboard "Test send" button) uses notifType CAMPAIGN_TEST so the
+// backend never touches CampaignRecipients/delivery-ack for a test push (see
+// CampaignDispatchService.TestSendAsync). It must still deep-link/action-label exactly
+// like a real CAMPAIGN push, or tapping a test notification silently does nothing.
+function isCampaignNotif(notifType?: string): boolean {
+  return notifType === 'CAMPAIGN' || notifType === 'CAMPAIGN_TEST';
+}
+
 function resolveScreen(data: NotifData): { screen: string; params?: object } | null {
   const refId = data.refId ? parseInt(data.refId, 10) : undefined;
   switch (data.notifType) {
@@ -93,7 +101,11 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
       return { screen: 'AdminVolunteers', params: { initialTab: 'posts', initialPostsTab: 'reported' } };
     // CAMPAIGN: if deepLink is present the caller handles it before resolveScreen.
     // This fallback fires only when there is no deepLink.
+    // CAMPAIGN_TEST (Test Send from the admin dashboard) must behave identically for
+    // deep-link/action-label purposes — see the isCampaignNotif() checks below — or a
+    // test push silently fails to navigate anywhere, which is exactly the bug this fixes.
     case 'CAMPAIGN':
+    case 'CAMPAIGN_TEST':
       return { screen: 'Notifications' };
     case 'COMMUNITY_POST':
     case 'NEW_POLL':
@@ -385,8 +397,8 @@ const RootNavigator = () => {
     const unsub = notifee.onForegroundEvent(({ type, detail }) => {
       if (type === EventType.PRESS) {
         const data = (detail.notification?.data ?? {}) as NotifData;
-        // CAMPAIGN with deepLink: route through the deep-link handler
-        if (data.notifType === 'CAMPAIGN' && data.deepLink) {
+        // CAMPAIGN (or CAMPAIGN_TEST) with deepLink: route through the deep-link handler
+        if (isCampaignNotif(data.notifType) && data.deepLink) {
           handleDeepLinkRef.current(data.deepLink);
           return;
         }
@@ -394,7 +406,7 @@ const RootNavigator = () => {
         if (target && navRef.current) {
           // For CAMPAIGN with no deepLink, pass actionLabel so the destination
           // screen can render an in-app CTA banner (e.g. "Donate Now").
-          const extra = data.notifType === 'CAMPAIGN' && data.actionLabel
+          const extra = isCampaignNotif(data.notifType) && data.actionLabel
             ? { actionLabel: data.actionLabel } : {};
           navRef.current.navigate(target.screen as never, { ...(target.params ?? {}), ...extra } as never);
         }
@@ -408,13 +420,13 @@ const RootNavigator = () => {
     // App was in background
     const unsubBg = messaging().onNotificationOpenedApp((msg) => {
       const data = (msg.data ?? {}) as NotifData;
-      if (data.notifType === 'CAMPAIGN' && data.deepLink) {
+      if (isCampaignNotif(data.notifType) && data.deepLink) {
         handleDeepLinkRef.current(data.deepLink);
         return;
       }
       const target = resolveScreen(data);
       if (target && navRef.current) {
-        const extra = data.notifType === 'CAMPAIGN' && data.actionLabel
+        const extra = isCampaignNotif(data.notifType) && data.actionLabel
           ? { actionLabel: data.actionLabel } : {};
         navRef.current.navigate(target.screen as never, { ...(target.params ?? {}), ...extra } as never);
       }
@@ -424,13 +436,13 @@ const RootNavigator = () => {
     messaging().getInitialNotification().then((msg) => {
       if (!msg) { return; }
       const data = (msg.data ?? {}) as NotifData;
-      if (data.notifType === 'CAMPAIGN' && data.deepLink) {
+      if (isCampaignNotif(data.notifType) && data.deepLink) {
         setTimeout(() => handleDeepLinkRef.current(data.deepLink!), 600);
         return;
       }
       const target = resolveScreen(data);
       if (target && navRef.current) {
-        const extra = data.notifType === 'CAMPAIGN' && data.actionLabel
+        const extra = isCampaignNotif(data.notifType) && data.actionLabel
           ? { actionLabel: data.actionLabel } : {};
         setTimeout(() => {
           navRef.current?.navigate(target.screen as never, { ...(target.params ?? {}), ...extra } as never);
