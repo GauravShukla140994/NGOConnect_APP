@@ -98,7 +98,7 @@ export default function LoginScreen({ navigation }: Props) {
       try {
         const res = await authApi.sendOtp({ recipient: digits, countryCode: country.dial, purposeLkpId: 1 });
         if (res.data.isSuccess === 1) {
-          navigation.navigate('Otp', { recipient: digits, countryCode: country.dial });
+          navigation.navigate('Otp', { recipient: digits, countryCode: country.dial, isNewUser: res.data.data?.isNewUser ?? false });
         } else {
           Alert.alert('Error', res.data.message || 'Unable to send OTP. Please try again.');
         }
@@ -126,7 +126,7 @@ export default function LoginScreen({ navigation }: Props) {
         // (the SP does not store CountryCode for email OTPs)
         const res = await authApi.sendOtp({ recipient: email.trim(), countryCode: '+91', purposeLkpId: 1 });
         if (res.data.isSuccess === 1) {
-          navigation.navigate('Otp', { recipient: email.trim(), countryCode: '' });
+          navigation.navigate('Otp', { recipient: email.trim(), countryCode: '', isNewUser: res.data.data?.isNewUser ?? false });
         } else {
           Alert.alert('Error', res.data.message || 'Unable to send OTP. Please try again.');
         }
@@ -159,7 +159,7 @@ export default function LoginScreen({ navigation }: Props) {
             <View style={styles.brandBlock}>
               <Image source={LOGO} style={styles.logoImage} resizeMode="cover" />
               <Text style={styles.brandName}>RippleHub</Text>
-              <Text style={styles.brandTagline}>Building communities, sharing impact</Text>
+              <Text style={styles.brandTagline}>Global Social Impact Platform</Text>
             </View>
 
             {/* Card */}
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
   brandBlock:    { alignItems: 'center', paddingTop: 32, paddingBottom: 8 },
   logoImage:     { width: 80, height: 80, borderRadius: 22, marginBottom: 12 },
   brandName:     { fontSize: 26, fontWeight: '800', color: C.TEXT, letterSpacing: -0.5 },
-  brandTagline:  { fontSize: 14, color: C.TEXT2, marginTop: 4 },
+  brandTagline:  { fontSize: 14, color: C.TEXT2, marginTop: 4, textAlign: 'center', paddingHorizontal: 24 },
 
   // Card
   card:          { margin: 16, backgroundColor: C.CARD, borderRadius: 20, padding: 20, ...{ shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 } },

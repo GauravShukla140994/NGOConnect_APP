@@ -3,7 +3,7 @@ import {ApiResponse, AuthTokens, SendOtpRequest, VerifyOtpRequest} from '../type
 
 export const authApi = {
   sendOtp: (data: SendOtpRequest) =>
-    apiClient.post<ApiResponse<null>>('/auth/send-otp', data),
+    apiClient.post<ApiResponse<{ maskedRecipient: string; expiresInSeconds: number; isNewUser: boolean }>>('/auth/send-otp', data),
 
   verifyOtp: (data: VerifyOtpRequest) =>
     apiClient.post<ApiResponse<AuthTokens>>('/auth/verify-otp', data),

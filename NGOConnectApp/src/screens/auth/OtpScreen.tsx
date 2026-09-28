@@ -21,7 +21,7 @@ type Props = {
 const OTP_LENGTH = 6;
 
 const OtpScreen = ({navigation, route}: Props) => {
-  const {recipient, countryCode} = route.params;
+  const {recipient, countryCode, isNewUser} = route.params;
   // Single string state — much simpler to work with for auto-fill
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -80,6 +80,11 @@ const OtpScreen = ({navigation, route}: Props) => {
           tokenStorage.setTokens(tokens);
           setPendingTokens(tokens);
           setRevivalVisible(true);
+        } else if (isNewUser) {
+          // New user — store tokens so the profile update API call works,
+          // but hold off on login() until they complete (or skip) setup.
+          tokenStorage.setTokens(tokens);
+          navigation.navigate('SetupProfile', { tokens });
         } else {
           login(tokens);
         }
@@ -199,6 +204,15 @@ const OtpScreen = ({navigation, route}: Props) => {
         <Text style={styles.subtitle}>
           Sent to {countryCode ? `${countryCode} ${recipient}` : recipient}
         </Text>
+
+        {/* New-user notice — only shown when the recipient has no account yet */}
+        {isNewUser && (
+          <View style={styles.newUserBanner}>
+            <Text style={styles.newUserBannerText}>
+              👋 Looks like you're new here! Verifying this OTP will create your RippleHub account automatically.
+            </Text>
+          </View>
+        )}
 
         {/* Wrapper anchors the hidden input to the OTP row bounds */}
         <View style={styles.otpWrapper}>
@@ -339,7 +353,17 @@ const styles = StyleSheet.create({
   back:           {marginBottom: 20, marginTop: 0},
   backText:       {color: AppConfig.COLORS.PRIMARY, fontSize: 16, fontWeight: '600'},
   title:          {fontSize: 22, fontWeight: '700', color: AppConfig.COLORS.TEXT, marginBottom: 6},
-  subtitle:       {fontSize: 14, color: AppConfig.COLORS.TEXT2, marginBottom: 32},
+  subtitle:       {fontSize: 14, color: AppConfig.COLORS.TEXT2, marginBottom: 12},
+  newUserBanner:  {
+    backgroundColor: `${AppConfig.COLORS.PRIMARY}12`,
+    borderLeftWidth: 3,
+    borderLeftColor: AppConfig.COLORS.PRIMARY,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 24,
+  },
+  newUserBannerText: {fontSize: 13, color: AppConfig.COLORS.PRIMARY, lineHeight: 19},
   otpWrapper:     {position: 'relative', marginBottom: 32},
   otpRow:         {flexDirection: 'row', gap: 10},
   // Visual box — now a View, not TextInput
