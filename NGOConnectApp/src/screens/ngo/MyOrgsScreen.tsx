@@ -38,13 +38,15 @@ function formatJoinDate(dateStr?: string) {
   catch { return ''; }
 }
 
-// ── Status pill config for all 5 org statuses ────────────────────────────────
+// ── Status pill config for all 7 org statuses ────────────────────────────────
 const STATUS_PILLS: Record<string, { label: string; bg: string; text: string }> = {
-  APPROVED:     { label: 'Approved',     bg: '#EDFAF3', text: '#16A34A' },
-  PENDING:      { label: 'Awaiting Approval', bg: '#FFF4EE', text: '#D97706' },
-  UNDER_REVIEW: { label: 'Under Review', bg: '#EEF0FF', text: '#6B4EFF' },
-  REJECTED:     { label: 'Rejected',     bg: '#FEF2F2', text: '#DC2626' },
-  SUSPENDED:    { label: 'Suspended',    bg: '#FFF7ED', text: '#EA580C' },
+  APPROVED:      { label: 'Approved',      bg: '#EDFAF3', text: '#16A34A' },
+  PENDING:       { label: 'Awaiting Approval', bg: '#FFF4EE', text: '#D97706' },
+  UNDER_REVIEW:  { label: 'Under Review',  bg: '#EEF0FF', text: '#6B4EFF' },
+  REJECTED:      { label: 'Rejected',      bg: '#FEF2F2', text: '#DC2626' },
+  SUSPENDED:     { label: 'Suspended',     bg: '#FFF7ED', text: '#EA580C' },
+  NEEDS_UPDATE:  { label: 'Update Needed', bg: '#FFF4EE', text: '#D97706' },
+  RESUBMITTED:   { label: 'Under Review',  bg: '#EEF0FF', text: '#6B4EFF' },
 };
 
 // ── Standard org card ─────────────────────────────────────────────────────────
@@ -197,6 +199,78 @@ function RejectedOrgCard({ org, onResubmitSuccess }: {
       >
         <Text style={styles.resubmitBtnText}>Fix & Resubmit</Text>
       </TouchableOpacity>
+    </View>
+  );
+}
+
+// ── Needs-update org card (org was APPROVED, Super Admin flagged it — founder
+// must fix and resubmit; org stays visible/live to others while this happens) ──
+function NeedsUpdateOrgCard({ org, onResubmitSuccess }: {
+  org: Organisation; onResubmitSuccess: () => void;
+}) {
+  const nav     = useNavigation<any>();
+  const name    = org.orgName ?? org.name ?? 'NGO';
+  const color   = orgColor(name);
+  const reason  = (org as any).needsUpdateReason
+    ?? 'No specific reason provided. Please review your organisation details and resubmit.';
+
+  const handleResubmit = useCallback(() => {
+    nav.navigate('CreateOrg', { mode: 'resubmit', orgId: org.orgId, prefill: org });
+  }, [nav, org]);
+
+  return (
+    <View style={[styles.alertCard, styles.alertCardNeedsUpdate]}>
+      {/* Header row */}
+      <View style={styles.alertCardHeader}>
+        {org.logoUrl
+          ? <Image source={{ uri: org.logoUrl }} style={styles.orgAvatar} resizeMode="cover" />
+          : <View style={[styles.orgAvatar, { backgroundColor: color }]}><Text style={styles.orgAvatarText}>{initials(name)}</Text></View>
+        }
+        <View style={{ flex: 1 }}>
+          <Text style={styles.orgName} numberOfLines={1}>{name}</Text>
+          <View style={[styles.statusPill, { backgroundColor: '#FFF4EE', alignSelf: 'flex-start', marginTop: 4 }]}>
+            <Text style={[styles.statusPillText, { color: '#D97706' }]}>✏️  Update Needed</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Reason */}
+      <View style={[styles.reasonBox, { backgroundColor: '#FFF4EE' }]}>
+        <Text style={[styles.reasonLabel, { color: '#D97706' }]}>What needs to change</Text>
+        <Text style={[styles.reasonText, { color: '#92400E' }]}>{reason}</Text>
+      </View>
+
+      {/* Resubmit CTA */}
+      <TouchableOpacity
+        style={[styles.resubmitBtn, { backgroundColor: '#D97706' }]}
+        onPress={handleResubmit}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.resubmitBtnText}>Update Now</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ── Resubmitted org card (founder already fixed it — read-only, awaiting Super
+// Admin re-approval; no action needed from the founder at this point) ────────
+function ResubmittedOrgCard({ org }: { org: Organisation }) {
+  const name  = org.orgName ?? org.name ?? 'NGO';
+  const color = orgColor(name);
+
+  return (
+    <View style={styles.orgCard}>
+      {org.logoUrl
+        ? <Image source={{ uri: org.logoUrl }} style={styles.orgAvatar} resizeMode="cover" />
+        : <View style={[styles.orgAvatar, { backgroundColor: color }]}><Text style={styles.orgAvatarText}>{initials(name)}</Text></View>
+      }
+      <View style={{ flex: 1 }}>
+        <Text style={styles.orgName} numberOfLines={1}>{name}</Text>
+        <Text style={styles.orgMeta} numberOfLines={1}>Resubmitted — awaiting re-approval</Text>
+      </View>
+      <View style={[styles.statusPill, { backgroundColor: '#EEF0FF' }]}>
+        <Text style={[styles.statusPillText, { color: '#6B4EFF' }]}>Under Review</Text>
+      </View>
     </View>
   );
 }
@@ -366,11 +440,13 @@ export default function MyOrgsScreen() {
     nav.navigate('CreateOrg');
   }, [nav]);
 
-  // ── Partition by the 5 real status codes ─────────────────────────────────
-  // activeOrgs    — APPROVED org, APPROVED member
-  // pendingOrgs   — org PENDING/UNDER_REVIEW (founder waiting) OR member join-request pending
-  // rejectedOrgs  — REJECTED org (founder must resubmit)
-  // suspendedOrgs — SUSPENDED org (read-only)
+  // ── Partition by the 7 real status codes ─────────────────────────────────
+  // activeOrgs      — APPROVED org, APPROVED member
+  // pendingOrgs     — org PENDING/UNDER_REVIEW (founder waiting) OR member join-request pending
+  // rejectedOrgs    — REJECTED org (founder must resubmit)
+  // needsUpdateOrgs — APPROVED org flagged NEEDS_UPDATE by Super Admin (founder must resubmit)
+  // resubmittedOrgs — founder already resubmitted a NEEDS_UPDATE org — awaiting re-approval
+  // suspendedOrgs   — SUSPENDED org (read-only)
   const sortByOrgName = (a: Organisation, b: Organisation) =>
     (a.orgName ?? (a as any).name ?? '').localeCompare(b.orgName ?? (b as any).name ?? '');
 
@@ -388,6 +464,12 @@ export default function MyOrgsScreen() {
   const pendingOrgs = [...myPendingRequests, ...orgPendingOrgs];
   const rejectedOrgs  = orgs.filter(o =>
     o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'REJECTED'
+  ).sort(sortByOrgName);
+  const needsUpdateOrgs = orgs.filter(o =>
+    o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'NEEDS_UPDATE'
+  ).sort(sortByOrgName);
+  const resubmittedOrgs = orgs.filter(o =>
+    o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'RESUBMITTED'
   ).sort(sortByOrgName);
   const suspendedOrgs = orgs.filter(o =>
     o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'SUSPENDED'
@@ -464,6 +546,36 @@ export default function MyOrgsScreen() {
                 <View style={styles.cardGroup}>
                   {rejectedOrgs.map(org => (
                     <RejectedOrgCard key={org.orgId} org={org} onResubmitSuccess={load} />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ── Action Required: NEEDS_UPDATE ── */}
+            {needsUpdateOrgs.length > 0 && (
+              <View style={styles.section}>
+                <SectionHeader title="✏️  Update Needed" count={needsUpdateOrgs.length} />
+                <Text style={styles.sectionSubtitle}>
+                  A Super Admin has asked for changes to these organisations. Update the details and resubmit.
+                </Text>
+                <View style={styles.cardGroup}>
+                  {needsUpdateOrgs.map(org => (
+                    <NeedsUpdateOrgCard key={org.orgId} org={org} onResubmitSuccess={load} />
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* ── Resubmitted: awaiting re-approval ── */}
+            {resubmittedOrgs.length > 0 && (
+              <View style={styles.section}>
+                <SectionHeader title="Resubmitted" count={resubmittedOrgs.length} />
+                <Text style={styles.sectionSubtitle}>
+                  You've submitted your updates. Waiting for Super Admin review.
+                </Text>
+                <View style={styles.cardGroup}>
+                  {resubmittedOrgs.map(org => (
+                    <ResubmittedOrgCard key={org.orgId} org={org} />
                   ))}
                 </View>
               </View>
@@ -616,6 +728,7 @@ const styles = StyleSheet.create({
   // Alert cards (rejected / suspended)
   alertCard:          { backgroundColor: C.CARD, borderRadius: 14, padding: 14, borderWidth: 1.5, borderColor: '#DC2626', ...AppConfig.SHADOW.CARD },
   alertCardSuspended: { borderColor: '#EA580C' },
+  alertCardNeedsUpdate: { borderColor: '#D97706' },
   alertCardHeader:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   reasonBox:          { backgroundColor: '#FEF2F2', borderRadius: 8, padding: 10, marginBottom: 12 },
   reasonLabel:        { fontSize: 11, fontWeight: '700', color: '#DC2626', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },

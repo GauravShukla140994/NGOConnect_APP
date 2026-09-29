@@ -346,8 +346,10 @@ export interface Organisation {
   myRole?: string;         // e.g. 'Admin', 'Member', 'Founder'
   myRoleCode?: string;     // e.g. 'ADMIN', 'MEMBER', 'FOUNDER'
   memberStatusCode?: string;    // APPROVED | PENDING  (user's membership status in OrgMembers)
-  orgStatusCode?: string;       // PENDING | UNDER_REVIEW | APPROVED | REJECTED | SUSPENDED
+  orgStatusCode?: string;       // PENDING | UNDER_REVIEW | APPROVED | REJECTED | SUSPENDED | NEEDS_UPDATE | RESUBMITTED
   lastRejectionReason?: string; // populated when orgStatusCode = REJECTED or SUSPENDED
+  rejectionReason?: string;     // actual key returned by User_GetMyOrgs (DynamicRow camelCase of RejectionReason)
+  needsUpdateReason?: string;   // populated when orgStatusCode = NEEDS_UPDATE or RESUBMITTED (from User_GetMyOrgs)
   suspendedAt?: string;         // ISO datetime when org was last suspended (from OrgStatusHistory)
   joinedAt?: string;            // ISO date string when user joined this org
   areasOfWork?: string[];
