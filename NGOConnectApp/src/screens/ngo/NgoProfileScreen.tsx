@@ -48,23 +48,29 @@ const CATEGORY_COLOR: Record<string, string> = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Format an ISO date string as DD-MMM-YYYY e.g. "26-Aug-2026" */
+/** Format a CALENDAR DATE string as "DD-Mon-YYYY" e.g. "26-Aug-2026".
+ *  registrationDate is stored as "YYYY-MM-DD" — parse as local midnight to prevent
+ *  UTC-midnight → previous-day shift for users west of UTC. */
 function formatDDMMMYYYY(iso: string | undefined | null): string {
   if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const dd  = String(d.getDate()).padStart(2, '0');
-  return `${dd}-${months[d.getMonth()]}-${d.getFullYear()}`;
+  const datePart = iso.split('T')[0];
+  const [y, mo, d] = datePart.split('-').map(Number);
+  if (!y || !mo || !d) return '';
+  const date = new Date(y, mo - 1, d);                       // local midnight
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${String(date.getDate()).padStart(2, '0')}-${MONTHS[date.getMonth()]}-${date.getFullYear()}`;
 }
 
-/** Format an ISO date string as "Month YYYY" e.g. "August 2026" */
+/** Format a UTC TIMESTAMP as "Month YYYY" in the device's local timezone.
+ *  org.createdAt is a UTC timestamp — convert to local before extracting month/year. */
 function formatMonthYear(iso: string | undefined | null): string {
   if (!iso) return '';
-  const d = new Date(iso);
+  const utcIso = (iso.endsWith('Z') || iso.includes('+')) ? iso : iso + 'Z';
+  const d = new Date(utcIso);
   if (isNaN(d.getTime())) return '';
-  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  return `${months[d.getMonth()]} ${d.getFullYear()}`;
+  const MONTHS_FULL = ['January','February','March','April','May','June',
+                       'July','August','September','October','November','December'];
+  return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 const AVATAR_COLORS = ['#6B4EFF', '#2ECC71', '#FF8C42', '#2563EB', '#D97706', '#16A34A', '#7C3AED'];
@@ -904,8 +910,8 @@ export default function NgoProfileScreen() {
             </View>
             <Text style={styles.heroMeta}>
               {[org.city, org.state].filter(Boolean).join(', ')}
-              {org.memberCount ? ` · ${org.memberCount.toLocaleString('en-IN')} ${org.memberCount === 1 ? 'member' : 'members'}` : ''}
-              {org.followerCount ? ` · ${org.followerCount.toLocaleString('en-IN')} followers` : ''}
+              {org.memberCount ? ` · ${org.memberCount.toLocaleString()} ${org.memberCount === 1 ? 'member' : 'members'}` : ''}
+              {org.followerCount ? ` · ${org.followerCount.toLocaleString()} followers` : ''}
             </Text>
             {/* Rating chip — taps into Reviews tab */}
             {rating > 0 && (
@@ -918,7 +924,7 @@ export default function NgoProfileScreen() {
                 <Text style={styles.ratingChipValue}>{rating.toFixed(1)}</Text>
                 {org.ratingCount || org.reviewCount ? (
                   <Text style={styles.ratingChipCount}>
-                    · {(org.ratingCount ?? org.reviewCount ?? 0).toLocaleString('en-IN')} reviews
+                    · {(org.ratingCount ?? org.reviewCount ?? 0).toLocaleString()} reviews
                   </Text>
                 ) : null}
               </TouchableOpacity>

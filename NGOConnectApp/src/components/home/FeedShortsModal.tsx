@@ -340,9 +340,14 @@ function PostDescriptionSheet({ visible, post, onClose, viewCountOverride }: Des
   const ini    = getInitials(name);
 
   function fmtDate(iso: string | undefined | null): string {
+    // createdAt is a UTC timestamp — fmtTimestamp converts to device's local timezone
     if (!iso) return '';
-    const d = new Date(iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z');
-    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    const utcIso = (iso.endsWith('Z') || iso.includes('+')) ? iso : iso + 'Z';
+    const d = new Date(utcIso);
+    if (isNaN(d.getTime())) return '';
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${day}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`;
   }
 
   const sheetH = Math.round(SH * 0.65);

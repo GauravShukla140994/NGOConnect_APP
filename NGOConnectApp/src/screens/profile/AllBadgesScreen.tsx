@@ -12,6 +12,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { getMyBadges } from '../../api/user.api';
 import type { UserBadge } from '../../types/api.types';
+import { fmtTimestamp } from '../../utils/dateUtils';
 
 const C = AppConfig.COLORS;
 
@@ -27,11 +28,8 @@ const BADGE_META: Record<string, { emoji: string; color: string }> = {
 
 function BadgeCard({ badge }: { badge: UserBadge }) {
   const meta = BADGE_META[badge.badgeCode] ?? { emoji: '🏅', color: '#B45309' };
-  const date = badge.awardedAt
-    ? new Date(badge.awardedAt).toLocaleDateString('en-IN', {
-        day: 'numeric', month: 'short', year: 'numeric',
-      })
-    : null;
+  // awardedAt is a UTC timestamp — convert to device's local timezone
+  const date = badge.awardedAt ? fmtTimestamp(badge.awardedAt) : null;
 
   return (
     <View style={[s.badgeCard, { borderLeftColor: meta.color }]}>

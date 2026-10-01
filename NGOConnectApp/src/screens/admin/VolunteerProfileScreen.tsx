@@ -20,7 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { fmtDate } from '../../utils/dateUtils';
+import { fmtDate, fmtMonthYear } from '../../utils/dateUtils';
 import { userApi } from '../../api/user.api';
 import { projectApi } from '../../api/project.api';
 import { orgApi } from '../../api/org.api';
@@ -386,7 +386,7 @@ export default function VolunteerProfileScreen() {
               <View style={s.membershipFooter}>
                 <Text style={s.membershipFooterText}>
                   Role: <Text style={{ color: C.PRIMARY, fontWeight: '700' }}>{memberRoleName}</Text>
-                  {!!memberJoinedAt ? `  ·  Joined ${new Date(memberJoinedAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` : ''}
+                  {!!memberJoinedAt ? `  ·  Joined ${fmtMonthYear(memberJoinedAt)}` : ''}
                 </Text>
               </View>
             )}

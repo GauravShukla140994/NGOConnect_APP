@@ -28,7 +28,7 @@ import Video from 'react-native-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { fmtDate } from '../../utils/dateUtils';
+import { fmtTimestamp } from '../../utils/dateUtils';
 import { feedApi } from '../../api/feed.api';
 import MediaPreviewModal, { MediaItem } from '../../components/MediaPreviewModal';
 import FeedCommentsModal from '../../components/home/FeedCommentsModal';
@@ -65,7 +65,7 @@ function MyPostCard({
   const meta    = TYPE_META[item.postTypeLkpCode ?? 'GENERAL'] ?? TYPE_META.GENERAL;
   const initials = (item.authorName ?? 'ME').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
   const bgColor  = avatarBg(item.postId ?? 0);
-  const postedOn = fmtDate(item.createdAt);
+  const postedOn = fmtTimestamp(item.createdAt);
 
   const { width: windowWidth } = useWindowDimensions();
   const cardInnerWidth = windowWidth - 52;

@@ -13,7 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { fmtDate, fmtTime, fmtDateRange } from '../../utils/dateUtils';
+import { fmtDate, fmtTime, fmtDateRange, fmtTimestamp } from '../../utils/dateUtils';
 import { getMyApplications, withdrawApplication } from '../../api/user.api';
 import { projectApi } from '../../api/project.api';
 import type { UserApplication } from '../../types/api.types';
@@ -213,7 +213,7 @@ function ProjectCard({
             {scheduleOneLiner(item) ? <Text style={styles.dateText}>{scheduleOneLiner(item)}</Text> : null}
             <View style={styles.cardFooter}>
               <Text style={[styles.footerMeta, { color: statusColor.text }]}>
-                Applied {fmtDate(item.createdAt) ?? ''} · Awaiting review
+                Applied {fmtTimestamp(item.createdAt) ?? ''} · Awaiting review
               </Text>
               <TouchableOpacity
                 style={styles.withdrawBtn}
@@ -383,7 +383,7 @@ function ProjectCard({
             {scheduleOneLiner(item) ? <Text style={styles.dateText}>{scheduleOneLiner(item)}</Text> : null}
             <View style={styles.cardFooter}>
               <Text style={[styles.footerMeta, { color: C.TEXT3 }]}>
-                Applied {fmtDate(item.createdAt) ?? ''}
+                Applied {fmtTimestamp(item.createdAt) ?? ''}
               </Text>
             </View>
           </>

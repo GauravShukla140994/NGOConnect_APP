@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import Video from 'react-native-video';
 import AppConfig from '../../config/AppConfig';
-import { fmtDate } from '../../utils/dateUtils';
+import { fmtTimestamp } from '../../utils/dateUtils';
 import type { ReviewItem } from '../../api/review.api';
 import MediaPreviewModal, { MediaItem } from '../../components/MediaPreviewModal';
 
@@ -123,7 +123,7 @@ export default function ReviewCard({
           </View>
           <View style={styles.metaRow}>
             <Stars rating={review.overallRating} />
-            <Text style={styles.dateText}>{fmtDate(review.createdAt)}</Text>
+            <Text style={styles.dateText}>{fmtTimestamp(review.createdAt)}</Text>
           </View>
         </View>
 
@@ -225,7 +225,7 @@ export default function ReviewCard({
           <Text style={styles.responseLabel}>Response from {orgName}</Text>
           <Text style={styles.responseText}>{review.responseText}</Text>
           {review.responseCreatedAt && (
-            <Text style={styles.responseDate}>{fmtDate(review.responseCreatedAt)}</Text>
+            <Text style={styles.responseDate}>{fmtTimestamp(review.responseCreatedAt)}</Text>
           )}
         </View>
       ) : null}

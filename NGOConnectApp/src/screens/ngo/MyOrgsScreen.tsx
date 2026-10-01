@@ -14,6 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { fmtMonthYear, fmtTimestampFull } from '../../utils/dateUtils';
 import { getMyOrgs, getMyDocuments } from '../../api/user.api';
 import { cancelMembershipRequest, getFollowedOrgs } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
@@ -34,7 +35,7 @@ function initials(name: string) {
 }
 function formatJoinDate(dateStr?: string) {
   if (!dateStr) return '';
-  try { return new Date(dateStr).toLocaleString('en-IN', { month: 'short', year: 'numeric' }); }
+  try { return fmtMonthYear(dateStr); }
   catch { return ''; }
 }
 
@@ -284,12 +285,8 @@ function SuspendedOrgCard({ org }: { org: Organisation }) {
   const suspendedAt = (() => {
     const raw = org.suspendedAt;
     if (!raw) return null;
-    const d = new Date(raw);
-    if (isNaN(d.getTime())) return null;
-    return d.toLocaleString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', hour12: true,
-    });
+    try { return fmtTimestampFull(raw); }
+    catch { return null; }
   })();
 
   return (

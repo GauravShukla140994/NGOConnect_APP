@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppConfig from '../../config/AppConfig';
+import { timeAgoFromUtc, fmtTimestamp } from '../../utils/dateUtils';
 import {
   getCommunityFeed,
   acknowledgePost,
@@ -128,7 +129,7 @@ function CommunityCard({
                 </View>
               ) : null}
             </View>
-            <Text style={styles.postTime}>{item.timeAgo ?? item.createdAt?.slice(0, 10)}</Text>
+            <Text style={styles.postTime}>{item.timeAgo ?? (item.createdAt ? timeAgoFromUtc(item.createdAt) : '')}</Text>
           </View>
         </View>
 
@@ -145,7 +146,7 @@ function CommunityCard({
           <View style={styles.pollBlock}>
             <Text style={styles.pollMeta}>
               {totalVotes} vote{totalVotes !== 1 ? 's' : ''}
-              {item.expiresAt ? `  ·  Ends ${item.expiresAt?.slice(0, 10)}` : ''}
+              {item.expiresAt ? `  ·  Ends ${fmtTimestamp(item.expiresAt)}` : ''}
             </Text>
             {item.pollOptions.map((opt) => {
               const pct = totalVotes > 0 ? Math.round(((opt.voteCount ?? 0) / totalVotes) * 100) : 0;

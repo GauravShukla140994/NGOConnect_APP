@@ -25,6 +25,7 @@ import AppConfig from '../../config/AppConfig';
 import { projectApi } from '../../api/project.api';
 import { awardBadge } from '../../api/org.api';
 import { issueCertificate } from '../../api/user.api';
+import { fmtDate, fmtTime, fmtTimestamp, timeAgoFromUtc } from '../../utils/dateUtils';
 
 type ProjectSkill = { id: number; name: string };
 import { UserAvatar } from '../../components/ui';
@@ -41,22 +42,19 @@ const BADGE_DEFS = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// fmtDate        — from dateUtils: calendar date "DD-Mon-YYYY", no timezone shift
+// fmtTime        — from dateUtils: time-of-day string → "hh:mm AM/PM"
+// timeAgoFromUtc — from dateUtils: UTC timestamp → "Xm/h/d ago" or "DD-Mon-YYYY"
+
 function fmtTime12(t?: string): string {
-  if (!t) return '';
-  const d = new Date(t);
-  if (!isNaN(d.getTime()))
-    return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-  const [h, m] = t.split(':').map(Number);
-  if (isNaN(h)) return t;
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
-}
-function fmtDate(d?: string): string {
-  if (!d) return '';
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  // Session times are stored as plain time-of-day "HH:MM:SS" — no UTC conversion
+  return fmtTime(t);
 }
 function relativeDate(iso?: string): string {
+  // createdAt / statusUpdatedAt are UTC timestamps — parse correctly
   if (!iso) return '';
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  const utcIso = (iso.endsWith('Z') || iso.includes('+')) ? iso : iso + 'Z';
+  const diff = Math.floor((Date.now() - new Date(utcIso).getTime()) / 86_400_000);
   if (diff === 0) return 'today';
   if (diff === 1) return '1d ago';
   return `${diff}d ago`;
@@ -179,7 +177,7 @@ function ApprovedCard({
 }) {
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
   const subParts = [app.city, app.profession].filter(Boolean);
-  const approvedDate = app.statusUpdatedAt ? fmtDate(app.statusUpdatedAt) : '';
+  const approvedDate = app.statusUpdatedAt ? fmtTimestamp(app.statusUpdatedAt) : '';
 
   return (
     <View style={s.card}>
@@ -392,7 +390,11 @@ function NoShowCard({
   app: any; onExcuse: () => void; onConfirm: () => void; onMarkAttended: () => void; marking: boolean;
 }) {
   const name = app.applicantName ?? app.fullName ?? 'Volunteer';
-  const dateStr = fmtDate(app.sessionDate ?? app.lastSessionDate ?? app.statusUpdatedAt);
+  // sessionDate/lastSessionDate are calendar dates → fmtDate (no TZ shift)
+  // statusUpdatedAt is a UTC timestamp → fmtTimestamp (local TZ)
+  const dateStr = (app.sessionDate ?? app.lastSessionDate)
+    ? fmtDate(app.sessionDate ?? app.lastSessionDate)
+    : fmtTimestamp(app.statusUpdatedAt);
 
   // Already excused — read-only card, no action buttons
   if (app.isExcused) {

@@ -658,8 +658,10 @@ export default function ProjectDetailScreen() {
               const isCancelled = sess.sessionStatus === 'CANCELLED';
               const hasOptOut   = !!sess.optOutId;
               const status      = sess.attendanceStatus as string | null;
-              const d           = new Date(sess.sessionDate + 'T00:00:00');
-              const dayLabel    = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+              // sessionDate is "YYYY-MM-DD" calendar date — parse as local midnight (no UTC shift)
+              const [sy, sm, sd] = sess.sessionDate.split('-').map(Number);
+              const d            = new Date(sy, sm - 1, sd);
+              const dayLabel     = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
 
               return (
                 <View key={sess.sessionId} style={[s.sessionRow, isCancelled && { opacity: 0.5 }]}>

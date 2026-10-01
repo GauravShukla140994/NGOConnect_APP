@@ -23,25 +23,18 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { projectApi } from '../../api/project.api';
 import type { VolunteerEligibilityResult, SessionListItem } from '../../api/project.api';
+import { fmtDate, fmtTime } from '../../utils/dateUtils';
 
 const C = AppConfig.COLORS;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtDate(d?: string | null): string {
-  if (!d) return '';
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-}
+// fmtDate  — from dateUtils: calendar date "DD-Mon-YYYY", no timezone shift
+// fmtTime  — from dateUtils: time string "HH:MM:SS" → "hh:mm AM/PM"
 
 function fmtTime12(t?: string | null): string {
-  if (!t) return '';
-  const d = new Date(t);
-  if (!isNaN(d.getTime()))
-    return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
-  const parts = t.split(':').map(Number);
-  const h = parts[0]; const m = parts[1];
-  if (isNaN(h)) return t;
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+  // Delegate to shared fmtTime for time-of-day strings stored in DB (no UTC conversion needed)
+  return fmtTime(t);
 }
 
 const ATT_CFG: Record<string, { label: string; color: string; bg: string }> = {

@@ -21,6 +21,12 @@ import AppConfig from '../../config/AppConfig';
 import { getImpactSummary, withdrawApplication } from '../../api/user.api';
 import { projectApi } from '../../api/project.api';
 import type { ImpactSummary, UserApplication, UserBadge } from '../../types/api.types';
+import {
+  fmtDate as fmtCalDate,
+  fmtTime as fmtTimeUtil,
+  fmtTimestamp,
+  fmtMonthYear as fmtMonthYearUtil,
+} from '../../utils/dateUtils';
 import QRScannerModal     from './QRScannerModal';
 import ProjectDetailModal from './ProjectDetailModal';
 import CertificateModal   from '../common/CertificateModal';
@@ -64,17 +70,19 @@ const COMPACT_H = 56; // height of the sticky compact bar shown when hero is col
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const fmtMonthYear = (d?: string) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '';
+// fmtMonthYear — UTC timestamp → "Mon YYYY" in device's local timezone
+const fmtMonthYear = fmtMonthYearUtil;
 
-const fmtShort = (d?: string) =>
-  d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+// fmtShort — used for BOTH calendar dates (project dates) and UTC timestamps (createdAt).
+// For calendar dates (oneTimeDate, recurStart, recurEnd, flexFromDate, flexToDate)
+//   → fmtCalDate is correct (no TZ shift, keeps the day as entered by admin).
+// For timestamps (createdAt, statusUpdatedAt)
+//   → fmtTimestamp is correct (UTC → device local).
+// We split them below at call sites.
+const fmtShort = fmtCalDate;   // default for project/schedule calendar dates
 
-const fmtTime = (t?: string) => {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
-};
+// fmtTime — time-of-day string "HH:MM:SS" → "hh:mm AM/PM" (no TZ conversion)
+const fmtTime = fmtTimeUtil;
 
 const abbrevDays = (days?: string) => {
   if (!days) return '';
@@ -115,10 +123,11 @@ function scheduleOneLiner(app: UserApplication) {
 }
 
 function appliedDateLine(app: UserApplication) {
-  const date = fmtShort(app.createdAt);
+  // createdAt / statusUpdatedAt are UTC timestamps → use fmtTimestamp for local TZ display
+  const date = fmtTimestamp(app.createdAt);
   if (app.statusCode === 'PENDING')  return `Applied ${date} · Awaiting admin review`;
-  if (app.statusCode === 'APPROVED') return `Approved ${fmtShort(app.statusUpdatedAt)} · Moving to Upcoming`;
-  if (app.statusCode === 'REJECTED') return `Rejected ${fmtShort(app.statusUpdatedAt)}`;
+  if (app.statusCode === 'APPROVED') return `Approved ${fmtTimestamp(app.statusUpdatedAt)} · Moving to Upcoming`;
+  if (app.statusCode === 'REJECTED') return `Rejected ${fmtTimestamp(app.statusUpdatedAt)}`;
   return `Applied ${date}`;
 }
 
@@ -416,7 +425,7 @@ function CompletedCard({ app, onPress, onCertPress }: { app: UserApplication; on
         ) : null}
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={s.metaLabel}>Completed On</Text>
-          <Text style={[s.metaValue, { fontSize: 12 }]}>{fmtShort(app.statusUpdatedAt ?? app.createdAt)}</Text>
+          <Text style={[s.metaValue, { fontSize: 12 }]}>{fmtTimestamp(app.statusUpdatedAt ?? app.createdAt)}</Text>
         </View>
       </View>
 
@@ -481,7 +490,7 @@ function CancelledCard({ app, onPress }: { app: UserApplication; onPress: () => 
       {scheduleLine ? <Text style={s.scheduleLine}>{scheduleLine}</Text> : null}
       <View style={s.divider} />
       <Text style={[s.appliedLine, { color: C.TEXT3 }]}>
-        Applied {fmtShort(app.createdAt)}
+        Applied {fmtTimestamp(app.createdAt)}
       </Text>
     </TouchableOpacity>
   );
@@ -525,9 +534,8 @@ const BADGE_META: Record<string, { emoji: string; color: string }> = {
 
 function BadgeCard({ badge }: { badge: UserBadge }) {
   const meta  = BADGE_META[badge.badgeCode] ?? { emoji: '🏅', color: '#B45309' };
-  const date  = badge.awardedAt
-    ? new Date(badge.awardedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-    : null;
+  // awardedAt is a UTC timestamp — convert to device's local timezone
+  const date = badge.awardedAt ? fmtTimestamp(badge.awardedAt) : null;
   return (
     <View style={[s.badgeCard, { borderLeftColor: meta.color, borderLeftWidth: 3 }]}>
       {/* Left: emoji bubble */}
