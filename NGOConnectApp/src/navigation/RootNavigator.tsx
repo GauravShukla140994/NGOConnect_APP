@@ -88,8 +88,14 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
     case 'WITHDRAWAL_APPROVED':
     case 'WITHDRAWAL_REJECTED':
       return { screen: 'AdminWithdrawal' };
+    // v5.2 FIX: used to ignore refId entirely and always land on a plain Home
+    // with no indication of which post the notification was about — now
+    // matches the POST_LIKED/POST_COMMENTED pattern below (refId IS populated
+    // for this notifType — see Post_BulkNotifyOrgMembers / PostDal.cs).
     case 'NEW_FEED_POST':
-      return { screen: 'Home' };
+      return refId
+        ? { screen: 'Home', params: { focusPostId: refId } }
+        : { screen: 'Home' };
     case 'POST_LIKED':
     case 'POST_COMMENTED':
     case 'POST_REPORTED':

@@ -592,17 +592,30 @@ export default function CommunityScreen() {
   // Runs when COMMUNITY_POST_LIKED / COMMUNITY_POST_COMMENTED notification is tapped.
   useEffect(() => {
     const focusId = route.params?.focusCommunityPostId as number | undefined;
-    if (!focusId || displayedPosts.length === 0) return;
+    if (!focusId) return;
+    // Wait for the first load attempt to finish before deciding the post
+    // isn't on the loaded page — avoids a spurious fallback on cold start.
+    if (loading) return;
+
     const idx = displayedPosts.findIndex(p => p.communityPostId === focusId);
-    if (idx < 0) return;
-    const timer = setTimeout(() => {
-      flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
-      setFocusedCommunityPostId(focusId);
-      setTimeout(() => setFocusedCommunityPostId(null), 2500);
-    }, 350);
-    return () => clearTimeout(timer);
+    if (idx >= 0) {
+      const timer = setTimeout(() => {
+        flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
+        setFocusedCommunityPostId(focusId);
+        setTimeout(() => setFocusedCommunityPostId(null), 2500);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+
+    // v5.2 FIX: previously, a notification for a post outside the currently
+    // loaded page (a like/comment on an older post, or the user landing on a
+    // filtered/search view) silently did nothing — idx stayed -1 forever, so
+    // the user just saw a plain Community screen with no sign anything
+    // happened. CommunityCommentsModal fetches its own comments by ID, so it
+    // doesn't need the post to be in `displayedPosts` at all — open it directly.
+    setCommentPostId(focusId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.params?.focusCommunityPostId, displayedPosts.length]);
+  }, [route.params?.focusCommunityPostId, displayedPosts.length, loading]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

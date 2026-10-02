@@ -98,8 +98,14 @@ function resolveScreen(notif: Notification): { screen: string; params?: object }
       return { screen: 'MyDonations' };
     case 'DONATION_RECEIVED_ADMIN':
       return refId ? { screen: 'NgoProfile', params: { orgId: refId } } : { screen: 'MyOrgs' };
+    // v5.2 FIX: used to ignore refId entirely and always land on a plain Home
+    // with no indication of which post the notification was about — now
+    // matches the POST_LIKED/POST_COMMENTED pattern below (refId IS populated
+    // for this notifType — see Post_BulkNotifyOrgMembers / PostDal.cs).
     case 'NEW_FEED_POST':
-      return { screen: 'Home' };
+      return refId
+        ? { screen: 'Home', params: { focusPostId: refId } }
+        : { screen: 'Home' };
     case 'POST_LIKED':
     case 'POST_COMMENTED':
     case 'POST_REPORTED':
