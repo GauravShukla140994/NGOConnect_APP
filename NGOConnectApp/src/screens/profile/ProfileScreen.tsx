@@ -19,6 +19,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { APP_BUILD_VERSION } from '../../config/version';
 import { getMyProfile, getMyOrgs, getMyDocuments, deleteAccount } from '../../api/user.api';
 import { sosApi } from '../../api/sos.api';
 import { useAuthStore } from '../../store/authStore';
@@ -417,6 +418,9 @@ export default function ProfileScreen() {
         >
           <Text style={styles.deleteAccountText}>Delete Account</Text>
         </TouchableOpacity>
+
+        {/* App version */}
+        <Text style={styles.versionText}>v{APP_BUILD_VERSION}</Text>
       </ScrollView>
 
       {/* ── Admin org picker (shown when user admins multiple orgs) ─────── */}
@@ -643,6 +647,7 @@ const styles = StyleSheet.create({
   // Delete account — muted appearance so it doesn't compete with Sign Out
   deleteAccountBtn:  { marginHorizontal: 16, marginBottom: 8, paddingVertical: 12, alignItems: 'center' },
   deleteAccountText: { fontSize: 13, color: C.TEXT3, textDecorationLine: 'underline' },
+  versionText:       { textAlign: 'center', fontSize: 11, color: C.TEXT3, paddingBottom: 12, opacity: 0.6 },
 
   // Delete account — info sheet (Step 1)
   deleteInfoOverlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
