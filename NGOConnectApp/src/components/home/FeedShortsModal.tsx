@@ -299,7 +299,16 @@ function ZoomableImageSlide({ uri, onFreeze, onUnfreeze, onDoubleTap }: Zoomable
 function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
   const [paused, setPaused] = useState(!active);
   const [error,  setError]  = useState(false);
-  React.useEffect(() => { setPaused(!active); }, [active]);
+  const videoRef = React.useRef<any>(null);
+
+  React.useEffect(() => {
+    setPaused(!active);
+    if (active) {
+      // Always restart from beginning when this slide becomes active
+      // (user swiped to it, or returned to it)
+      videoRef.current?.seek(0);
+    }
+  }, [active]);
 
   if (error) {
     return (
@@ -311,6 +320,7 @@ function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
   return (
     <View style={s.slideContainer}>
       <Video
+        ref={videoRef}
         source={{ uri }}
         style={s.slideMedia}
         resizeMode="cover"
@@ -865,7 +875,9 @@ export default function FeedShortsModal({
 
         {/* ── Cause category pill (absolute, top-left, after close button) ── */}
         {(() => {
-          const pill = getCausePill(posts[activePost]);
+          const activePostItem = posts[activePost];
+          if (!activePostItem) return null;
+          const pill = getCausePill(activePostItem);
           if (!pill) return null;
           return (
             <View style={[s.causePill, { top: insets.top + 14 }]}>

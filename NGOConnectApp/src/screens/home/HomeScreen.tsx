@@ -908,6 +908,9 @@ export default function HomeScreen() {
   const [activePostId,   setActivePostId]   = useState<string | null>(null);
   const [globalMuted,    setGlobalMuted]    = useState(true);
 
+  // Tracks the last visible post so we can resume it when the screen regains focus
+  const lastActivePostIdRef = useRef<string | null>(null);
+
   // ── Notification deep-link refs (effect is placed after `feed` state below) ──
   const flatListRef      = useRef<any>(null);
   const [focusedPostId, setFocusedPostId] = useState<number | null>(null);
@@ -925,7 +928,9 @@ export default function HomeScreen() {
   // Never pass an inline arrow function here or video auto-play breaks on scroll.
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     const first = viewableItems.find((v: any) => v.isViewable);
-    setActivePostId(first?.item?.postId != null ? String(first.item.postId) : null);
+    const nextId = first?.item?.postId != null ? String(first.item.postId) : null;
+    lastActivePostIdRef.current = nextId;
+    setActivePostId(nextId);
     // Collect all currently-visible post IDs into the seen buffer
     viewableItems.forEach((v: any) => {
       if (v.isViewable && v.item?.postId != null) {
@@ -1076,6 +1081,11 @@ export default function HomeScreen() {
     // When screen loses focus (user navigates to another tab/screen), stop all
     // videos immediately by clearing activePostId. Without this, the video
     // keeps playing in the background and the user hears audio from another tab.
+    // On re-focus, restore the last known visible post so video resumes without
+    // requiring the user to scroll (FlatList.onViewableItemsChanged only fires
+    // on scroll — not on screen focus).
+    setActivePostId(lastActivePostIdRef.current);
+
     return () => {
       cancelled = true;
       setActivePostId(null);
@@ -1268,7 +1278,7 @@ export default function HomeScreen() {
     }).catch(() => {});
 
     await Promise.all([
-      loadFeed(null, null, true),
+      feedTab === 'org' ? loadOrgFeed(1, true) : loadFeed(null, null, true),
       // Always fetch without GPS on init — no risk of GPS returning 0 nearby and
       // wiping the list. The GPS effect below upgrades to a GPS-filtered list once
       // coordinates are confirmed, and only replaces the list when items.length > 0.
@@ -1297,7 +1307,7 @@ export default function HomeScreen() {
       }).catch(() => {}),
     ]);
     setLoading(false);
-  }, [loadFeed]);
+  }, [feedTab, loadFeed, loadOrgFeed]);
 
   useEffect(() => { init(); }, [init]);
 

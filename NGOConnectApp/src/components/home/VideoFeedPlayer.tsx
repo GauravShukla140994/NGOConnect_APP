@@ -50,14 +50,22 @@ export default function VideoFeedPlayer({
   const [ready,       setReady]       = useState(false);   // video loaded + ready
   const [buffering,   setBuffering]   = useState(false);
 
+  const videoRef = useRef<any>(null);
+
   // Animated value for the center mute-icon flash
   const muteFlashOpacity = useRef(new Animated.Value(0)).current;
   const muteFlashAnim    = useRef<Animated.CompositeAnimation | null>(null);
   const muteFlashTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reset time counter when this post leaves the viewport
+  // When the post becomes active, always restart from the beginning.
+  // When it leaves viewport, reset the display counter too.
   useEffect(() => {
-    if (!isActive) setCurrentTime(0);
+    if (isActive) {
+      setCurrentTime(0);
+      videoRef.current?.seek(0);
+    } else {
+      setCurrentTime(0);
+    }
   }, [isActive]);
 
   const showMuteFlash = useCallback(() => {
@@ -172,6 +180,7 @@ export default function VideoFeedPlayer({
 
       {/* ── Video ───────────────────────────────────────────────── */}
       <Video
+        ref={videoRef}
         source={{ uri }}
         style={StyleSheet.absoluteFill}
         resizeMode="cover"
