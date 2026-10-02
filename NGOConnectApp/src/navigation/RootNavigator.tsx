@@ -11,7 +11,9 @@ import { pendingDeepLinkStore } from '../store/pendingDeepLinkStore';
 import { shareApi } from '../api/share.api';
 import { notificationApi } from '../api/notification.api';
 import { useNotificationPermission } from '../hooks/useNotificationPermission';
+import { useAppUpdateCheck } from '../hooks/useAppUpdateCheck';
 import NotificationPermissionModal from '../components/NotificationPermissionModal';
+import AppUpdateBanner from '../components/AppUpdateBanner';
 import AuthNavigator from './AuthNavigator';
 import AppNavigator from './AppNavigator';
 
@@ -198,6 +200,12 @@ const RootNavigator = () => {
     openSettings,
     dismissNudge,
   } = useNotificationPermission(isAuthenticated);
+
+  const {
+    updateAvailable,
+    openStore,
+    dismiss: dismissUpdate,
+  } = useAppUpdateCheck(isAuthenticated);
 
   // Load profile on auth state change
   useEffect(() => {
@@ -471,6 +479,14 @@ const RootNavigator = () => {
           <Stack.Screen name="Auth" component={AuthNavigator} />
         )}
       </Stack.Navigator>
+
+      {/* App update banner — shown above everything when a new version is available.
+          Dismissed per-session only; reappears on next launch. */}
+      <AppUpdateBanner
+        visible={updateAvailable}
+        onUpdate={openStore}
+        onDismiss={dismissUpdate}
+      />
 
       {/* Notification permission rationale modal + denied nudge banner */}
       <NotificationPermissionModal
