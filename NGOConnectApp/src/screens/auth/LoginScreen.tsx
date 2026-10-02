@@ -505,8 +505,8 @@ const styles = StyleSheet.create({
   pickerSearchBox:   { flexDirection: 'row', alignItems: 'center', margin: 12, backgroundColor: C.INPUT_BG, borderRadius: 10, paddingHorizontal: 10, gap: 6 },
   pickerSearchIcon:  { fontSize: 16 },
   pickerSearchInput: { flex: 1, fontSize: 14, color: C.TEXT, paddingVertical: 10 },
-  countryPicker: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 10 },
-  flag:          { fontSize: 22, width: 32, textAlign: 'center' },
-  countryCode:   { fontSize: 14, color: C.TEXT },
+  countryPicker: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 13, gap: 6, minWidth: 90 },
+  flag:          { fontSize: 22, width: 28, textAlign: 'center' },
+  countryCode:   { fontSize: 14, color: C.TEXT, minWidth: 36 },
   pickerSep:     { height: 1, backgroundColor: C.BORDER, marginLeft: 58 },
 });

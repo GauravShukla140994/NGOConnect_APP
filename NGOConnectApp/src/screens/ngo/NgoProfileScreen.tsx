@@ -923,8 +923,8 @@ export default function NgoProfileScreen() {
                 <Text style={styles.ratingChipStar}>⭐</Text>
                 <Text style={styles.ratingChipValue}>{rating.toFixed(1)}</Text>
                 {org.ratingCount || org.reviewCount ? (
-                  <Text style={styles.ratingChipCount}>
-                    · {(org.ratingCount ?? org.reviewCount ?? 0).toLocaleString()} reviews
+                  <Text style={styles.ratingChipCount} numberOfLines={1}>
+                    · {(org.ratingCount ?? org.reviewCount ?? 0).toLocaleString()}
                   </Text>
                 ) : null}
               </TouchableOpacity>
@@ -985,23 +985,23 @@ export default function NgoProfileScreen() {
         {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{org.memberCount ?? 0}</Text>
-            <Text style={styles.statLabel}>Members</Text>
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{org.memberCount ?? 0}</Text>
+            <Text style={styles.statLabel} numberOfLines={1}>Member</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{org.totalProjectCount ?? (activeProjects.length + completedProjects.length)}</Text>
-            <Text style={styles.statLabel}>Projects</Text>
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{org.totalProjectCount ?? (activeProjects.length + completedProjects.length)}</Text>
+            <Text style={styles.statLabel} numberOfLines={1}>Projects</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{org.totalVolunteerHours ?? 0}h</Text>
-            <Text style={styles.statLabel}>Hours</Text>
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{org.totalVolunteerHours ?? 0}h</Text>
+            <Text style={styles.statLabel} numberOfLines={1}>Hours</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{rating > 0 ? `⭐ ${rating.toFixed(1)}` : '—'}</Text>
-            <Text style={styles.statLabel}>Rating</Text>
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{rating > 0 ? `⭐ ${rating.toFixed(1)}` : '—'}</Text>
+            <Text style={styles.statLabel} numberOfLines={1}>Rating</Text>
           </View>
         </View>
 
@@ -1294,9 +1294,9 @@ const styles = StyleSheet.create({
 
   // Stats
   statsRow:          { flexDirection: 'row', backgroundColor: C.CARD, paddingVertical: 14, marginTop: 8 },
-  statItem:          { flex: 1, alignItems: 'center' },
-  statValue:         { fontSize: 15, fontWeight: '800', color: C.TEXT },
-  statLabel:         { fontSize: 11, color: C.TEXT2, marginTop: 2 },
+  statItem:          { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  statValue:         { fontSize: 15, fontWeight: '800', color: C.TEXT, textAlign: 'center' },
+  statLabel:         { fontSize: 11, color: C.TEXT2, marginTop: 2, textAlign: 'center' },
   statDivider:       { width: 1, height: 30, backgroundColor: C.BORDER, alignSelf: 'center' },
 
   // Tabs

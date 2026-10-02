@@ -2268,7 +2268,7 @@ const styles = StyleSheet.create({
   menuHandle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 8 },
   menuRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, gap: 14, borderTopWidth: 1, borderTopColor: C.BORDER },
   menuIcon:       { fontSize: 20, width: 26, textAlign: 'center' },
-  menuLabel:      { fontSize: 15, color: C.TEXT },
+  menuLabel:      { fontSize: 15, color: C.TEXT, flex: 1 },
   menuRowReport:  { borderTopColor: '#FEE2E2' },
 
   // ── Report sheet ───────────────────────────────────────────────────────

@@ -520,8 +520,8 @@ function Avatar({ photo, name, compact }: { photo?: string; name: string; compac
 function StatPill({ value, label, color, compact }: { value: number | string; label: string; color: string; compact?: boolean }) {
   return (
     <View style={s.statPill}>
-      <Text style={[s.statValue, { color, fontSize: compact ? 17 : 22 }]}>{value}</Text>
-      <Text style={s.statLabel}>{label}</Text>
+      <Text style={[s.statValue, { color, fontSize: compact ? 17 : 22 }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      <Text style={s.statLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{label}</Text>
     </View>
   );
 }
@@ -1148,9 +1148,9 @@ const s = StyleSheet.create({
 
   // Secondary stats card (in scroll content)
   statsCard:      { flexDirection: 'row', backgroundColor: C.CARD, marginHorizontal: 16, marginTop: -16, borderRadius: 14, padding: 16, ...AppConfig.SHADOW.CARD },
-  statPill:       { flex: 1, alignItems: 'center' },
-  statValue:      { fontSize: 22, fontWeight: '800' },
-  statLabel:      { fontSize: 11, color: C.TEXT2, marginTop: 2 },
+  statPill:       { flex: 1, alignItems: 'center', paddingHorizontal: 2 },
+  statValue:      { fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  statLabel:      { fontSize: 11, color: C.TEXT2, marginTop: 2, textAlign: 'center' },
   statDiv:        { width: 1, backgroundColor: C.BORDER, marginVertical: 4 },
 
   // Sections

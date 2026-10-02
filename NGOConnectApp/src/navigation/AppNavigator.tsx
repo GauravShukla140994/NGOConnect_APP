@@ -80,8 +80,11 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
 }
 
 const tabStyles = StyleSheet.create({
+  // Fixed size wrap prevents emoji size differences between Android OEMs
+  // (Samsung, Xiaomi, OnePlus all render emoji at slightly different sizes)
+  // from causing uneven icon heights in the tab bar.
   wrap:    { alignItems: 'center', justifyContent: 'center' },
-  icon:    { fontSize: 21, opacity: 0.45 },
+  icon:    { fontSize: 22, opacity: 0.45, textAlign: 'center' },
   iconOn:  { opacity: 1 },
 });
 
@@ -113,16 +116,11 @@ const VolunteerTabs = () => (
     lazy={false}
     detachInactiveScreens={false}
     screenOptions={({ route }) => ({
-      headerShown: false,
+      headerShown:             false,
+      tabBarShowLabel:         false,
       tabBarActiveTintColor:   C.PRIMARY,
       tabBarInactiveTintColor: C.TEXT2,
       tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
-      tabBarLabelStyle: {
-        fontSize:     9,
-        fontWeight:   '600',
-        marginTop:    -2,
-        marginBottom: 2,
-      },
       tabBarStyle: {
         backgroundColor: C.CARD,
         borderTopColor:  C.BORDER,
@@ -135,11 +133,11 @@ const VolunteerTabs = () => (
         shadowRadius:    6,
       },
     })}>
-    <Tab.Screen name="Home"      component={HomeScreen}      options={{ tabBarLabel: 'Home'      }} />
-    <Tab.Screen name="Explore"   component={ExploreScreen}   options={{ tabBarLabel: 'Explore'   }} />
-    <Tab.Screen name="Impact"    component={ImpactScreen}    options={{ tabBarLabel: 'Impact'    }} />
-    <Tab.Screen name="Community" component={CommunityScreen} options={{ tabBarLabel: 'Community' }} />
-    <Tab.Screen name="Profile"   component={ProfileScreen}   options={{ tabBarLabel: 'Profile'   }} />
+    <Tab.Screen name="Home"      component={HomeScreen}      />
+    <Tab.Screen name="Explore"   component={ExploreScreen}   />
+    <Tab.Screen name="Impact"    component={ImpactScreen}    />
+    <Tab.Screen name="Community" component={CommunityScreen} />
+    <Tab.Screen name="Profile"   component={ProfileScreen}   />
   </Tab.Navigator>
 );
 
