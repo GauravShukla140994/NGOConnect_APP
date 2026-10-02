@@ -1722,6 +1722,7 @@ export default function HomeScreen() {
                 onDelete={handleDeletePost}
                 onOpenShorts={() => {
                   setShortsPostIndex(index);
+                  setActivePostId(null);   // pause feed video before opening fullscreen
                   setShortsOpen(true);
                 }}
                 isActive={String(item.postId) === activePostId}
@@ -1790,7 +1791,12 @@ export default function HomeScreen() {
         visible={shortsOpen}
         posts={feed}
         initialPostIndex={shortsPostIndex}
-        onClose={() => setShortsOpen(false)}
+        onClose={() => {
+          setShortsOpen(false);
+          // Restore feed video that was playing before Shorts opened
+          const resumePost = feed[shortsPostIndex];
+          if (resumePost) setActivePostId(String(resumePost.postId));
+        }}
         onLike={handleLike}
         onCommentPress={handleCommentPress}
         onDelete={handleDeletePost}
