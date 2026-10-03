@@ -1010,37 +1010,25 @@ export default function HomeScreen() {
   // defined when the dependency array is evaluated — TypeScript flags a
   // block-scoped variable referenced in a useEffect dependency array before
   // its useState declaration appears earlier in the component body.
+  // v5.3: notification taps for POST_LIKED / POST_COMMENTED / NEW_FEED_POST now
+  // navigate to PostDetailScreen directly and never reach here. This block is
+  // kept only as a graceful fallback for any older deep-links or share-links
+  // that still carry focusPostId — it scrolls to the post if it happens to be
+  // on the currently loaded page, and silently does nothing otherwise (no more
+  // unreliable setCommentPost fallback).
   useEffect(() => {
     const focusPostId = route.params?.focusPostId as number | undefined;
-    if (!focusPostId) return;
-    // Wait for the first feed load attempt to finish before deciding the post
-    // isn't on the loaded page — avoids firing the fallback fetch below on
-    // every cold-start notification tap just because `feed` is still empty.
-    if (loading) return;
+    if (!focusPostId || loading) return;
 
     const idx = feed.findIndex(p => p.postId === focusPostId);
-    if (idx >= 0) {
-      const timer = setTimeout(() => {
-        flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2, viewOffset: 0 });
-        setFocusedPostId(focusPostId);
-        setTimeout(() => setFocusedPostId(null), 2500);
-      }, 350);
-      return () => clearTimeout(timer);
-    }
+    if (idx < 0) return;   // not on this page — PostDetailScreen handles it
 
-    // v5.2 FIX: previously, a notification for a post outside the currently
-    // loaded feed page (comment/like notifications can reference posts from
-    // deep in the feed, a different org, or the other feed tab) silently did
-    // nothing — idx stayed -1 forever, so the user just saw a plain Home
-    // screen with no sign anything happened. Fetch the post directly and
-    // open its comments instead of requiring it to already be on-screen.
-    let cancelled = false;
-    feedApi.getPost(focusPostId).then(res => {
-      if (!cancelled && res.data?.isSuccess && res.data.data) {
-        setCommentPost(res.data.data);
-      }
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    const timer = setTimeout(() => {
+      flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2, viewOffset: 0 });
+      setFocusedPostId(focusPostId);
+      setTimeout(() => setFocusedPostId(null), 2500);
+    }, 350);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.focusPostId, feed.length, loading]);
 

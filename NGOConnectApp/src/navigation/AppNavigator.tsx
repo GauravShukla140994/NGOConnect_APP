@@ -54,6 +54,7 @@ import SavedPostsScreen                from '../screens/profile/SavedPostsScreen
 import MyPostsScreen                   from '../screens/profile/MyPostsScreen';
 import AllBadgesScreen                 from '../screens/profile/AllBadgesScreen';
 import TransferFounderScreen           from '../screens/profile/TransferFounderScreen';
+import PostDetailScreen                from '../screens/home/PostDetailScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -225,6 +226,9 @@ const AppNavigator = () => (
 
     {/* Transfer Founder — shown during account deletion when user is sole founder */}
     <Stack.Screen name="TransferFounder" component={TransferFounderScreen} options={{ headerShown: false }} />
+
+    {/* Post Detail — opened from notification taps (liked/commented/new post) */}
+    <Stack.Screen name="PostDetail" component={PostDetailScreen} />
   </Stack.Navigator>
 );
 
