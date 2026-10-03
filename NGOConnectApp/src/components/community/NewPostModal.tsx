@@ -28,6 +28,7 @@ import { lookupApi } from '../../api/lookup.api';
 import { createCommunityPost, createCommunityPoll } from '../../api/community.api';
 import { uploadFile } from '../../api/upload.api';
 import { launchImageLibrary } from 'react-native-image-picker';
+import DocumentPicker, { types as DocTypes } from 'react-native-document-picker';
 import type { LookupValue } from '../../types/api.types';
 import { UserAvatar } from '../ui';
 
@@ -299,15 +300,32 @@ export default function NewPostModal({
   };
 
   // ── resource file picker ─────────────────────────────────────────────────
+  // Uses DocumentPicker (system file manager) so users can pick PDFs,
+  // certificates, Word docs, images — not just gallery media.
+  // No storage permission required — Android SAF handles access internally.
   const handlePickResourceFile = async () => {
-    const result = await launchImageLibrary({ mediaType: 'mixed', quality: 0.9, selectionLimit: 1 });
-    const asset = result.assets?.[0];
-    if (!asset?.uri) { return; }
-    setResourceFile({
-      uri:      asset.uri,
-      name:     asset.fileName ?? `resource_${Date.now()}`,
-      mimeType: asset.type ?? 'application/octet-stream',
-    });
+    try {
+      const [picked] = await DocumentPicker.pick({
+        type: [
+          DocTypes.pdf,
+          DocTypes.doc,
+          DocTypes.docx,
+          DocTypes.images,
+          DocTypes.plainText,
+          'application/vnd.ms-powerpoint',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ],
+        copyTo: 'cachesDirectory',
+      });
+      setResourceFile({
+        uri:      picked.fileCopyUri ?? picked.uri,
+        name:     picked.name ?? `resource_${Date.now()}`,
+        mimeType: picked.type ?? 'application/octet-stream',
+      });
+    } catch (err) {
+      if (DocumentPicker.isCancel(err)) { return; } // user cancelled — silent
+      Alert.alert('Error', 'Could not open file. Please try again.');
+    }
   };
 
   // ── poll option helpers ───────────────────────────────────────────────────

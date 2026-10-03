@@ -6,9 +6,11 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <!-- Push notifications: required on Android 13+ (API 33+) for FCM banners to appear -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Image picker: read media from gallery -->
+    <!-- Image picker: READ_EXTERNAL_STORAGE covers Android 12 and below (API 32-).
+         Android 13+ (API 33+) uses the system Photo Picker via react-native-image-picker
+         which requires no broad storage permission — READ_MEDIA_IMAGES removed per
+         Google Play Photo and Video Permissions policy. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Geolocation: show nearby NGOs and opportunities -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
