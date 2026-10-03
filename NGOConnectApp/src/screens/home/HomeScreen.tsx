@@ -314,8 +314,9 @@ function OppCard({ project, onApply }: { project: Project; onApply?: (p: Project
 }
 
 /* ─── MediaImage — auto-sizes to natural aspect ratio (no cropping) ─────────── */
-function MediaImage({ uri, style, ...touchProps }: { uri: string; style: any; [key: string]: any }) {
-  const [imgH, setImgH] = useState(SCREEN_W);           // default 1:1 until loaded
+// fixedHeight: when set, skips auto-sizing and uses a uniform height (for carousels).
+function MediaImage({ uri, style, fixedHeight, ...touchProps }: { uri: string; style: any; fixedHeight?: number; [key: string]: any }) {
+  const [imgH, setImgH] = useState(fixedHeight ?? SCREEN_W); // 1:1 default until loaded
   return (
     // Spread touchProps so TouchableWithoutFeedback can inject its responder handlers
     <View {...touchProps}>
@@ -324,6 +325,7 @@ function MediaImage({ uri, style, ...touchProps }: { uri: string; style: any; [k
         style={[style, { height: imgH }]}
         resizeMode="cover"
         onLoad={e => {
+          if (fixedHeight) return;   // carousel: height is fixed, skip auto-sizing
           const { width: w, height: h } = e.nativeEvent.source;
           if (w && h) {
             // Scale to full screen width, cap at 1.5× to avoid overly tall portraits
@@ -546,6 +548,10 @@ const PostCard = React.memo(function PostCard({
     : [];
   const isVideo = (i: number) => (mediaTypes[i] ?? 'IMAGE') === 'VIDEO';
 
+  // Carousel: all slides share one fixed height so the ScrollView doesn't resize
+  // between swipes. Use 4:5 portrait ratio (same as Instagram), capped at 500px.
+  const CAROUSEL_H = Math.min(Math.round(SCREEN_W * 1.25), 500);
+
   const isLongCaption = (post.content?.length ?? 0) > 150;
 
   return (
@@ -729,13 +735,14 @@ const PostCard = React.memo(function PostCard({
               </TouchableWithoutFeedback>
             )
           ) : (
-            /* Multi-item horizontal carousel */
+            /* Multi-item horizontal carousel — fixed height so slides don't resize */
             <ScrollView
               horizontal
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               scrollEventThrottle={16}
               decelerationRate="fast"
+              style={{ height: CAROUSEL_H }}
               onScroll={e => {
                 const slide = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
                 setActiveSlide(slide);
@@ -752,11 +759,11 @@ const PostCard = React.memo(function PostCard({
                     onSingleTap={onOpenShorts}
                     onDoubleTap={handleDoubleTap}
                     width={SCREEN_W}
-                    height={SCREEN_W}
+                    height={CAROUSEL_H}
                   />
                 ) : (
                   <TouchableWithoutFeedback key={i} onPress={() => handleImageTapAtIndex(i)}>
-                    <MediaImage uri={url} style={styles.igMedia} />
+                    <MediaImage uri={url} style={styles.igMedia} fixedHeight={CAROUSEL_H} />
                   </TouchableWithoutFeedback>
                 )
               )}
