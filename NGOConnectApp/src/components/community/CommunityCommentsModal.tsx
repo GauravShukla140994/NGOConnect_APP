@@ -3,9 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -190,17 +188,12 @@ const CommunityCommentsModal: React.FC<Props> = ({
         Tapping on it closes the sheet.
       */}
       {/*
-        KAV IS the overlay — flex:1 + justifyContent:'flex-end' pins the sheet
-        to the bottom. behavior='padding' adds paddingBottom = keyboardHeight,
-        which pushes the sheet up on both iOS and Android inside a Modal.
-        maxHeight (not fixed height) on the sheet lets it shrink when the
-        keyboard steals vertical space; FlatList with flex:1 absorbs the diff.
+        Input is at the TOP of the sheet so it's always visible regardless of
+        keyboard state — no KeyboardAvoidingView needed. Plain View keeps the
+        sheet anchored to the bottom; the keyboard just covers the comment list
+        (which is scrollable) without moving the sheet at all.
       */}
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior="padding"
-        keyboardVerticalOffset={0}
-      >
+      <View style={styles.overlay}>
         <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
 
           <View style={[styles.sheet, { height: sheetHeight }]}>
@@ -218,7 +211,34 @@ const CommunityCommentsModal: React.FC<Props> = ({
               </Pressable>
             </View>
 
-            {/* ── Comment list — flex:1 fills all space between header & input ─ */}
+            {/* ── Input row — top of sheet, just below header (matches FeedCommentsModal) */}
+            <View style={[styles.inputRow, { paddingBottom: 10 }]}>
+              <TextInput
+                ref={inputRef}
+                style={styles.input}
+                placeholder="Add a comment…"
+                placeholderTextColor="#9CA3AF"
+                value={text}
+                onChangeText={setText}
+                multiline
+                maxLength={2000}
+                returnKeyType="default"
+                blurOnSubmit={false}
+              />
+              <Pressable
+                style={[styles.sendBtn, (!text.trim() || submitting) && styles.sendBtnDisabled]}
+                onPress={handleSubmit}
+                disabled={!text.trim() || submitting}
+                accessibilityLabel="Send comment"
+              >
+                {submitting
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.sendBtnText}>Post</Text>
+                }
+              </Pressable>
+            </View>
+
+            {/* ── Comment list — flex:1 fills remaining space ──────────────── */}
             {loading ? (
               <ActivityIndicator style={styles.loader} color="#4F46E5" />
             ) : (
@@ -241,35 +261,8 @@ const CommunityCommentsModal: React.FC<Props> = ({
               />
             )}
 
-            {/* ── Input row — always above phone nav buttons ─────────────── */}
-            <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-              <TextInput
-                ref={inputRef}
-                style={styles.input}
-                placeholder="Write a comment…"
-                placeholderTextColor="#9CA3AF"
-                value={text}
-                onChangeText={setText}
-                multiline
-                maxLength={2000}
-                returnKeyType="default"
-                blurOnSubmit={false}
-              />
-              <Pressable
-                style={[styles.sendBtn, (!text.trim() || submitting) && styles.sendBtnDisabled]}
-                onPress={handleSubmit}
-                disabled={!text.trim() || submitting}
-                accessibilityLabel="Send comment"
-              >
-                {submitting
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={styles.sendBtnText}>Send</Text>
-                }
-              </Pressable>
-            </View>
-
           </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };
@@ -343,6 +336,7 @@ const styles = StyleSheet.create({
   },
   commentRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 10,
     gap: 10,
   },
@@ -398,10 +392,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 16,
     paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
     backgroundColor: '#fff',
-    // paddingBottom set dynamically via insets.bottom in JSX
   },
   input: {
     flex: 1,

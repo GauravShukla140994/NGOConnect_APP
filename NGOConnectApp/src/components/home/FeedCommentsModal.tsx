@@ -265,7 +265,7 @@ const s = StyleSheet.create({
   },
   emptyText:    { color: '#9CA3AF', fontSize: 14, textAlign: 'center' },
 
-  commentRow:   { flexDirection: 'row', paddingVertical: 10, gap: 10 },
+  commentRow:   { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 10 },
   avatar: {
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,

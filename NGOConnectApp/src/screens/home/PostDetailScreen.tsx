@@ -25,10 +25,10 @@ import AppConfig from '../../config/AppConfig';
 import {
   feedApi,
   likePost, unlikePost,
-  savePost, unsavePost,
 } from '../../api/feed.api';
 import type { Post } from '../../types/api.types';
 import FeedCommentsModal from '../../components/home/FeedCommentsModal';
+import VideoFeedPlayer  from '../../components/home/VideoFeedPlayer';
 import { fmtDate } from '../../utils/dateUtils';
 
 const C        = AppConfig.COLORS;
@@ -82,10 +82,10 @@ export default function PostDetailScreen() {
   const [liked,       setLiked]       = useState(false);
   const [likeCount,   setLikeCount]   = useState(0);
   const [commentCount, setCommentCount] = useState(0);
-  const [saved,       setSaved]       = useState(false);
   const [expanded,    setExpanded]    = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [commentOpen, setCommentOpen] = useState(false);
+  const [muted,       setMuted]       = useState(true);
 
   // ── fetch post ────────────────────────────────────────────────────────────
   const fetchPost = useCallback(async () => {
@@ -99,7 +99,6 @@ export default function PostDetailScreen() {
         setLiked(!!p.isLiked);
         setLikeCount(p.likeCount ?? 0);
         setCommentCount(p.commentCount ?? 0);
-        setSaved(!!p.isSaved);
       } else {
         setPostError(true);
       }
@@ -126,17 +125,7 @@ export default function PostDetailScreen() {
     }
   };
 
-  // ── save (optimistic) ─────────────────────────────────────────────────────
-  const handleSave = async () => {
-    if (!post) return;
-    const wasSaved = saved;
-    setSaved(!wasSaved);
-    try {
-      wasSaved ? await unsavePost(post.postId) : await savePost(post.postId);
-    } catch { setSaved(wasSaved); }
-  };
-
-  // ── media ─────────────────────────────────────────────────────────────────
+  // ── media — mirrors HomeScreen PostCard ──────────────────────────────────
   const mediaUrls: string[] = post
     ? (Array.isArray(post.mediaUrls)
         ? post.mediaUrls
@@ -144,6 +133,15 @@ export default function PostDetailScreen() {
           ? (post.mediaUrls as string).split(',').map(u => u.trim()).filter(Boolean)
           : [])
     : [];
+
+  // Post_GetById returns MediaTypes (GROUP_CONCAT CSV after patch).
+  // Fall back to mediaType (singular) for installs still on the old SP that
+  // returned only the first media item's type via LIMIT 1.
+  const rawTypes = (post?.mediaTypes ?? (post as any)?.mediaType) as unknown;
+  const mediaTypes: string[] = typeof rawTypes === 'string' && rawTypes
+    ? rawTypes.split(',').map((t: string) => t.trim())
+    : [];
+  const isVideo = (i: number) => (mediaTypes[i] ?? 'IMAGE') === 'VIDEO';
 
   const CAROUSEL_H = Math.min(Math.round(SCREEN_W * 1.25), 500);
 
@@ -232,21 +230,28 @@ export default function PostDetailScreen() {
                 <Text style={s.igAuthorSub}>{post.orgName}</Text>
               )}
             </View>
-            {/* Save button in place of ••• menu */}
-            <TouchableOpacity onPress={handleSave} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={s.igMore}>{saved ? '🔖' : '•••'}</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Media */}
           {mediaUrls.length > 0 && (
             <>
               {mediaUrls.length === 1 ? (
-                <Image
-                  source={{ uri: mediaUrls[0] }}
-                  style={{ width: SCREEN_W, height: CAROUSEL_H }}
-                  resizeMode="cover"
-                />
+                isVideo(0) ? (
+                  <VideoFeedPlayer
+                    uri={mediaUrls[0]}
+                    isActive={!commentOpen}
+                    muted={muted}
+                    onToggleMute={() => setMuted(m => !m)}
+                    width={SCREEN_W}
+                    height={CAROUSEL_H}
+                  />
+                ) : (
+                  <Image
+                    source={{ uri: mediaUrls[0] }}
+                    style={{ width: SCREEN_W, height: CAROUSEL_H }}
+                    resizeMode="cover"
+                  />
+                )
               ) : (
                 <>
                   <ScrollView
@@ -261,14 +266,26 @@ export default function PostDetailScreen() {
                     }}
                     scrollEventThrottle={16}
                   >
-                    {mediaUrls.map((url, i) => (
-                      <Image
-                        key={i}
-                        source={{ uri: url }}
-                        style={{ width: SCREEN_W, height: CAROUSEL_H }}
-                        resizeMode="cover"
-                      />
-                    ))}
+                    {mediaUrls.map((url, i) =>
+                      isVideo(i) ? (
+                        <VideoFeedPlayer
+                          key={i}
+                          uri={url}
+                          isActive={!commentOpen && activeSlide === i}
+                          muted={muted}
+                          onToggleMute={() => setMuted(m => !m)}
+                          width={SCREEN_W}
+                          height={CAROUSEL_H}
+                        />
+                      ) : (
+                        <Image
+                          key={i}
+                          source={{ uri: url }}
+                          style={{ width: SCREEN_W, height: CAROUSEL_H }}
+                          resizeMode="cover"
+                        />
+                      )
+                    )}
                   </ScrollView>
                   <View style={s.igDots}>
                     {mediaUrls.map((_, i) => (
@@ -407,7 +424,6 @@ const s = StyleSheet.create({
   igAuthorSub:      { fontSize: 11, color: C.TEXT2, marginTop: 1 },
   igTypePill:     { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   igTypePillText: { fontSize: 10, fontWeight: '700' },
-  igMore:         { fontSize: 17, color: C.TEXT3, letterSpacing: 1.5 },
 
   igDots:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 6, gap: 5 },
   igDot:      { width: 6, height: 6, borderRadius: 3, backgroundColor: C.BORDER },
