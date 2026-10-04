@@ -454,16 +454,23 @@ function MemberDetailsSheet({
               </View>
             </View>
 
-            {/* Change Role */}
+            {/* Change Role — hidden for FOUNDER (ownership transfer is a separate action) */}
             <Text style={[styles.sectionLabel, { marginTop: 14, marginBottom: 6 }]}>Change Role</Text>
-            <TouchableOpacity
-              style={styles.roleDropdown}
-              onPress={() => setShowRolePicker(true)}
-              accessibilityLabel="Change member role"
-            >
-              <Text style={styles.roleDropdownText}>{ROLE_LABEL[roleCode] ?? roleCode}</Text>
-              <Text style={{ color: C.TEXT2 }}>▾</Text>
-            </TouchableOpacity>
+            {member.roleCode?.toUpperCase() === 'FOUNDER' ? (
+              <View style={styles.roleDropdownLocked}>
+                <Text style={styles.roleDropdownText}>{ROLE_LABEL['FOUNDER']}</Text>
+                <Text style={{ fontSize: 14 }}>🔒</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.roleDropdown}
+                onPress={() => setShowRolePicker(true)}
+                accessibilityLabel="Change member role"
+              >
+                <Text style={styles.roleDropdownText}>{ROLE_LABEL[roleCode] ?? roleCode}</Text>
+                <Text style={{ color: C.TEXT2 }}>▾</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Single save button — saves permissions + role together */}
             <TouchableOpacity style={styles.savePermBtn} onPress={saveAll} disabled={saving}>
@@ -1138,7 +1145,8 @@ const styles = StyleSheet.create({
   savePermBtnText:{ color: '#fff', fontSize: 14, fontWeight: '700' },
 
   // Role dropdown
-  roleDropdown:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.INPUT_BG, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  roleDropdown:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.INPUT_BG, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
+  roleDropdownLocked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.INPUT_BG, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, opacity: 0.6 },
   roleDropdownText: { fontSize: 13, color: C.TEXT, fontWeight: '600' },
   dropdownChip:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: C.BORDER },
   dropdownChipText: { fontSize: 12, color: C.TEXT2 },
