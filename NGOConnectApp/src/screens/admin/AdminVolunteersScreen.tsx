@@ -533,9 +533,12 @@ export default function AdminVolunteersScreen() {
   const nav              = useNavigation<any>();
   const route            = useRoute<any>();
   const insets           = useSafeAreaInsets();
-  const { selectedOrg, setAdminOrgs, setSelectedOrg } = useAdminStore();
+  const { selectedOrg, adminOrgs, setAdminOrgs, setSelectedOrg } = useAdminStore();
   const orgId = selectedOrg?.orgId ?? 0;
 
+  // Notification deep-link: INVITE_ACCEPTED passes { orgId } so we open the
+  // correct org even when the admin manages more than one NGO.
+  const routeOrgId      = (route.params?.orgId          as number    | undefined) ?? 0;
   // Support deep-link from POST_REPORTED_ADMIN notification:
   //   navigate('AdminVolunteers', { initialTab: 'posts', initialPostsTab: 'reported' })
   const initialTab      = (route.params?.initialTab      as MainTab  | undefined) ?? 'pending';
@@ -585,7 +588,30 @@ export default function AdminVolunteersScreen() {
   const [selectedMember, setSelectedMember] = useState<OrgMember | null>(null);
 
   // ── Ensure selectedOrg is loaded (handles direct tab navigation) ──────────
-  const ensureOrg = useCallback(async (): Promise<number> => {
+  // preferredOrgId: if non-zero, switch to that org before loading data.
+  // Used by INVITE_ACCEPTED deep-links so the correct NGO always loads.
+  const ensureOrg = useCallback(async (preferredOrgId = 0): Promise<number> => {
+    // Switch to the requested org if it differs from the current one
+    if (preferredOrgId && preferredOrgId !== orgId) {
+      const match = adminOrgs.find(o => o.orgId === preferredOrgId);
+      if (match) {
+        setSelectedOrg(match);
+        return preferredOrgId;
+      }
+      // Not cached yet — load all admin orgs and find the right one
+      try {
+        const res = await getMyOrgs();
+        if (res.data?.isSuccess) {
+          const all = res.data.data ?? [];
+          setAdminOrgs(all);
+          const target = all.find(o => o.orgId === preferredOrgId);
+          if (target) { setSelectedOrg(target); return preferredOrgId; }
+          // Preferred org not found (user lost admin rights?) — fall through
+          if (all.length > 0) { setSelectedOrg(all[0]); return all[0].orgId; }
+        }
+      } catch { /* silent */ }
+      return 0;
+    }
     if (orgId) { return orgId; }
     try {
       const res = await getMyOrgs();
@@ -599,12 +625,12 @@ export default function AdminVolunteersScreen() {
       }
     } catch { /* silent */ }
     return 0;
-  }, [orgId, setAdminOrgs, setSelectedOrg]);
+  }, [orgId, adminOrgs, setAdminOrgs, setSelectedOrg]);
 
   // ── Load data ─────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const oid = await ensureOrg();
+    const oid = await ensureOrg(routeOrgId);
     if (!oid) { setLoading(false); return; }
     try {
       const [pendRes, memRes, postRes] = await Promise.allSettled([
@@ -622,7 +648,7 @@ export default function AdminVolunteersScreen() {
         setPostList(postRes.value.data.data ?? []);
       }
     } catch { /* silent */ } finally { setLoading(false); }
-  }, [orgId]);
+  }, [ensureOrg, routeOrgId]);
 
   // Re-run when selectedOrg changes (e.g. user switches org from Dashboard)
   useEffect(() => { loadAll(); }, [orgId]); // eslint-disable-line
