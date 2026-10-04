@@ -445,20 +445,37 @@ export default function CreateFeedPostModal({
 
         {/* ── Footer ────────────────────────────────────────────────────── */}
         <View style={s.footer}>
-          <Pressable
-            style={[
-              s.publishBtn,
-              (submitting || anyUploading || !content.trim()) && s.publishBtnOff,
-            ]}
-            onPress={handlePublish}
-            disabled={submitting || anyUploading || !content.trim()}
-            android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: false }}
-          >
-            {submitting
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={s.publishText}>Publish</Text>
-            }
-          </Pressable>
+          {anyUploading ? (
+            /* Prominent upload-progress banner replaces the disabled Publish button
+               so users understand WHY they're waiting (especially on slow networks). */
+            <View style={s.uploadingBanner}>
+              <ActivityIndicator color={C.PRIMARY} size="small" />
+              <View style={{ flex: 1 }}>
+                <Text style={s.uploadingText}>
+                  Uploading media
+                  {mediaItems.length > 1
+                    ? ` · ${mediaItems.filter(m => !m.uploading).length} / ${mediaItems.length} done`
+                    : '…'}
+                </Text>
+                <Text style={s.uploadingHint}>Please keep this window open</Text>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              style={[
+                s.publishBtn,
+                (submitting || !content.trim()) && s.publishBtnOff,
+              ]}
+              onPress={handlePublish}
+              disabled={submitting || !content.trim()}
+              android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: false }}
+            >
+              {submitting
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={s.publishText}>Publish</Text>
+              }
+            </Pressable>
+          )}
         </View>
       </View>
     </Modal>
@@ -641,4 +658,14 @@ const s = StyleSheet.create({
   },
   publishBtnOff:{ opacity: 0.5 },
   publishText:  { color: '#fff', fontSize: 14, fontWeight: '700' },
+
+  // Upload progress banner — replaces Publish button while media is uploading
+  uploadingBanner: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: C.PRIMARY + '12',
+    borderRadius: 12, borderWidth: 1.5, borderColor: C.PRIMARY + '30',
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  uploadingText: { fontSize: 14, fontWeight: '700', color: C.PRIMARY, lineHeight: 19 },
+  uploadingHint: { fontSize: 11, color: C.PRIMARY, opacity: 0.7, marginTop: 1 },
 });

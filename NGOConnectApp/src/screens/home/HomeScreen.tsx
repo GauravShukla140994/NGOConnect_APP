@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { fmtDate, fmtTime, fmtDateTime } from '../../utils/dateUtils';
+import { parseRichSegments } from '../../utils/richText';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import {
   ActivityIndicator,
@@ -10,6 +11,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -836,12 +838,31 @@ const PostCard = React.memo(function PostCard({
       {/* ── Caption ────────────────────────────────────────────────── */}
       <View style={styles.igCaption}>
         {post.title ? <Text style={styles.igPostTitle}>{post.title}</Text> : null}
+        {/* selectable={true}: native long-press → Copy/Select on Android + iOS.
+            URLs from parseRichSegments are rendered as tappable inline spans. */}
         <Text
           style={styles.igCaptionText}
           numberOfLines={expanded ? undefined : 3}
+          selectable
         >
           <Text style={styles.igCaptionAuthor}>{post.authorName ?? 'NGO'}{' '}</Text>
-          {post.content}
+          {parseRichSegments(post.content ?? '').map((seg, i) =>
+            seg.type === 'url'
+              ? (
+                <Text
+                  key={i}
+                  style={styles.igCaptionLink}
+                  onPress={() =>
+                    Linking.openURL(seg.value).catch(() =>
+                      Alert.alert('Cannot open link', seg.value),
+                    )
+                  }
+                >
+                  {seg.value}
+                </Text>
+              )
+              : <React.Fragment key={i}>{seg.value}</React.Fragment>
+          )}
         </Text>
         {isLongCaption && !expanded ? (
           <TouchableOpacity onPress={() => setExpanded(true)}>
@@ -2177,6 +2198,7 @@ const styles = StyleSheet.create({
   igPostTitle:     { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
   igCaptionAuthor: { fontSize: 13, fontWeight: '700', color: C.TEXT },
   igCaptionText:   { fontSize: 13, color: C.TEXT, lineHeight: 20 },
+  igCaptionLink:   { fontSize: 13, color: C.PRIMARY, textDecorationLine: 'underline' },
   igMoreLink:      { fontSize: 13, color: C.TEXT3, marginTop: 2 },
   igFundraiseBox: {
     marginHorizontal: 14,

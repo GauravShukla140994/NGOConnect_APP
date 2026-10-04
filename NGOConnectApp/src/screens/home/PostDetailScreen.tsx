@@ -11,14 +11,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Image,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { parseRichSegments } from '../../utils/richText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
@@ -319,9 +322,25 @@ export default function PostDetailScreen() {
           {/* Caption */}
           <View style={s.igCaption}>
             {!!post.title && <Text style={s.igPostTitle}>{post.title}</Text>}
-            <Text style={s.igCaptionText} numberOfLines={expanded ? undefined : 3}>
+            <Text style={s.igCaptionText} numberOfLines={expanded ? undefined : 3} selectable>
               <Text style={s.igCaptionAuthor}>{authorName}{' '}</Text>
-              {post.content}
+              {parseRichSegments(post.content ?? '').map((seg, i) =>
+                seg.type === 'url'
+                  ? (
+                    <Text
+                      key={i}
+                      style={s.igCaptionLink}
+                      onPress={() =>
+                        Linking.openURL(seg.value).catch(() =>
+                          Alert.alert('Cannot open link', seg.value),
+                        )
+                      }
+                    >
+                      {seg.value}
+                    </Text>
+                  )
+                  : <React.Fragment key={i}>{seg.value}</React.Fragment>
+              )}
             </Text>
             {isLong && !expanded && (
               <TouchableOpacity onPress={() => setExpanded(true)}>
@@ -439,6 +458,7 @@ const s = StyleSheet.create({
   igPostTitle:   { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
   igCaptionAuthor: { fontSize: 13, fontWeight: '700', color: C.TEXT },
   igCaptionText:   { fontSize: 13, color: C.TEXT, lineHeight: 20 },
+  igCaptionLink:   { fontSize: 13, color: C.PRIMARY, textDecorationLine: 'underline' },
   igMoreLink:      { fontSize: 13, color: C.TEXT3, marginTop: 2 },
 
   igFundraiseBox: { marginHorizontal: 14, marginVertical: 8, backgroundColor: '#F0FDF4', borderRadius: 10, padding: 12 },

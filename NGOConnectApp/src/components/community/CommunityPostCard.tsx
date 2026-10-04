@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import {
   Alert,
   ActivityIndicator,
+  Linking,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,6 +20,7 @@ import AppConfig from '../../config/AppConfig';
 import type { CommunityPost } from '../../types/api.types';
 import { UserAvatar } from '../ui';
 import { communityApi } from '../../api/community.api';
+import { parseRichSegments } from '../../utils/richText';
 
 const C = AppConfig.COLORS;
 
@@ -184,7 +186,27 @@ function AnnouncementCard({ item, onLike, onAck, onComment, onMorePress }: {
       <View style={css.body}>
         <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
-        {item.content ? <Text style={css.content}>{item.content}</Text> : null}
+        {item.content ? (
+          <Text style={css.content} selectable>
+            {parseRichSegments(item.content).map((seg, i) =>
+              seg.type === 'url'
+                ? (
+                  <Text
+                    key={i}
+                    style={css.contentLink}
+                    onPress={() =>
+                      Linking.openURL(seg.value).catch(() =>
+                        Alert.alert('Cannot open link', seg.value),
+                      )
+                    }
+                  >
+                    {seg.value}
+                  </Text>
+                )
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
+          </Text>
+        ) : null}
         <View style={css.ackRow}>
           <TouchableOpacity
             style={[css.ackBtn, acked && css.ackBtnDone]}
@@ -216,7 +238,27 @@ function QuestionCard({ item, onLike, onComment, onMorePress }: {
       <View style={css.body}>
         <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
-        {item.content ? <Text style={css.content}>{item.content}</Text> : null}
+        {item.content ? (
+          <Text style={css.content} selectable>
+            {parseRichSegments(item.content).map((seg, i) =>
+              seg.type === 'url'
+                ? (
+                  <Text
+                    key={i}
+                    style={css.contentLink}
+                    onPress={() =>
+                      Linking.openURL(seg.value).catch(() =>
+                        Alert.alert('Cannot open link', seg.value),
+                      )
+                    }
+                  >
+                    {seg.value}
+                  </Text>
+                )
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
+          </Text>
+        ) : null}
 
         {/* Best answer preview */}
         {item.bestAnswerText ? (
@@ -396,7 +438,27 @@ function EventUpdateCard({ item, onLike, onComment, onMorePress }: {
           </View>
         ) : null}
 
-        {item.content ? <Text style={css.content}>{item.content}</Text> : null}
+        {item.content ? (
+          <Text style={css.content} selectable>
+            {parseRichSegments(item.content).map((seg, i) =>
+              seg.type === 'url'
+                ? (
+                  <Text
+                    key={i}
+                    style={css.contentLink}
+                    onPress={() =>
+                      Linking.openURL(seg.value).catch(() =>
+                        Alert.alert('Cannot open link', seg.value),
+                      )
+                    }
+                  >
+                    {seg.value}
+                  </Text>
+                )
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
+          </Text>
+        ) : null}
       </View>
       <CardFooter
         item={item}
@@ -442,7 +504,27 @@ function VolRequestCard({ item, onLike, onComment, onMorePress }: {
         <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
         {/* content = skills text entered in the form */}
-        {item.content ? <Text style={css.content}>{item.content}</Text> : null}
+        {item.content ? (
+          <Text style={css.content} selectable>
+            {parseRichSegments(item.content).map((seg, i) =>
+              seg.type === 'url'
+                ? (
+                  <Text
+                    key={i}
+                    style={css.contentLink}
+                    onPress={() =>
+                      Linking.openURL(seg.value).catch(() =>
+                        Alert.alert('Cannot open link', seg.value),
+                      )
+                    }
+                  >
+                    {seg.value}
+                  </Text>
+                )
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
+          </Text>
+        ) : null}
 
         {/* Stats row */}
         {(total > 0 || dateTimeText) ? (
@@ -549,7 +631,27 @@ function TaskCard({ item, onComment, onMorePress }: {
           }
         />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
-        {item.content ? <Text style={css.content}>{item.content}</Text> : null}
+        {item.content ? (
+          <Text style={css.content} selectable>
+            {parseRichSegments(item.content).map((seg, i) =>
+              seg.type === 'url'
+                ? (
+                  <Text
+                    key={i}
+                    style={css.contentLink}
+                    onPress={() =>
+                      Linking.openURL(seg.value).catch(() =>
+                        Alert.alert('Cannot open link', seg.value),
+                      )
+                    }
+                  >
+                    {seg.value}
+                  </Text>
+                )
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
+          </Text>
+        ) : null}
 
         {/* Assignee / Due date row
             assignedToName → from SP JOIN on AssignedToUserId (null until member-picker added)
@@ -679,7 +781,27 @@ function ResourceCard({ item, onLike, onComment, onMorePress }: {
       <View style={css.body}>
         <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
-        {item.content ? <Text style={css.content}>{item.content}</Text> : null}
+        {item.content ? (
+          <Text style={css.content} selectable>
+            {parseRichSegments(item.content).map((seg, i) =>
+              seg.type === 'url'
+                ? (
+                  <Text
+                    key={i}
+                    style={css.contentLink}
+                    onPress={() =>
+                      Linking.openURL(seg.value).catch(() =>
+                        Alert.alert('Cannot open link', seg.value),
+                      )
+                    }
+                  >
+                    {seg.value}
+                  </Text>
+                )
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
+          </Text>
+        ) : null}
 
         {/* File list */}
         {names.length > 0 ? (
@@ -736,7 +858,27 @@ function DiscussionCard({ item, onLike, onComment, onMorePress }: {
       <View style={css.body}>
         <AuthorRow item={item} onMorePress={onMorePress} />
         {item.title   ? <Text style={css.title}>{item.title}</Text>   : null}
-        {item.content ? <Text style={css.content}>{item.content}</Text> : null}
+        {item.content ? (
+          <Text style={css.content} selectable>
+            {parseRichSegments(item.content).map((seg, i) =>
+              seg.type === 'url'
+                ? (
+                  <Text
+                    key={i}
+                    style={css.contentLink}
+                    onPress={() =>
+                      Linking.openURL(seg.value).catch(() =>
+                        Alert.alert('Cannot open link', seg.value),
+                      )
+                    }
+                  >
+                    {seg.value}
+                  </Text>
+                )
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
+          </Text>
+        ) : null}
 
         {/* Best/top reply preview */}
         {item.bestAnswerText ? (
@@ -860,6 +1002,7 @@ const css = StyleSheet.create({
   // Content
   title:          { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 5, lineHeight: 20 },
   content:        { fontSize: 13, color: C.TEXT, lineHeight: 19, marginBottom: 8 },
+  contentLink:    { fontSize: 13, color: C.PRIMARY, textDecorationLine: 'underline' },
 
   // Footer
   footer:         { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.BORDER, minHeight: 48 },

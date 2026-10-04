@@ -20,6 +20,7 @@ import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { fmtDate, isProjectExpired } from '../../utils/dateUtils';
+import { parseRichSegments } from '../../utils/richText';
 import apiClient from '../../api/apiClient';
 import { getProfile, orgApi } from '../../api/org.api';
 import { useAuthStore } from '../../store/authStore';
@@ -289,7 +290,13 @@ function ProjectDetailModal({
               </View>
               {p.orgName ? <Text style={mdStyles.orgName}>by {p.orgName}</Text> : null}
               {p.description ? (
-                <Text style={mdStyles.description}>{p.description}</Text>
+                <Text style={mdStyles.description} selectable>
+                  {parseRichSegments(p.description).map((seg, i) =>
+                    seg.type === 'url'
+                      ? <Text key={i} style={mdStyles.descriptionLink} onPress={() => Linking.openURL(seg.value).catch(() => Alert.alert('Cannot open link', seg.value))}>{seg.value}</Text>
+                      : <React.Fragment key={i}>{seg.value}</React.Fragment>
+                  )}
+                </Text>
               ) : null}
 
               {/* Info rows */}
@@ -1026,19 +1033,37 @@ export default function NgoProfileScreen() {
               {(org.about || org.description) && (
                 <>
                   <Text style={styles.sectionLabel}>About Us</Text>
-                  <Text style={styles.body}>{org.about ?? org.description}</Text>
+                  <Text style={styles.body} selectable>
+                    {parseRichSegments(org.about ?? org.description ?? '').map((seg, i) =>
+                      seg.type === 'url'
+                        ? <Text key={i} style={styles.bodyLink} onPress={() => Linking.openURL(seg.value).catch(() => Alert.alert('Cannot open link', seg.value))}>{seg.value}</Text>
+                        : <React.Fragment key={i}>{seg.value}</React.Fragment>
+                    )}
+                  </Text>
                 </>
               )}
               {org.mission && (
                 <>
                   <Text style={[styles.sectionLabel, { marginTop: 14 }]}>Our Mission</Text>
-                  <Text style={styles.body}>{org.mission}</Text>
+                  <Text style={styles.body} selectable>
+                    {parseRichSegments(org.mission ?? '').map((seg, i) =>
+                      seg.type === 'url'
+                        ? <Text key={i} style={styles.bodyLink} onPress={() => Linking.openURL(seg.value).catch(() => Alert.alert('Cannot open link', seg.value))}>{seg.value}</Text>
+                        : <React.Fragment key={i}>{seg.value}</React.Fragment>
+                    )}
+                  </Text>
                 </>
               )}
               {org.vision && (
                 <>
                   <Text style={[styles.sectionLabel, { marginTop: 14 }]}>Our Vision</Text>
-                  <Text style={styles.body}>{org.vision}</Text>
+                  <Text style={styles.body} selectable>
+                    {parseRichSegments(org.vision ?? '').map((seg, i) =>
+                      seg.type === 'url'
+                        ? <Text key={i} style={styles.bodyLink} onPress={() => Linking.openURL(seg.value).catch(() => Alert.alert('Cannot open link', seg.value))}>{seg.value}</Text>
+                        : <React.Fragment key={i}>{seg.value}</React.Fragment>
+                    )}
+                  </Text>
                 </>
               )}
               {org.areasOfWork?.length ? (
@@ -1226,7 +1251,13 @@ function ProjectRow({
           <Text style={styles.projectTitle} numberOfLines={2}>{title}</Text>
         )}
         {!!project.description && (
-          <Text style={styles.projectDesc} numberOfLines={2}>{project.description}</Text>
+          <Text style={styles.projectDesc} numberOfLines={2} selectable>
+            {parseRichSegments(project.description).map((seg, i) =>
+              seg.type === 'url'
+                ? <Text key={i} style={styles.projectDescLink} onPress={() => Linking.openURL(seg.value).catch(() => Alert.alert('Cannot open link', seg.value))}>{seg.value}</Text>
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
+          </Text>
         )}
         <Text style={styles.projectMeta}>{meta}</Text>
       </View>
@@ -1311,6 +1342,7 @@ const styles = StyleSheet.create({
   // Content
   sectionLabel:      { fontSize: 13, fontWeight: '700', color: C.TEXT, marginBottom: 7 },
   body:              { fontSize: 14, color: C.TEXT2, lineHeight: 20 },
+  bodyLink:          { fontSize: 14, color: C.PRIMARY, textDecorationLine: 'underline', lineHeight: 20 },
   tagRow:            { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
   tag:               { backgroundColor: C.PRIMARY_LIGHT, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   tagText:           { fontSize: 11, color: C.PRIMARY, fontWeight: '600' },
@@ -1322,6 +1354,7 @@ const styles = StyleSheet.create({
   projectItem:       { flexDirection: 'row', alignItems: 'center', backgroundColor: C.CARD, borderRadius: 12, padding: 12, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
   projectTitle:      { fontSize: 14, fontWeight: '600', color: C.TEXT, marginBottom: 2 },
   projectDesc:       { fontSize: 12, color: C.TEXT2, lineHeight: 16, marginBottom: 3 },
+  projectDescLink:   { fontSize: 12, color: C.PRIMARY, textDecorationLine: 'underline', lineHeight: 16 },
   projectMeta:       { fontSize: 11, color: C.TEXT3 },
   detailsBtn:        { borderWidth: 1.5, borderColor: C.PRIMARY, paddingHorizontal: 13, paddingVertical: 7, borderRadius: 12, marginLeft: 10 },
   detailsBtnText:    { color: C.PRIMARY, fontSize: 12, fontWeight: '600' },
@@ -1376,7 +1409,8 @@ const mdStyles = StyleSheet.create({
   catPill:      { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   catPillText:  { fontSize: 11, fontWeight: '700' },
   orgName:      { fontSize: 13, color: C.TEXT2, marginBottom: 10 },
-  description:  { fontSize: 14, color: C.TEXT, lineHeight: 20, marginBottom: 12 },
+  description:      { fontSize: 14, color: C.TEXT, lineHeight: 20, marginBottom: 12 },
+  descriptionLink:  { fontSize: 14, color: C.PRIMARY, textDecorationLine: 'underline', lineHeight: 20 },
 
   infoList:     { gap: 8, marginBottom: 12 },
   infoItem:     { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },

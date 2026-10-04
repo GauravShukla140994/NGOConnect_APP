@@ -17,6 +17,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Linking,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -28,6 +29,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { fmtDate } from '../../utils/dateUtils';
+import { parseRichSegments } from '../../utils/richText';
 import { feedApi } from '../../api/feed.api';
 import MediaPreviewModal, { MediaItem } from '../../components/MediaPreviewModal';
 import type { Post } from '../../types/api.types';
@@ -140,8 +142,24 @@ function SavedPostCard({
       {/* ── Content ────────────────────────────────────────────────── */}
       {content.length > 0 && (
         <View style={{ marginBottom: mediaUrls.length > 0 ? 8 : 0 }}>
-          <Text style={s.content} numberOfLines={expanded ? undefined : 4}>
-            {content}
+          <Text style={s.content} numberOfLines={expanded ? undefined : 4} selectable>
+            {parseRichSegments(content).map((seg, i) =>
+              seg.type === 'url'
+                ? (
+                  <Text
+                    key={i}
+                    style={s.contentLink}
+                    onPress={() =>
+                      Linking.openURL(seg.value).catch(() =>
+                        Alert.alert('Cannot open link', seg.value),
+                      )
+                    }
+                  >
+                    {seg.value}
+                  </Text>
+                )
+                : <React.Fragment key={i}>{seg.value}</React.Fragment>
+            )}
           </Text>
           {isLong && (
             <TouchableOpacity onPress={() => setExpanded(e => !e)} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
@@ -451,8 +469,9 @@ const s = StyleSheet.create({
   unsaveBtnText: { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
 
   // content
-  content:   { fontSize: 14, color: C.TEXT, lineHeight: 20 },
-  readMore:  { fontSize: 13, color: C.PRIMARY, fontWeight: '600', marginTop: 4 },
+  content:     { fontSize: 14, color: C.TEXT, lineHeight: 20 },
+  contentLink: { fontSize: 14, color: C.PRIMARY, textDecorationLine: 'underline' },
+  readMore:    { fontSize: 13, color: C.PRIMARY, fontWeight: '600', marginTop: 4 },
 
   // media — single item (16:9, full width)
   mediaSingle: {

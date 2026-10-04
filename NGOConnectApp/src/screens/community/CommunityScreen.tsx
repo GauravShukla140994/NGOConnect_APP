@@ -982,6 +982,6 @@ const styles = StyleSheet.create({
   orgSwitcherAvatarText: { fontSize: 13, fontWeight: '800', color: '#fff' },
   orgSwitcherName:       { fontSize: 14, fontWeight: '600', color: C.TEXT },
   orgSwitcherMeta:       { fontSize: 12, color: C.TEXT2, marginTop: 1 },
-  orgSwitcherActiveBadge:    { width: 22, height: 22, borderRadius: 11, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center' },
-  orgSwitcherActiveBadgeText:{ color: '#fff', fontSize: 11, fontWeight: '700' },
+  orgSwitcherActiveBadge:    { borderRadius: 10, backgroundColor: C.PRIMARY, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 3 },
+  orgSwitcherActiveBadgeText:{ color: '#fff', fontSize: 11, fontWeight: '700', lineHeight: 15 },
 });
