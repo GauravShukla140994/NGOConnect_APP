@@ -16,7 +16,7 @@ import {
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import AppConfig from '../../config/AppConfig';
 import {
   getMyProfile, updateProfile,
@@ -24,6 +24,7 @@ import {
   getMyInterests, saveInterests,
   getSafetyPrefs, updateSafetyPrefs,
   getMyDocuments,
+  userApi,
 } from '../../api/user.api';
 import ContactUpdateModal from '../../components/profile/ContactUpdateModal';
 import DocumentUploadSection from '../../components/common/DocumentUploadSection';
@@ -182,7 +183,10 @@ export default function EditProfileScreen() {
   const [country,      setCountry]      = useState('India');
 
   // --- Step 4: Skills & Interests ---
-  const [docs,         setDocs]         = useState<UserDocument[]>([]);
+  const [docs,                 setDocs]                 = useState<UserDocument[]>([]);
+  // IDs of docs the user marked for deletion in the wizard — committed only on final Save.
+  // If the user abandons the wizard, these are never sent to the API.
+  const [pendingDeleteDocIds,  setPendingDeleteDocIds]  = useState<number[]>([]);
   const [skills,       setSkills]       = useState<UserSkill[]>([]);
   const [newSkill,     setNewSkill]     = useState('');
   const [interests,    setInterests]    = useState<UserInterest[]>([]);
@@ -336,27 +340,68 @@ export default function EditProfileScreen() {
   // -----------------------------------------------------------------
   // Photo upload
   // -----------------------------------------------------------------
-  const handlePickPhoto = useCallback(async () => {
-    const result = await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
-    if (result.didCancel || !result.assets?.length) return;
-    const asset = result.assets[0];
-    if (!asset.uri) return;
-    setUploading(true);
-    try {
-      const url = await uploadFile(
-        asset.uri,
-        asset.fileName ?? 'profile.jpg',
-        asset.type ?? 'image/jpeg',
-        AppConfig.UPLOAD_MODULES.USER_PHOTOS,
-      );
-      setPhotoUrl(url);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message ?? err?.message ?? 'Could not upload photo.';
-      console.error('[EditProfile] Photo upload error:', JSON.stringify(err?.response?.data ?? err?.message ?? err));
-      Alert.alert('Upload Failed', msg);
-    } finally {
-      setUploading(false);
-    }
+  const handlePickPhoto = useCallback(() => {
+    const doUpload = async (uri: string, fileName: string, type: string) => {
+      setUploading(true);
+      try {
+        const url = await uploadFile(
+          uri,
+          fileName,
+          type,
+          AppConfig.UPLOAD_MODULES.USER_PHOTOS,
+        );
+        setPhotoUrl(url);
+      } catch (err: any) {
+        const msg = err?.response?.data?.message ?? err?.message ?? 'Could not upload photo.';
+        console.error('[EditProfile] Photo upload error:', JSON.stringify(err?.response?.data ?? err?.message ?? err));
+        Alert.alert('Upload Failed', msg);
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    Alert.alert(
+      'Profile Photo',
+      'How would you like to update your photo?',
+      [
+        {
+          text: '📷  Take a Photo',
+          onPress: () => {
+            launchCamera(
+              { mediaType: 'photo', quality: 0.8, saveToPhotos: false },
+              (response) => {
+                if (response.didCancel) { return; }
+                if (response.errorCode === 'permission') {
+                  Alert.alert('Camera Permission', 'Please allow camera access in Settings.');
+                  return;
+                }
+                if (response.errorCode) { return; }
+                const asset = response.assets?.[0];
+                if (asset?.uri) {
+                  doUpload(asset.uri, asset.fileName ?? 'profile.jpg', asset.type ?? 'image/jpeg');
+                }
+              },
+            );
+          },
+        },
+        {
+          text: '🖼️  Choose from Gallery',
+          onPress: () => {
+            launchImageLibrary(
+              { mediaType: 'photo', quality: 0.8 },
+              (response) => {
+                if (response.didCancel || !response.assets?.length) { return; }
+                const asset = response.assets[0];
+                if (asset?.uri) {
+                  doUpload(asset.uri, asset.fileName ?? 'profile.jpg', asset.type ?? 'image/jpeg');
+                }
+              },
+            );
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
   }, []);
 
   // -----------------------------------------------------------------
@@ -442,7 +487,33 @@ export default function EditProfileScreen() {
         await saveInterests(selectedInterestIds);
       }
 
-      // 3. Save profile
+      // 3a. Commit deferred document uploads (staged docs with negative IDs).
+      //     File is already on Azure; this call writes the row to UserDocuments.
+      //     The SP soft-deletes any previous doc of the same type automatically.
+      const stagedUploads = docs.filter(d => d.userDocumentId < 0);
+      if (stagedUploads.length > 0) {
+        await Promise.allSettled(
+          stagedUploads.map(d =>
+            userApi.uploadDocument({
+              documentTypeLkpId: d.documentTypeLkpId,
+              fileUrl:    d.fileUrl,
+              fileName:   d.fileName,
+              fileSizeKb: d.fileSizeKb ?? 0,
+            }),
+          ),
+        );
+      }
+
+      // 3b. Commit deferred document deletions (accumulated while user walked the wizard).
+      //     Failures are non-fatal — we log and continue so the profile save isn't blocked.
+      if (pendingDeleteDocIds.length > 0) {
+        await Promise.allSettled(
+          pendingDeleteDocIds.map(id => userApi.deleteDocument(id)),
+        );
+        setPendingDeleteDocIds([]);
+      }
+
+      // 4. Save profile
       const payload: Record<string, unknown> = {};
       const set = (k: string, v: string | number | undefined) => {
         if (v !== undefined && v !== '') payload[k] = v;
@@ -494,6 +565,7 @@ export default function EditProfileScreen() {
     workExpLkpId, addressLine1, addressLine2, city, state, pincode, country,
     selectedInterestIds, nav,
     emergVisibilityLkpId, autoShareDurLkpId, allowLocDuringSos, allowLocDuringProj,
+    pendingDeleteDocIds, docs,
   ]);
 
   // -----------------------------------------------------------------
@@ -1106,6 +1178,9 @@ export default function EditProfileScreen() {
             <DocumentUploadSection
               initialDocs={docs}
               onDocsChange={setDocs}
+              onDeleteDoc={(doc) =>
+                setPendingDeleteDocIds(prev => [...prev, doc.userDocumentId])
+              }
             />
           </View>
         )}

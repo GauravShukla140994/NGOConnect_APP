@@ -104,6 +104,7 @@ apiClient.interceptors.response.use(
         const response = await axios.post<ApiResponse<AuthTokens>>(
           `${AppConfig.BASE_URL}/auth/refresh-token`,
           {refreshToken, deviceInfo: 'Android'},
+          { timeout: 15000 }, // Hard cap — raw axios has no timeout by default, hangs on Railway cold start
         );
 
         if (response.data.isSuccess === 1 && response.data.data) {

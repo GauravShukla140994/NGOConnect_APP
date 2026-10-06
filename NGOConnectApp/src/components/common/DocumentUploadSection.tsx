@@ -16,12 +16,14 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import DocumentPicker, { types as DocTypes } from 'react-native-document-picker';
+import { launchCamera } from 'react-native-image-picker';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import AppConfig from '../../config/AppConfig';
 import { fmtDate } from '../../utils/dateUtils';
@@ -100,9 +102,16 @@ interface Props {
   initialDocs?: UserDocument[];
   /** Show only required docs (for join form summary mode). Default: false */
   compactMode?: boolean;
+  /**
+   * When provided, deletion is DEFERRED — the component does NOT call the API.
+   * Instead it calls onDeleteDoc(doc) so the parent can track pending deletes
+   * and commit them only when the wizard is submitted.
+   * Used by EditProfileScreen; NOT used by JoinFormScreen (immediate delete).
+   */
+  onDeleteDoc?: (doc: UserDocument) => void;
 }
 
-export default function DocumentUploadSection({ onDocsChange, initialDocs, compactMode = false }: Props) {
+export default function DocumentUploadSection({ onDocsChange, initialDocs, compactMode = false, onDeleteDoc }: Props) {
   const [docs,      setDocs]      = useState<UserDocument[]>(initialDocs ?? []);
   const [loading,   setLoading]   = useState(initialDocs === undefined); // only show spinner in self-fetch mode
   const [uploading,     setUploading]     = useState<string | null>(null); // valueCode being uploaded
@@ -145,47 +154,123 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
   );
 
   const handleUpload = async (typeCode: string, typeLkpId: number) => {
-    // ── 1. Open document picker immediately — never gate this on an API call ──
+    // ── 0. Ask the user: take a photo or pick a file ──────────────────────────
+    const source = await new Promise<'camera' | 'files' | 'cancel'>(resolve => {
+      Alert.alert(
+        'Add Document',
+        'How would you like to add this document?',
+        [
+          { text: '📷  Take a Photo', onPress: () => resolve('camera') },
+          { text: '📁  Choose File',  onPress: () => resolve('files')  },
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+        ],
+      );
+    });
+    if (source === 'cancel') { return; }
+
+    // ── 1. Capture or pick the file ───────────────────────────────────────────
     let pickedUri   = '';
     let pickedName  = '';
     let pickedMime  = 'application/octet-stream';
     let pickedSize  = 0;
-    try {
-      // DocumentPicker shows the full file manager (PDFs, images, Word, etc.)
-      const [picked] = await DocumentPicker.pick({
-        type: [DocTypes.pdf, DocTypes.images, DocTypes.plainText, DocTypes.allFiles],
-        allowMultiSelection: false,
-        copyTo: 'cachesDirectory',  // ensures uri is readable on Android
-      });
-      pickedUri  = picked.fileCopyUri ?? picked.uri;
-      pickedName = picked.name  ?? `doc_${Date.now()}`;
-      pickedMime = picked.type  ?? 'application/octet-stream';
-      pickedSize = picked.size  ?? 0;
-    } catch (err: any) {
-      if (DocumentPicker.isCancel(err)) { return; } // user cancelled — silent
-      Alert.alert('Could not open file picker', err?.message ?? 'Please try again.');
-      return;
+
+    if (source === 'camera') {
+      try {
+        const result = await launchCamera({
+          mediaType: 'photo',
+          quality: 0.75,          // lower = faster processing; documents don't need 0.85
+          maxWidth: 1600,         // cap resolution — speeds up write + reduces file size
+          maxHeight: 1600,
+          saveToPhotos: false,
+          includeBase64: false,
+        });
+        if (result.didCancel) { return; }
+        if (result.errorCode) {
+          if (result.errorCode === 'permission') {
+            Alert.alert('Camera Permission', 'Please allow camera access in Settings to take photos.');
+          } else if (result.errorCode !== 'camera_unavailable') {
+            Alert.alert('Camera Error', result.errorMessage ?? 'Could not open camera.');
+          }
+          return;
+        }
+        const asset = result.assets?.[0];
+        if (!asset?.uri) {
+          Alert.alert('Camera Error', 'Could not retrieve the captured photo. Please try again.');
+          return;
+        }
+
+        // On Android, intent-based camera may return a content:// FileProvider URI.
+        // Copy to the cache directory so FormData gets a reliable file:// path.
+        let resolvedUri = asset.uri;
+        if (Platform.OS === 'android' && !asset.uri.startsWith('file://')) {
+          try {
+            const tempPath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/doc_cam_${Date.now()}.jpg`;
+            await ReactNativeBlobUtil.fs.cp(asset.uri, tempPath);
+            resolvedUri = `file://${tempPath}`;
+          } catch {
+            // Couldn't copy — fall back to original URI, upload may still work
+            resolvedUri = asset.uri;
+          }
+        }
+
+        pickedUri  = resolvedUri;
+        pickedName = asset.fileName ?? `photo_${Date.now()}.jpg`;
+        pickedMime = asset.type    ?? 'image/jpeg';
+        pickedSize = asset.fileSize ?? 0;
+      } catch (err: any) {
+        Alert.alert('Camera Error', err?.message ?? 'Could not open camera.');
+        return;
+      }
+    } else {
+      try {
+        // DocumentPicker shows the full file manager (PDFs, images, Word, etc.)
+        const [picked] = await DocumentPicker.pick({
+          type: [DocTypes.pdf, DocTypes.images, DocTypes.plainText, DocTypes.allFiles],
+          allowMultiSelection: false,
+          copyTo: 'cachesDirectory',  // ensures uri is readable on Android
+        });
+        pickedUri  = picked.fileCopyUri ?? picked.uri;
+        pickedName = picked.name  ?? `doc_${Date.now()}`;
+        pickedMime = picked.type  ?? 'application/octet-stream';
+        pickedSize = picked.size  ?? 0;
+      } catch (err: any) {
+        if (DocumentPicker.isCancel(err)) { return; } // user cancelled — silent
+        Alert.alert('Could not open file picker', err?.message ?? 'Please try again.');
+        return;
+      }
     }
 
     // ── 2. Show progress immediately after file is chosen ─────────────────────
     setUploadingName(pickedName);
     setUploading(typeCode);
 
-    // ── 3. Resolve lkpId (after file is selected so picker is already closed) ──
-    let lkpId = typeLkpId;
+    // ── 3. Resolve lkpId ────────────────────────────────────────────────────────
+    // Source A: passed from onPressUpload (ref value at tap time).
+    // Source B: re-read ref — may have been populated since tap (camera takes time).
+    // Source C: wait 800ms and re-read — mount fetch likely still in flight.
+    // Source D: direct single-value API call — reliable last resort if mount fetch
+    //           failed or is still cold-starting. Caches result in the ref for next time.
+    let lkpId = typeLkpId || typeLkpMapRef.current[typeCode] || 0;
     if (!lkpId) {
-      try {
-        const { lookupApi } = await import('../../api/lookup.api');
-        const res = await lookupApi.getValuesByTypeCode('DOCUMENT_TYPE_USER');
-        const values: LookupValue[] = res.data?.data ?? [];
-        const found = values.find(v => v.valueCode === typeCode);
-        lkpId = found?.lookupValueId ?? 0;
-        if (lkpId) {
-          setTypeLkpMap(prev => ({ ...prev, [typeCode]: lkpId }));
-        }
-      } catch { /* proceed with lkpId = 0 */ }
+      await new Promise<void>(resolve => setTimeout(resolve, 800));
+      lkpId = typeLkpMapRef.current[typeCode] ?? 0;
     }
     if (!lkpId) {
+      try {
+        // Direct single-value fetch as final fallback.
+        // Axios already has timeout: 30000 on the client — the JWT refresh hang is
+        // fixed separately (15s cap in apiClient.ts), so no Promise.race needed here.
+        const { lookupApi } = await import('../../api/lookup.api');
+        const sv = await lookupApi.getSingleValue('DOCUMENT_TYPE_USER', typeCode);
+        lkpId = sv.data?.data?.lookupValueId ?? 0;
+        if (lkpId) {
+          typeLkpMapRef.current[typeCode] = lkpId; // cache for next upload tap
+        }
+      } catch { /* Network error — fall through to alert below */ }
+    }
+    if (!lkpId) {
+      setUploading(null);
+      setUploadingName('');
       Alert.alert('Upload Failed', 'Could not identify document type. Please try again.');
       return;
     }
@@ -199,20 +284,44 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
         AppConfig.UPLOAD_MODULES.USER_DOCUMENTS,
       );
 
-      // ── 4. Save metadata to UserDocuments (SP upserts by type) ────────────
-      await userApi.uploadDocument({
-        documentTypeLkpId: lkpId,
-        fileUrl,
-        fileName:   pickedName,
-        fileSizeKb: Math.round(pickedSize / 1024),
-      });
-
-      // ── 5. Refresh docs list ───────────────────────────────────────────────
-      const res = await userApi.getMyDocuments();
-      if (res.data?.isSuccess) {
-        const updated = res.data.data ?? [];
+      if (onDeleteDoc) {
+        // ── DEFERRED mode (EditProfileScreen) ─────────────────────────────
+        // The file is on Azure. Don't write to UserDocuments yet — parent
+        // commits on Save. Represent it as a staged doc with a negative ID
+        // so the UI shows it and EditProfileScreen can detect it on Save.
+        const stagedDoc: UserDocument = {
+          userDocumentId:    -(Date.now()),   // negative = staged, not in DB
+          documentTypeLkpId: lkpId,
+          docTypeCode:       typeCode,
+          docTypeName:       DOC_TYPES.find(t => t.code === typeCode)?.label ?? typeCode,
+          fileUrl,
+          fileName:   pickedName,
+          fileSizeKb: Math.round(pickedSize / 1024),
+          isVerified: false,
+          uploadedAt: new Date().toISOString(),
+        };
+        // Replace any existing (or previously staged) doc of the same type
+        const updated = [
+          ...docs.filter(d => d.docTypeCode !== typeCode),
+          stagedDoc,
+        ];
         setDocs(updated);
         onDocsChange?.(updated);
+      } else {
+        // ── IMMEDIATE mode (JoinFormScreen) ───────────────────────────────
+        // Save to DB right away, then refresh from DB.
+        await userApi.uploadDocument({
+          documentTypeLkpId: lkpId,
+          fileUrl,
+          fileName:   pickedName,
+          fileSizeKb: Math.round(pickedSize / 1024),
+        });
+        const res = await userApi.getMyDocuments();
+        if (res.data?.isSuccess) {
+          const updated = res.data.data ?? [];
+          setDocs(updated);
+          onDocsChange?.(updated);
+        }
       }
     } catch (err: any) {
       Alert.alert('Upload Failed', err?.message ?? 'Could not upload document.');
@@ -264,13 +373,28 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
         {
           text: 'Remove', style: 'destructive',
           onPress: async () => {
-            try {
-              await userApi.deleteDocument(doc.userDocumentId);
+            if (onDeleteDoc) {
+              // DEFERRED mode (EditProfileScreen): never call the API here.
+              // The parent tracks pending deletes and commits them on final Save.
+              // If the user abandons the wizard, the doc is never deleted.
               const updated = docs.filter(d => d.userDocumentId !== doc.userDocumentId);
               setDocs(updated);
               onDocsChange?.(updated);
-            } catch {
-              Alert.alert('Error', 'Could not remove document.');
+              // Staged docs (negative ID) were never saved to DB — nothing to delete.
+              // Only real DB docs (positive ID) need to go on the delete queue.
+              if (doc.userDocumentId > 0) {
+                onDeleteDoc(doc);
+              }
+            } else {
+              // IMMEDIATE mode (JoinFormScreen): delete right away as before.
+              try {
+                await userApi.deleteDocument(doc.userDocumentId);
+                const updated = docs.filter(d => d.userDocumentId !== doc.userDocumentId);
+                setDocs(updated);
+                onDocsChange?.(updated);
+              } catch {
+                Alert.alert('Error', 'Could not remove document.');
+              }
             }
           },
         },
@@ -278,21 +402,51 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
     );
   };
 
-  // Fetch lookup IDs for doc types (needed for upload call)
-  // We derive LkpId from the loaded docs or from a lookup fetch.
-  // Simple approach: keep a map of typeCode → lkpId from fetched docs.
-  const [typeLkpMap, setTypeLkpMap] = useState<Record<string, number>>({});
+  // ── lkpId map: typeCode → lookupValueId ─────────────────────────────────────
+  // Uses useRef (NOT useState) so that async functions (handleUpload) always
+  // read the LATEST value regardless of when their closure was created.
+  // useState would cause stale-closure bugs: if the user taps before the
+  // mount-time fetch completes, the running async handleUpload keeps the empty
+  // map even after the fetch finishes and React re-renders.
+  const typeLkpMapRef = useRef<Record<string, number>>({});
+
+  // Source 1: derive from existing docs whenever the list changes
   useEffect(() => {
-    // Build map from existing docs
-    const map: Record<string, number> = {};
-    docs.forEach(d => { map[d.docTypeCode] = d.documentTypeLkpId; });
-    setTypeLkpMap(prev => ({ ...prev, ...map }));
+    docs.forEach(d => {
+      typeLkpMapRef.current[d.docTypeCode] = d.documentTypeLkpId;
+    });
   }, [docs]);
 
-  // Pass the cached lkpId (may be 0 for types with no existing doc).
-  // handleUpload will look it up from the API after the user selects a file.
+  // Source 2: fetch ALL document-type lookup values once on mount; retry once on failure.
+  // This ensures lkpIds are ready before the user taps an upload zone on a type they
+  // haven't uploaded before (no existing doc → not populated by Source 1 above).
+  useEffect(() => {
+    // Retry up to 5 times with progressive delay: 1.5s, 3s, 5s, 8s, 12s
+    // Covers Railway cold starts (2-7s) and transient network errors.
+    const DELAYS = [1500, 3000, 5000, 8000, 12000];
+    const load = async (attempt = 0) => {
+      try {
+        const { lookupApi } = await import('../../api/lookup.api');
+        const res = await lookupApi.getValuesByTypeCode('DOCUMENT_TYPE_USER');
+        const values: LookupValue[] = res.data?.data ?? [];
+        if (values.length > 0) {
+          values.forEach(v => { typeLkpMapRef.current[v.valueCode] = v.lookupValueId; });
+          return; // success — stop retrying
+        }
+        // API returned empty — treat same as error and retry
+        throw new Error('empty lookup response');
+      } catch {
+        if (attempt < DELAYS.length) {
+          setTimeout(() => load(attempt + 1), DELAYS[attempt]);
+        }
+      }
+    };
+    load();
+  }, []); // run once on mount
+
+  // Pass the lkpId from the ref (always latest — avoids stale-closure issues).
   const onPressUpload = (typeCode: string) => {
-    handleUpload(typeCode, typeLkpMap[typeCode] ?? 0);
+    handleUpload(typeCode, typeLkpMapRef.current[typeCode] ?? 0);
   };
 
   const visibleTypes = compactMode

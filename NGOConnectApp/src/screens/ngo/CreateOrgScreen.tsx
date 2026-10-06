@@ -20,7 +20,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import DocumentPicker, { types as DocTypes } from 'react-native-document-picker';
 import { uploadFile } from '../../api/upload.api';
 import { Image } from 'react-native';
@@ -362,27 +362,74 @@ export default function CreateOrgScreen() {
   }, [set]);
 
   const pickDoc = useCallback(async (field: 'regCert' | 'otherDoc') => {
-    try {
-      // DocumentPicker opens the file manager — supports PDF, images, Word, etc.
-      const [picked] = await DocumentPicker.pick({
-        type: [DocTypes.pdf, DocTypes.images, DocTypes.allFiles],
-        allowMultiSelection: false,
-        copyTo: 'cachesDirectory',
-      });
-      const uri  = picked.fileCopyUri ?? picked.uri;
-      const name = picked.name ?? uri.split('/').pop() ?? 'document';
-      if (field === 'regCert') {
-        set('regCertLocalUri',  uri);
-        set('regCertUrl',       '');
-        set('regCertFileName',  name);
-      } else {
-        set('otherDocLocalUri', uri);
-        set('otherDocUrl',      '');
-        set('otherDocFileName', name);
+    // Ask: take a photo or choose a file
+    const source = await new Promise<'camera' | 'files' | 'cancel'>(resolve => {
+      Alert.alert(
+        'Add Document',
+        'How would you like to add this document?',
+        [
+          { text: '📷  Take a Photo', onPress: () => resolve('camera') },
+          { text: '📁  Choose File',  onPress: () => resolve('files')  },
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+        ],
+      );
+    });
+    if (source === 'cancel') { return; }
+
+    let uri  = '';
+    let name = '';
+
+    if (source === 'camera') {
+      try {
+        const result = await launchCamera({
+          mediaType: 'photo',
+          quality: 0.85,
+          saveToPhotos: false,
+          includeBase64: false,
+        });
+        if (result.didCancel) { return; }
+        if (result.errorCode) {
+          if (result.errorCode === 'permission') {
+            Alert.alert('Camera Permission', 'Please allow camera access in Settings to take photos.');
+          } else if (result.errorCode !== 'camera_unavailable') {
+            Alert.alert('Camera Error', result.errorMessage ?? 'Could not open camera.');
+          }
+          return;
+        }
+        const asset = result.assets?.[0];
+        if (!asset?.uri) { return; }
+        uri  = asset.uri;
+        name = asset.fileName ?? `photo_${Date.now()}.jpg`;
+      } catch (err: any) {
+        Alert.alert('Camera Error', err?.message ?? 'Could not open camera.');
+        return;
       }
-    } catch (err: any) {
-      if (DocumentPicker.isCancel(err)) { return; } // user cancelled — silent
-      Alert.alert('Error', 'Could not open file picker. Please try again.');
+    } else {
+      try {
+        // DocumentPicker opens the file manager — supports PDF, images, Word, etc.
+        const [picked] = await DocumentPicker.pick({
+          type: [DocTypes.pdf, DocTypes.images, DocTypes.allFiles],
+          allowMultiSelection: false,
+          copyTo: 'cachesDirectory',
+        });
+        uri  = picked.fileCopyUri ?? picked.uri;
+        name = picked.name ?? uri.split('/').pop() ?? 'document';
+      } catch (err: any) {
+        if (DocumentPicker.isCancel(err)) { return; } // user cancelled — silent
+        Alert.alert('Error', 'Could not open file picker. Please try again.');
+        return;
+      }
+    }
+
+    if (!uri) { return; }
+    if (field === 'regCert') {
+      set('regCertLocalUri',  uri);
+      set('regCertUrl',       '');
+      set('regCertFileName',  name);
+    } else {
+      set('otherDocLocalUri', uri);
+      set('otherDocUrl',      '');
+      set('otherDocFileName', name);
     }
   }, [set]);
 

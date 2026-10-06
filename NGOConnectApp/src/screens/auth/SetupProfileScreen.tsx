@@ -25,7 +25,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import { useAuthStore } from '../../store/authStore';
 import { userApi } from '../../api/user.api';
@@ -50,15 +50,45 @@ export default function SetupProfileScreen({ route }: Props) {
   const [uploading,    setUploading]    = useState(false);
   const [saving,       setSaving]       = useState(false);
 
-  // ── Pick photo from gallery ────────────────────────────────────────────────
+  // ── Pick or take profile photo ─────────────────────────────────────────────
   const handlePickPhoto = () => {
-    launchImageLibrary(
-      { mediaType: 'photo', quality: 0.8, maxWidth: 800, maxHeight: 800 },
-      (response) => {
-        if (response.didCancel || response.errorCode) { return; }
-        const asset = response.assets?.[0];
-        if (asset?.uri) { setPhotoUri(asset.uri); }
-      },
+    Alert.alert(
+      'Profile Photo',
+      'How would you like to add your photo?',
+      [
+        {
+          text: '📷  Take a Photo',
+          onPress: () => {
+            launchCamera(
+              { mediaType: 'photo', quality: 0.8, maxWidth: 800, maxHeight: 800, saveToPhotos: false },
+              (response) => {
+                if (response.didCancel) { return; }
+                if (response.errorCode === 'permission') {
+                  Alert.alert('Camera Permission', 'Please allow camera access in Settings.');
+                  return;
+                }
+                if (response.errorCode) { return; }
+                const asset = response.assets?.[0];
+                if (asset?.uri) { setPhotoUri(asset.uri); }
+              },
+            );
+          },
+        },
+        {
+          text: '🖼️  Choose from Gallery',
+          onPress: () => {
+            launchImageLibrary(
+              { mediaType: 'photo', quality: 0.8, maxWidth: 800, maxHeight: 800 },
+              (response) => {
+                if (response.didCancel || response.errorCode) { return; }
+                const asset = response.assets?.[0];
+                if (asset?.uri) { setPhotoUri(asset.uri); }
+              },
+            );
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
     );
   };
 
