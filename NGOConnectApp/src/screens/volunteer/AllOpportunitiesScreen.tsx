@@ -140,12 +140,55 @@ function ShareSheet({ project, onClose }: { project: Project | null; onClose: ()
   const org   = project.orgName ?? '';
   const schedType = deriveScheduleType(project);
   const dateLine  = buildDateLine(project);
-  const meta  = [org, schedType, dateLine].filter(Boolean).join(' · ');
+  const timeLine  = buildTimeLine(project);
+  const meta      = [org, schedType, dateLine].filter(Boolean).join(' · ');
+
+  // Location: prefer locationName, fall back to city
+  const locationLine = (project as any).locationName || project.city
+    ? [(project as any).locationName, project.city].filter(Boolean).join(', ')
+    : null;
+
+  // Skills (up to 3 to keep the message concise)
+  const skillsLine = project.skills && project.skills.length > 0
+    ? project.skills.slice(0, 3).map(s => s.skillName).join(', ') +
+      (project.skills.length > 3 ? ` +${project.skills.length - 3} more` : '')
+    : null;
+
+  // Slots
+  const maxVol  = project.maxParticipants ?? project.maxVolunteers ?? 0;
+  const currVol = project.currentParticipants ?? (project as any).approvedCount ?? 0;
+  const spotsLine = maxVol > 0
+    ? `${Math.max(0, maxVol - currVol)} of ${maxVol} spots available`
+    : null;
+
+  /**
+   * Rich share message — includes key details so the recipient knows what
+   * they're clicking before they open the link.
+   */
+  const buildShareMessage = (): string => {
+    const lines: string[] = [];
+    lines.push(`🌟 Volunteer Opportunity: ${title}`);
+    if (org)          lines.push(`🏢 ${org}`);
+    if (schedType)    lines.push(`📅 ${schedType}${dateLine ? ': ' + dateLine : ''}`);
+    if (timeLine)     lines.push(`⏰ ${timeLine}`);
+    if (locationLine) {
+      const { latitude: lat, longitude: lon } = project;
+      const mapsUrl = lat != null && lon != null
+        ? `https://maps.google.com/?q=${lat},${lon}`
+        : null;
+      lines.push(`📍 ${locationLine}${mapsUrl ? '\n' + mapsUrl : ''}`);
+    }
+    if (skillsLine)   lines.push(`🛠 Skills: ${skillsLine}`);
+    if (spotsLine)    lines.push(`👥 ${spotsLine}`);
+    lines.push('');
+    lines.push(`Join us and make a difference 💚`);
+    lines.push(url);
+    return lines.join('\n');
+  };
 
   const handleCopy = async () => {
     try {
-      // Opens native share sheet which includes "Copy" — no native clipboard package needed
-      await Share.share({ message: url, title });
+      await Share.share({ message: buildShareMessage(), title });
     } catch { /* cancelled */ }
   };
 
