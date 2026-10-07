@@ -23,9 +23,33 @@ import { WebView } from 'react-native-webview';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../navigation/AuthNavigator';
 import { authApi } from '../../api/auth.api';
+import { settingsApi } from '../../api/settings.api';
 import AppConfig from '../../config/AppConfig';
 import { storage } from '../../api/apiClient';
-import { COUNTRIES, DEFAULT_COUNTRY, EMAIL_REGEX } from '../../constants/countries';
+import { COUNTRIES, Country, DEFAULT_COUNTRY, EMAIL_REGEX } from '../../constants/countries';
+
+// India is the hard-coded fallback used when the settings fetch fails or
+// the ALLOWED_COUNTRY_CODES_LOGIN setting is absent / empty.
+const INDIA_ONLY: Country[] = [DEFAULT_COUNTRY];
+
+/**
+ * Parse the ALLOWED_COUNTRY_CODES_LOGIN setting value into a filtered subset
+ * of COUNTRIES.  The setting stores bare numeric codes: "91,1,971".
+ * We match against each country's dial string after stripping the leading "+".
+ * Returns INDIA_ONLY on any parse failure.
+ */
+function parseAllowedCountries(raw: string): Country[] {
+  try {
+    const allowed = new Set(
+      raw.split(',').map(s => s.trim()).filter(Boolean)
+    );
+    if (allowed.size === 0) return INDIA_ONLY;
+    const filtered = COUNTRIES.filter(c => allowed.has(c.dial.replace('+', '')));
+    return filtered.length > 0 ? filtered : INDIA_ONLY;
+  } catch {
+    return INDIA_ONLY;
+  }
+}
 
 const C = AppConfig.COLORS;
 
@@ -44,6 +68,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [email,           setEmail]           = useState('');
   const [loading,         setLoading]         = useState(false);
   const [country,         setCountry]         = useState(DEFAULT_COUNTRY);
+  const [allowedCountries, setAllowedCountries] = useState<Country[]>(INDIA_ONLY);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countrySearch,   setCountrySearch]   = useState('');
   const [termsAccepted,   setTermsAccepted]   = useState(false);
@@ -60,22 +85,44 @@ export default function LoginScreen({ navigation }: Props) {
     if (!accepted) setShowCheckbox(true);
   }, []);
 
+  // Fetch ALLOWED_COUNTRY_CODES_LOGIN from public settings.
+  // This is a no-auth endpoint so it works before the user is logged in.
+  // Falls back silently to India-only on any network or parse error.
+  useEffect(() => {
+    settingsApi.getPublic()
+      .then(res => {
+        const settings = res.data?.data ?? [];
+        const row = settings.find(s => s.settingKey === 'ALLOWED_COUNTRY_CODES_LOGIN');
+        if (!row?.settingValue) return; // key missing → keep default India-only
+        const list = parseAllowedCountries(row.settingValue);
+        setAllowedCountries(list);
+        // If the currently-selected country is not in the allowed list, reset
+        // to the first allowed entry (maintains consistency after config updates).
+        setCountry(prev =>
+          list.some(c => c.code === prev.code) ? prev : list[0]
+        );
+      })
+      .catch(() => { /* Network failure — India-only fallback stays in place */ });
+  }, []);
+
   const handleCheckboxToggle = () => {
     const next = !termsAccepted;
     setTermsAccepted(next);
     if (next) storage.set('terms_accepted', true);
   };
 
-  // Filter country list by search
+  // Filter the ALLOWED countries by the search query typed in the picker.
+  // Source is allowedCountries (driven by the ALLOWED_COUNTRY_CODES_LOGIN setting),
+  // not the full COUNTRIES list — so only permitted dial codes ever appear.
   const filteredCountries = useMemo(() => {
     const q = countrySearch.trim().toLowerCase();
-    if (!q) return COUNTRIES;
-    return COUNTRIES.filter(c =>
+    if (!q) return allowedCountries;
+    return allowedCountries.filter(c =>
       c.name.toLowerCase().includes(q) ||
       c.dial.includes(q) ||
       c.code.toLowerCase().includes(q)
     );
-  }, [countrySearch]);
+  }, [countrySearch, allowedCountries]);
 
   const handleSendOtp = async () => {
     if (tab === 'mobile') {
@@ -196,16 +243,22 @@ export default function LoginScreen({ navigation }: Props) {
                 <>
                   <Text style={styles.inputLabel}>Mobile Number</Text>
                   <View style={styles.phoneRow}>
-                    {/* Country picker trigger */}
+                    {/* Country picker trigger — hidden when only one country is allowed */}
                     <TouchableOpacity
-                      style={styles.countryPicker}
-                      onPress={() => { setCountrySearch(''); setShowCountryPicker(true); }}
-                      activeOpacity={0.7}
+                      style={[styles.countryPicker, { minWidth: 0 }]}
+                      onPress={() => {
+                        if (allowedCountries.length <= 1) return; // nothing to pick
+                        setCountrySearch('');
+                        setShowCountryPicker(true);
+                      }}
+                      activeOpacity={allowedCountries.length > 1 ? 0.7 : 1}
                       accessibilityLabel="Select country code"
                     >
                       <Text style={styles.flag}>{country.flag}</Text>
-                      <Text style={styles.countryCode}>{country.dial}</Text>
-                      <Text style={styles.countryChevron}>▾</Text>
+                      <Text style={[styles.countryCode, { minWidth: 0 }]}>{country.dial}</Text>
+                      {allowedCountries.length > 1 && (
+                        <Text style={styles.countryChevron}>▾</Text>
+                      )}
                     </TouchableOpacity>
 
                     <TextInput
