@@ -171,13 +171,7 @@ function ShareSheet({ project, onClose }: { project: Project | null; onClose: ()
     if (org)          lines.push(`🏢 ${org}`);
     if (schedType)    lines.push(`📅 ${schedType}${dateLine ? ': ' + dateLine : ''}`);
     if (timeLine)     lines.push(`⏰ ${timeLine}`);
-    if (locationLine) {
-      const { latitude: lat, longitude: lon } = project;
-      const mapsUrl = lat != null && lon != null
-        ? `https://maps.google.com/?q=${lat},${lon}`
-        : null;
-      lines.push(`📍 ${locationLine}${mapsUrl ? '\n' + mapsUrl : ''}`);
-    }
+    if (locationLine) lines.push(`📍 ${locationLine}`);
     if (skillsLine)   lines.push(`🛠 Skills: ${skillsLine}`);
     if (spotsLine)    lines.push(`👥 ${spotsLine}`);
     lines.push('');
