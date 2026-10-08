@@ -495,10 +495,10 @@ export default function EditProfileScreen() {
         await Promise.allSettled(
           stagedUploads.map(d =>
             userApi.uploadDocument({
-              documentTypeLkpId: d.documentTypeLkpId,
-              fileUrl:    d.fileUrl,
-              fileName:   d.fileName,
-              fileSizeKb: d.fileSizeKb ?? 0,
+              docTypeCode: d.docTypeCode,
+              fileUrl:     d.fileUrl,
+              fileName:    d.fileName,
+              fileSizeKb:  d.fileSizeKb ?? 0,
             }),
           ),
         );

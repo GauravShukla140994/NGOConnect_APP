@@ -67,7 +67,7 @@ export const userApi = {
   getMyDocuments: () =>
     apiClient.get<ApiResponse<UserDocument[]>>('/user/documents'),
 
-  uploadDocument: (data: {documentTypeLkpId: number; fileUrl: string; fileName: string; fileSizeKb: number}) =>
+  uploadDocument: (data: {docTypeCode: string; fileUrl: string; fileName: string; fileSizeKb: number}) =>
     apiClient.post<ApiResponse<null>>('/user/documents', data),
 
   deleteDocument: (userDocumentId: number) =>
@@ -116,7 +116,7 @@ export const saveInterests     = (ids: number[]) => userApi.saveInterests(ids);
 export const getSafetyPrefs    = () => userApi.getSafetyPrefs();
 export const updateSafetyPrefs = (data: Partial<SafetyPrefs>) => userApi.updateSafetyPrefs(data);
 export const getMyDocuments    = () => userApi.getMyDocuments();
-export const uploadDocument    = (data: {documentTypeLkpId: number; fileUrl: string; fileName: string; fileSizeKb: number}) => userApi.uploadDocument(data);
+export const uploadDocument    = (data: {docTypeCode: string; fileUrl: string; fileName: string; fileSizeKb: number}) => userApi.uploadDocument(data);
 export const deleteDocument    = (userDocumentId: number) => userApi.deleteDocument(userDocumentId);
 export const sendContactOtp    = (type: 'EMAIL' | 'PHONE', value: string, countryCode?: string) => userApi.sendContactOtp(type, value, countryCode);
 export const verifyContactOtp  = (type: 'EMAIL' | 'PHONE', value: string, otpCode: string) => userApi.verifyContactOtp(type, value, otpCode);

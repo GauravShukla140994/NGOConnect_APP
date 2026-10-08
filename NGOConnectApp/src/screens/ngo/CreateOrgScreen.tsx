@@ -1006,8 +1006,9 @@ export default function CreateOrgScreen() {
           {step === 4 && (
             <>
               <View style={styles.stepHint}>
+                <Text style={styles.stepHintIcon}>🔒</Text>
                 <Text style={styles.stepHintText}>
-                  Upload supporting documents to help us verify your organisation faster. Documents are reviewed by the RippleHub team and are not shown publicly.
+                  On RippleHub, donors give and volunteers commit to organisations they trust. Document verification proves your organisation is legitimate — giving donors confidence their money reaches the right cause, and volunteers the assurance they're dedicating their time to a credible mission. Verified organisations unlock donation campaigns and can receive contributions directly on the platform.
                 </Text>
               </View>
 
@@ -1282,9 +1283,11 @@ const styles = StyleSheet.create({
   uploadSub:            { fontSize: 12, color: C.TEXT2, marginTop: 3 },
 
   // Step 4 — Documents
-  stepHint:             { backgroundColor: '#EFF6FF', borderRadius: 10, padding: 12, marginBottom: 16,
-                          borderWidth: 1, borderColor: '#BFDBFE' },
-  stepHintText:         { fontSize: 12, color: '#1D4ED8', lineHeight: 18 },
+  stepHint:             { flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+                          backgroundColor: '#F0FDF4', borderRadius: 12, padding: 14, marginBottom: 20,
+                          borderWidth: 1, borderColor: '#BBF7D0' },
+  stepHintIcon:         { fontSize: 18, marginTop: 1 },
+  stepHintText:         { flex: 1, fontSize: 13, color: '#166534', lineHeight: 19 },
   docSubtitle:          { fontSize: 12, color: C.TEXT2, marginBottom: 6 },
   docUploadBox:         { backgroundColor: C.INPUT_BG, borderWidth: 1.5, borderColor: C.BORDER,
                           borderRadius: 10, borderStyle: 'dashed', alignItems: 'center',

@@ -29,7 +29,7 @@ import AppConfig from '../../config/AppConfig';
 import { fmtDate } from '../../utils/dateUtils';
 import { userApi } from '../../api/user.api';
 import { uploadFile, getSignedUrl } from '../../api/upload.api';
-import type { UserDocument, LookupValue } from '../../types/api.types';
+import type { UserDocument } from '../../types/api.types';
 
 // ── Download icon (pure Views — no icon library needed) ───────────────────────
 function DownloadIcon({ color, size = 15 }: { color: string; size?: number }) {
@@ -153,7 +153,7 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
     [docs],
   );
 
-  const handleUpload = async (typeCode: string, typeLkpId: number) => {
+  const handleUpload = async (typeCode: string) => {
     // ── 0. Ask the user: take a photo or pick a file ──────────────────────────
     const source = await new Promise<'camera' | 'files' | 'cancel'>(resolve => {
       Alert.alert(
@@ -244,38 +244,7 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
     setUploadingName(pickedName);
     setUploading(typeCode);
 
-    // ── 3. Resolve lkpId ────────────────────────────────────────────────────────
-    // Source A: passed from onPressUpload (ref value at tap time).
-    // Source B: re-read ref — may have been populated since tap (camera takes time).
-    // Source C: wait 800ms and re-read — mount fetch likely still in flight.
-    // Source D: direct single-value API call — reliable last resort if mount fetch
-    //           failed or is still cold-starting. Caches result in the ref for next time.
-    let lkpId = typeLkpId || typeLkpMapRef.current[typeCode] || 0;
-    if (!lkpId) {
-      await new Promise<void>(resolve => setTimeout(resolve, 800));
-      lkpId = typeLkpMapRef.current[typeCode] ?? 0;
-    }
-    if (!lkpId) {
-      try {
-        // Direct single-value fetch as final fallback.
-        // Axios already has timeout: 30000 on the client — the JWT refresh hang is
-        // fixed separately (15s cap in apiClient.ts), so no Promise.race needed here.
-        const { lookupApi } = await import('../../api/lookup.api');
-        const sv = await lookupApi.getSingleValue('DOCUMENT_TYPE_USER', typeCode);
-        lkpId = sv.data?.data?.lookupValueId ?? 0;
-        if (lkpId) {
-          typeLkpMapRef.current[typeCode] = lkpId; // cache for next upload tap
-        }
-      } catch { /* Network error — fall through to alert below */ }
-    }
-    if (!lkpId) {
-      setUploading(null);
-      setUploadingName('');
-      Alert.alert('Upload Failed', 'Could not identify document type. Please try again.');
-      return;
-    }
-
-    // ── 4. Upload to Azure Blob ────────────────────────────────────────────────
+    // ── 3. Upload to Azure Blob ───────────────────────────────────────────────
     try {
       const fileUrl = await uploadFile(
         pickedUri,
@@ -291,7 +260,7 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
         // so the UI shows it and EditProfileScreen can detect it on Save.
         const stagedDoc: UserDocument = {
           userDocumentId:    -(Date.now()),   // negative = staged, not in DB
-          documentTypeLkpId: lkpId,
+          documentTypeLkpId: 0,              // not yet in DB — lkpId resolved by SP on commit
           docTypeCode:       typeCode,
           docTypeName:       DOC_TYPES.find(t => t.code === typeCode)?.label ?? typeCode,
           fileUrl,
@@ -311,10 +280,10 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
         // ── IMMEDIATE mode (JoinFormScreen) ───────────────────────────────
         // Save to DB right away, then refresh from DB.
         await userApi.uploadDocument({
-          documentTypeLkpId: lkpId,
+          docTypeCode: typeCode,
           fileUrl,
-          fileName:   pickedName,
-          fileSizeKb: Math.round(pickedSize / 1024),
+          fileName:    pickedName,
+          fileSizeKb:  Math.round(pickedSize / 1024),
         });
         const res = await userApi.getMyDocuments();
         if (res.data?.isSuccess) {
@@ -402,51 +371,8 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
     );
   };
 
-  // ── lkpId map: typeCode → lookupValueId ─────────────────────────────────────
-  // Uses useRef (NOT useState) so that async functions (handleUpload) always
-  // read the LATEST value regardless of when their closure was created.
-  // useState would cause stale-closure bugs: if the user taps before the
-  // mount-time fetch completes, the running async handleUpload keeps the empty
-  // map even after the fetch finishes and React re-renders.
-  const typeLkpMapRef = useRef<Record<string, number>>({});
-
-  // Source 1: derive from existing docs whenever the list changes
-  useEffect(() => {
-    docs.forEach(d => {
-      typeLkpMapRef.current[d.docTypeCode] = d.documentTypeLkpId;
-    });
-  }, [docs]);
-
-  // Source 2: fetch ALL document-type lookup values once on mount; retry once on failure.
-  // This ensures lkpIds are ready before the user taps an upload zone on a type they
-  // haven't uploaded before (no existing doc → not populated by Source 1 above).
-  useEffect(() => {
-    // Retry up to 5 times with progressive delay: 1.5s, 3s, 5s, 8s, 12s
-    // Covers Railway cold starts (2-7s) and transient network errors.
-    const DELAYS = [1500, 3000, 5000, 8000, 12000];
-    const load = async (attempt = 0) => {
-      try {
-        const { lookupApi } = await import('../../api/lookup.api');
-        const res = await lookupApi.getValuesByTypeCode('DOCUMENT_TYPE_USER');
-        const values: LookupValue[] = res.data?.data ?? [];
-        if (values.length > 0) {
-          values.forEach(v => { typeLkpMapRef.current[v.valueCode] = v.lookupValueId; });
-          return; // success — stop retrying
-        }
-        // API returned empty — treat same as error and retry
-        throw new Error('empty lookup response');
-      } catch {
-        if (attempt < DELAYS.length) {
-          setTimeout(() => load(attempt + 1), DELAYS[attempt]);
-        }
-      }
-    };
-    load();
-  }, []); // run once on mount
-
-  // Pass the lkpId from the ref (always latest — avoids stale-closure issues).
   const onPressUpload = (typeCode: string) => {
-    handleUpload(typeCode, typeLkpMapRef.current[typeCode] ?? 0);
+    handleUpload(typeCode);
   };
 
   const visibleTypes = compactMode
@@ -464,6 +390,14 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
 
   return (
     <View>
+      {/* ── Why verification matters ─────────────────────────────────────── */}
+      <View style={styles.whyBox}>
+        <Text style={styles.whyIcon}>🔒</Text>
+        <Text style={styles.whyText}>
+          Verification builds trust between volunteers and organisations. Required documents confirm your identity so organisations can approve you faster and issue official volunteer certificates. Upload once — verified and reused across all your applications.
+        </Text>
+      </View>
+
       {visibleTypes.map(type => {
         const existing = docForType(type.code);
         const isUploading = uploading === type.code;
@@ -529,7 +463,10 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
             ) : (
               /* ── Upload zone ── */
               <TouchableOpacity
-                style={[styles.uploadZone, isUploading && styles.uploadZoneActive]}
+                style={[
+                  styles.uploadZone,
+                  isUploading && styles.uploadZoneActive,
+                ]}
                 onPress={() => !isUploading && onPressUpload(type.code)}
                 disabled={isUploading}
                 accessibilityLabel={`Upload ${type.label}`}
@@ -557,11 +494,6 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
         );
       })}
 
-      <View style={styles.infoBox}>
-        <Text style={styles.infoText}>
-          📌 Documents saved here are reused automatically when you apply to join any NGO.
-        </Text>
-      </View>
     </View>
   );
 }
@@ -601,15 +533,17 @@ const styles = StyleSheet.create({
     borderRadius: 12, padding: 20, alignItems: 'center',
     backgroundColor: C.BG,
   },
-  uploadZoneActive: { borderColor: C.PRIMARY, backgroundColor: `${C.PRIMARY}08` },
+  uploadZoneActive:    { borderColor: C.PRIMARY, backgroundColor: `${C.PRIMARY}08` },
   uploadIcon:  { fontSize: 26, marginBottom: 6 },
   uploadText:   { fontSize: 13, color: C.TEXT2, fontWeight: '500' },
   uploadSub:    { fontSize: 11, color: C.TEXT3, marginTop: 3, textAlign: 'center' },
   uploadFormat: { fontSize: 10, color: C.TEXT3, marginTop: 5, opacity: 0.7 },
 
-  infoBox: {
-    backgroundColor: '#EFF6FF', borderRadius: 10, padding: 10, marginTop: 4,
-    borderWidth: 1, borderColor: '#BFDBFE',
+  whyBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: '#F0FDF4', borderRadius: 12, padding: 14, marginBottom: 20,
+    borderWidth: 1, borderColor: '#BBF7D0',
   },
-  infoText: { fontSize: 12, color: '#1D4ED8', lineHeight: 17 },
+  whyIcon: { fontSize: 18, marginTop: 1 },
+  whyText: { flex: 1, fontSize: 13, color: '#166534', lineHeight: 19 },
 });
