@@ -58,14 +58,25 @@
             <data android:scheme="ngoconnect" />
         </intent-filter>
 
-        <!-- App Links (HTTPS): all supported deep link paths -->
+        <!-- App Links (HTTPS): all supported deep link paths on all production hosts.
+             Multiple <data> host entries in a single intent-filter are OR'd by Android:
+             any of the three hosts × any of the listed path prefixes triggers this filter.
+             android:autoVerify="true" makes Android verify assetlinks.json on ALL three hosts
+             at install time — the key must appear at /.well-known/assetlinks.json on each. -->
         <intent-filter android:autoVerify="true">
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
-            <data android:scheme="https" android:host="ripplehub.app" android:pathPrefix="/invite/" />
-            <data android:scheme="https" android:host="ripplehub.app" android:pathPrefix="/ngo/" />
-            <data android:scheme="https" android:host="ripplehub.app" android:pathPrefix="/opportunity/" />
+            <!-- Hosts: bare domain, www, and staging -->
+            <data android:scheme="https" android:host="ripplehub.app" />
+            <data android:scheme="https" android:host="www.ripplehub.app" />
+            <data android:scheme="https" android:host="stage.ripplehub.app" />
+            <!-- Supported path prefixes -->
+            <data android:pathPrefix="/invite/" />
+            <data android:pathPrefix="/ngo/" />
+            <data android:pathPrefix="/organisation/" />
+            <data android:pathPrefix="/opportunity/" />
+            <data android:pathPrefix="/post/" />
         </intent-filter>
       </activity>
     </application>

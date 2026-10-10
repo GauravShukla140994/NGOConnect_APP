@@ -18,7 +18,7 @@ export interface ResolvedToken {
 }
 
 /** Entity type codes accepted by the share API */
-export type ShareEntityType = 'ORG' | 'OPP';
+export type ShareEntityType = 'ORG' | 'OPP' | 'POST';
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -45,4 +45,19 @@ export const shareApi = {
    */
   resolveToken: (token: string) =>
     apiClient.get<ApiResponse<ResolvedToken>>(`/public/resolve/${encodeURIComponent(token)}`),
+
+  /**
+   * Resolves an organisation slug (or encrypted token) to the full org profile.
+   * Called when a https://ripplehub.app/organisation/{slugOrToken} App Link lands.
+   *
+   * The backend accepts:
+   *   • canonical slug (e.g. "green-planet-india") — resolved via Org slug table
+   *   • encrypted share token (same as /ngo/{token} links)
+   *
+   * Only the `orgId` field is used by the caller; the rest of the profile is ignored.
+   *
+   * @param slugOrToken  Path segment from /organisation/{slugOrToken}
+   */
+  resolveOrgSlug: (slugOrToken: string) =>
+    apiClient.get<ApiResponse<{ orgId: number }>>(`/public/org/${encodeURIComponent(slugOrToken)}/full`),
 };

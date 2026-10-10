@@ -17,6 +17,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -36,6 +37,7 @@ import FeedCommentsModal from '../../components/home/FeedCommentsModal';
 import ApplyModal from '../../components/project/ApplyModal';
 import { feedApi, getPersonalizedFeed, likePost, unlikePost } from '../../api/feed.api';
 import { notificationApi } from '../../api/notification.api';
+import { shareApi } from '../../api/share.api';
 import { getNearbyFeed } from '../../api/project.api';
 import { getMyOrgs, getMyDocuments } from '../../api/user.api';
 import ProfileIncompleteSheet from '../../components/profile/ProfileIncompleteSheet';
@@ -459,6 +461,25 @@ const PostCard = React.memo(function PostCard({
     finally { setFollowingOrgLoad(false); }
   };
 
+  // ── Share: encrypted https://ripplehub.app/post/{token} link → OS share sheet ──
+  const handleShare = useCallback(async () => {
+    setShowMenu(false);
+    try {
+      const res = await shareApi.getToken('POST', post.postId!);
+      const url = res.data?.data?.url;
+      if (!url) { throw new Error('no url'); }
+      const snippet = (post.content ?? '').trim().slice(0, 100);
+      const who     = post.orgName ? `${post.orgName} on RippleHub` : 'A post on RippleHub';
+      await Share.share(
+        Platform.OS === 'ios'
+          ? { message: snippet ? `${who}: ${snippet}` : who, url }
+          : { message: `${snippet ? `${who}: ${snippet}\n\n` : `${who}\n`}${url}` },
+      );
+    } catch {
+      Alert.alert('Error', 'Could not share this post. Please try again.');
+    }
+  }, [post.postId, post.content, post.orgName]);
+
   // ── Save / unsave toggle (optimistic, reverts on error) ───────────────────
   const handleSaveToggle = useCallback(async () => {
     setShowMenu(false);
@@ -605,7 +626,7 @@ const PostCard = React.memo(function PostCard({
                 label: isFollowingOrg ? 'Unfollow NGO' : 'Follow NGO',
                 onPress: handleFollowNGO,
               }] : []),
-              // Share — hidden for now, will be added later
+              { icon: '📤', label: 'Share', onPress: handleShare },
               { icon: '🔖', label: bookmarked ? 'Unsave' : 'Save',           onPress: handleSaveToggle },
             ].map(item => (
               <TouchableOpacity key={item.label} style={styles.menuRow} onPress={item.onPress}>

@@ -147,6 +147,8 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
 //   ngoconnect://ngo/abc123...          → NgoProfile    (encrypted share token — v4.9+)
 //   ngoconnect://opportunity/7          → ProjectDetail (legacy numeric ID)
 //   ngoconnect://opportunity/abc123...  → ProjectDetail (encrypted share token)
+//   ngoconnect://post/abc123...         → PostDetail    (shared feed post token)
+//   https://ripplehub.app/post/abc123...
 //   https://ripplehub.app/invite/TOKEN
 //   https://ripplehub.app/ngo/42
 //   https://ripplehub.app/ngo/abc123...
@@ -157,7 +159,7 @@ function resolveScreen(data: NotifData): { screen: string; params?: object } | n
 //       Legacy numeric-ID links are still handled for backward compatibility.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type OrgLinkResult     = { orgId: number } | { token: string } | null;
+type OrgLinkResult     = { orgId: number } | { token: string } | { slug: string } | null;
 type ProjectLinkResult = { projectId: number } | { token: string } | null;
 
 function extractInviteToken(url: string): string | null {
@@ -166,13 +168,18 @@ function extractInviteToken(url: string): string | null {
 }
 
 function extractOrgLink(url: string): OrgLinkResult {
-  // Matches /ngo/ followed by digits (legacy) OR URL-safe Base64 chars (encrypted token)
-  const m = url.match(/\/ngo\/([A-Za-z0-9_-]+)/);
+  // Matches /ngo/ OR /organisation/ followed by an identifier.
+  // /ngo/       → legacy custom-scheme + https App Links (existing)
+  // /organisation/ → canonical web URL, also registered as an App Link (v1.3+)
+  const m = url.match(/\/(?:ngo|organisation)\/([A-Za-z0-9_-]+)/);
   if (!m) return null;
   const part = m[1];
-  // Pure digits = legacy numeric orgId
+  // Pure digits = legacy numeric orgId (backward compat: /ngo/42)
   if (/^\d+$/.test(part)) return { orgId: parseInt(part, 10) };
-  // Otherwise it's an encrypted share token (must be ≥ 20 chars to avoid false positives)
+  // All lowercase + digits + hyphens = canonical org slug (/organisation/my-ngo-name)
+  // Slugs never contain uppercase letters; encrypted tokens always do (URL-safe Base64).
+  if (/^[a-z0-9-]+$/.test(part)) return { slug: part };
+  // Contains uppercase (URL-safe Base64) = encrypted share token (≥ 20 chars safety check)
   if (part.length >= 20) return { token: part };
   return null;
 }
@@ -184,6 +191,11 @@ function extractProjectLink(url: string): ProjectLinkResult {
   if (/^\d+$/.test(part)) return { projectId: parseInt(part, 10) };
   if (part.length >= 20) return { token: part };
   return null;
+}
+
+function extractPostToken(url: string): string | null {
+  const m = url.match(/\/post\/([A-Za-z0-9_-]{20,})/);
+  return m ? m[1] : null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,7 +238,7 @@ const RootNavigator = () => {
       return;
     }
 
-    // 2. NGO profile link: /ngo/{orgId|token}
+    // 2. NGO profile link: /ngo/{orgId|token} OR /organisation/{slug|token}
     const orgLink = extractOrgLink(url);
     if (orgLink) {
       if (isAuthenticated) {
@@ -235,8 +247,18 @@ const RootNavigator = () => {
           setTimeout(() => {
             navRef.current?.navigate('NgoProfile' as never, { orgId: orgLink.orgId } as never);
           }, 400);
+        } else if ('slug' in orgLink) {
+          // Canonical org slug from /organisation/{slug} — resolve via public profile
+          shareApi.resolveOrgSlug(orgLink.slug).then(res => {
+            const data = res.data?.data;
+            if (data?.orgId && data.orgId > 0) {
+              setTimeout(() => {
+                navRef.current?.navigate('NgoProfile' as never, { orgId: data.orgId } as never);
+              }, 400);
+            }
+          }).catch(() => { /* silent — unknown slug, ignore */ });
         } else {
-          // Encrypted token — resolve via public API then navigate
+          // Encrypted share token — resolve via public resolve endpoint
           shareApi.resolveToken(orgLink.token).then(res => {
             const data = res.data?.data;
             if (data?.entityType === 'ORG' && data.entityId > 0) {
@@ -250,9 +272,29 @@ const RootNavigator = () => {
         // Store for post-login resolution
         if ('orgId' in orgLink) {
           pendingDeepLinkStore.set({ type: 'ngo', id: orgLink.orgId });
+        } else if ('slug' in orgLink) {
+          pendingDeepLinkStore.set({ type: 'ngo', slug: orgLink.slug });
         } else {
           pendingDeepLinkStore.set({ type: 'ngo', token: orgLink.token });
         }
+      }
+      return;
+    }
+
+    // 2b. Shared feed post: /post/{token} → PostDetail
+    const postToken = extractPostToken(url);
+    if (postToken) {
+      if (isAuthenticated) {
+        shareApi.resolveToken(postToken).then(res => {
+          const data = res.data?.data;
+          if (data?.entityType === 'POST' && data.entityId > 0) {
+            setTimeout(() => {
+              navRef.current?.navigate('PostDetail' as never, { postId: data.entityId } as never);
+            }, 400);
+          }
+        }).catch(() => { /* silent — invalid token */ });
+      } else {
+        pendingDeepLinkStore.set({ type: 'post', token: postToken });
       }
       return;
     }
@@ -326,6 +368,16 @@ const RootNavigator = () => {
           navRef.current?.navigate('ProjectDetail' as never, { projectId: pending.id } as never);
         }
       }, 600);
+    } else if ('slug' in pending) {
+      // Canonical org slug path (/organisation/{slug}) — resolve via public profile
+      shareApi.resolveOrgSlug(pending.slug).then(res => {
+        const data = res.data?.data;
+        if (data?.orgId && data.orgId > 0) {
+          setTimeout(() => {
+            navRef.current?.navigate('NgoProfile' as never, { orgId: data.orgId } as never);
+          }, 600);
+        }
+      }).catch(() => { /* unknown slug — drop silently */ });
     } else {
       // Encrypted token path — resolve via public API then navigate
       shareApi.resolveToken(pending.token).then(res => {
@@ -336,6 +388,8 @@ const RootNavigator = () => {
             navRef.current?.navigate('NgoProfile' as never, { orgId: data.entityId } as never);
           } else if (data.entityType === 'OPP' && data.entityId > 0) {
             navRef.current?.navigate('ProjectDetail' as never, { projectId: data.entityId } as never);
+          } else if (data.entityType === 'POST' && data.entityId > 0) {
+            navRef.current?.navigate('PostDetail' as never, { postId: data.entityId } as never);
           }
         }, 600);
       }).catch(() => { /* invalid token — drop silently */ });
