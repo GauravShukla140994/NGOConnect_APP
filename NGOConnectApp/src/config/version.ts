@@ -18,4 +18,4 @@
  *  4. After publishing to stores, update APP_VERSION_IOS and APP_VERSION_ANDROID
  *     in the Settings table to trigger the banner for users on older builds.
  */
-export const APP_BUILD_VERSION = '1.3.1';
+export const APP_BUILD_VERSION = '1.3.2';
