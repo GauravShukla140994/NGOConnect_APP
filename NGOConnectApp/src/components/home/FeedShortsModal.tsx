@@ -297,18 +297,21 @@ function ZoomableImageSlide({ uri, onFreeze, onUnfreeze, onDoubleTap }: Zoomable
 // ── VideoSlide ─────────────────────────────────────────────────────────────────
 
 function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
-  const [paused, setPaused] = useState(!active);
-  const [error,  setError]  = useState(false);
+  const [paused,  setPaused]  = useState(!active);
+  const [error,   setError]   = useState(false);
+  // Guard seek(0) until the native player has actually loaded the video.
+  // On New Architecture (JSI), calling seek() before onLoad fires can crash
+  // the ExoPlayer / Media3 surface.
+  const [loaded,  setLoaded]  = useState(false);
   const videoRef = React.useRef<any>(null);
 
   React.useEffect(() => {
     setPaused(!active);
-    if (active) {
-      // Always restart from beginning when this slide becomes active
-      // (user swiped to it, or returned to it)
+    if (active && loaded) {
+      // Restart from beginning when this slide becomes active
       videoRef.current?.seek(0);
     }
-  }, [active]);
+  }, [active, loaded]);
 
   if (error) {
     return (
@@ -325,8 +328,12 @@ function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
         style={s.slideMedia}
         resizeMode="cover"
         paused={paused}
-        controls
         repeat
+        onLoad={() => {
+          setLoaded(true);
+          // If this slide is already active when loading finishes, seek to start.
+          if (active) videoRef.current?.seek(0);
+        }}
         onError={() => setError(true)}
       />
     </View>
@@ -803,13 +810,18 @@ export default function FeedShortsModal({
 
   React.useEffect(() => {
     if (visible) {
-      setActivePost(initialPostIndex);
+      // Clamp to valid range — scrollToIndex crashes with "out of range"
+      // if initialPostIndex >= posts.length (edge case on rapid modal open)
+      const safeIndex = Math.min(initialPostIndex, Math.max(0, posts.length - 1));
+      setActivePost(safeIndex);
       setVertScrollEnabled(true);
       setTimeout(() => {
-        outerListRef.current?.scrollToIndex({ index: initialPostIndex, animated: false });
+        if (safeIndex > 0) {
+          outerListRef.current?.scrollToIndex({ index: safeIndex, animated: false });
+        }
       }, 50);
     }
-  }, [visible, initialPostIndex]);
+  }, [visible, initialPostIndex, posts.length]);
 
   const onViewableChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0 && viewableItems[0].index != null) {
@@ -846,7 +858,7 @@ export default function FeedShortsModal({
           onViewableItemsChanged={onViewableChanged}
           viewabilityConfig={viewConfig}
           getItemLayout={(_, index) => ({ length: SH, offset: SH * index, index })}
-          initialScrollIndex={initialPostIndex}
+          initialScrollIndex={Math.min(initialPostIndex, Math.max(0, posts.length - 1))}
           windowSize={3}
           maxToRenderPerBatch={3}
           renderItem={({ item, index }) => (

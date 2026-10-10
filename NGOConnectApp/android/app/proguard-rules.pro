@@ -17,6 +17,14 @@
 -keep class * extends com.facebook.react.bridge.JavaScriptModule { *; }
 -keep class * extends com.facebook.react.ReactPackage { *; }
 
+# ── React Native New Architecture (Fabric + TurboModules) ─────────────────────
+# newArchEnabled=true is set — TurboModule interfaces and Fabric renderer
+# classes are loaded via JSI / C++ JNI; they must not be renamed or removed.
+-keep class com.facebook.react.turbomodule.** { *; }
+-keep class com.facebook.react.fabric.** { *; }
+-keep class com.facebook.react.newarchitecture.** { *; }
+-keep interface * extends com.facebook.react.turbomodule.core.interfaces.TurboModule { *; }
+
 # ── Kotlin & coroutines ───────────────────────────────────────────────────────
 -keep class kotlin.** { *; }
 -keep class kotlinx.coroutines.** { *; }
@@ -51,6 +59,14 @@
 
 # ── React Native Camera / video ───────────────────────────────────────────────
 -keep class com.brentvatne.** { *; }
+-dontwarn com.brentvatne.**
+
+# react-native-video v6+ uses Media3 (ExoPlayer3) — androidx.media3.*
+# Media3 AARs ship consumer-rules.pro but proguard-android-optimize.txt can
+# still strip classes accessed via reflection or late-binding.
+-keep class androidx.media3.** { *; }
+-keep interface androidx.media3.** { *; }
+-dontwarn androidx.media3.**
 
 # ── Keep JS bundle & assets untouched ────────────────────────────────────────
 -keep class com.facebook.react.bridge.JavaScriptModule { *; }
