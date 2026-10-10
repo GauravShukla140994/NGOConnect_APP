@@ -25,7 +25,7 @@
  *   └─────────────────────────────────────────┘
  */
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -39,6 +39,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
   ViewToken,
 } from 'react-native';
@@ -295,23 +296,67 @@ function ZoomableImageSlide({ uri, onFreeze, onUnfreeze, onDoubleTap }: Zoomable
 }
 
 // ── VideoSlide ─────────────────────────────────────────────────────────────────
+// Tap-to-pause UX (TikTok / Reels style):
+//   • Auto-plays silently every time the slide becomes active (no controls shown)
+//   • User taps the video area → toggles pause; shows ▶ / ⏸ icon for 800 ms
+//   • Swiping away resets userPaused so the next visit always auto-plays
 
 function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
-  const [paused,  setPaused]  = useState(!active);
-  const [error,   setError]   = useState(false);
-  // Guard seek(0) until the native player has actually loaded the video.
-  // On New Architecture (JSI), calling seek() before onLoad fires can crash
-  // the ExoPlayer / Media3 surface.
-  const [loaded,  setLoaded]  = useState(false);
-  const videoRef = React.useRef<any>(null);
+  const [paused,     setPaused]     = useState(!active);
+  const [error,      setError]      = useState(false);
+  // Guard seek(0) until the native player has loaded (JSI / New Arch safety).
+  const [loaded,     setLoaded]     = useState(false);
+  // userPaused: true only when the user explicitly tapped to pause.
+  // Kept separate so swiping away doesn't leave the next visit paused.
+  const [userPaused, setUserPaused] = useState(false);
+  // showIcon: drives the brief ▶ / ⏸ overlay after a tap
+  const [showIcon,   setShowIcon]   = useState(false);
+  const iconOpacity = useRef(new Animated.Value(0)).current;
+  const iconTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoRef    = useRef<any>(null);
 
-  React.useEffect(() => {
-    setPaused(!active);
-    if (active && loaded) {
-      // Restart from beginning when this slide becomes active
+  // Sync paused state when active changes
+  useEffect(() => {
+    if (!active) {
+      // Swiped away: pause and reset userPaused so the next visit auto-plays
+      setPaused(true);
+      setUserPaused(false);
+    } else {
+      // Became active: play unless the user previously tapped to pause
+      if (!userPaused) setPaused(false);
+      if (loaded) videoRef.current?.seek(0);
+    }
+  }, [active]); // intentionally omits userPaused / loaded — see handlers below
+
+  // Once video loads, start playing if active and not user-paused
+  const handleLoad = useCallback(() => {
+    setLoaded(true);
+    if (active && !userPaused) {
+      setPaused(false);
       videoRef.current?.seek(0);
     }
-  }, [active, loaded]);
+  }, [active, userPaused]);
+
+  // Tap handler: toggle pause, flash icon
+  const handleTap = useCallback(() => {
+    if (!active) return;
+    setPaused(prev => {
+      const next = !prev;
+      setUserPaused(next);
+      // Flash the icon
+      if (iconTimer.current) clearTimeout(iconTimer.current);
+      setShowIcon(true);
+      iconOpacity.setValue(1);
+      iconTimer.current = setTimeout(() => {
+        Animated.timing(iconOpacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }).start(() => setShowIcon(false));
+      }, 400);
+      return next;
+    });
+  }, [active, iconOpacity]);
 
   if (error) {
     return (
@@ -321,22 +366,29 @@ function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
     );
   }
   return (
-    <View style={s.slideContainer}>
-      <Video
-        ref={videoRef}
-        source={{ uri }}
-        style={s.slideMedia}
-        resizeMode="cover"
-        paused={paused}
-        repeat
-        onLoad={() => {
-          setLoaded(true);
-          // If this slide is already active when loading finishes, seek to start.
-          if (active) videoRef.current?.seek(0);
-        }}
-        onError={() => setError(true)}
-      />
-    </View>
+    <TouchableWithoutFeedback onPress={handleTap}>
+      <View style={s.slideContainer}>
+        <Video
+          ref={videoRef}
+          source={{ uri }}
+          style={s.slideMedia}
+          resizeMode="cover"
+          paused={paused}
+          repeat
+          onLoad={handleLoad}
+          onError={() => setError(true)}
+        />
+        {/* Brief ▶ / ⏸ icon — only visible for ~800 ms after a tap */}
+        {showIcon && (
+          <Animated.View
+            pointerEvents="none"
+            style={[s.videoIconOverlay, { opacity: iconOpacity }]}
+          >
+            <Text style={s.videoIconText}>{paused ? '▶' : '⏸'}</Text>
+          </Animated.View>
+        )}
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -859,8 +911,9 @@ export default function FeedShortsModal({
           viewabilityConfig={viewConfig}
           getItemLayout={(_, index) => ({ length: SH, offset: SH * index, index })}
           initialScrollIndex={Math.min(initialPostIndex, Math.max(0, posts.length - 1))}
-          windowSize={3}
-          maxToRenderPerBatch={3}
+          windowSize={5}
+          maxToRenderPerBatch={2}
+          removeClippedSubviews={false}
           renderItem={({ item, index }) => (
             <PostShortsSlide
               post={item}
@@ -927,6 +980,21 @@ const s = StyleSheet.create({
     backgroundColor: BRAND.BG, overflow: 'hidden',
   },
   slideMedia: { width: SW, height: SH },
+
+  // tap-to-pause icon overlay (VideoSlide)
+  videoIconOverlay: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 80, height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  videoIconText: {
+    color: '#fff',
+    fontSize: 32,
+    lineHeight: 36,
+  },
 
   // multi-media dots (top-right of each slide)
   mediaCounter: {
