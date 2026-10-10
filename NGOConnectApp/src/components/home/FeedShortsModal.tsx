@@ -39,11 +39,11 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
   ViewToken,
 } from 'react-native';
 import Video from 'react-native-video';
+import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { Post } from '../../types/api.types';
@@ -67,6 +67,10 @@ export interface FeedShortsModalProps {
   onCommentPress:       (post: Post) => void;
   onDelete?:            (postId: number) => void;
   onVolunteerPress?:    (post: Post) => void;
+  /** Called when the user scrolls near the end — request the next page */
+  onLoadMore?:          () => void;
+  /** False = no more pages to load; defaults to true so footer shows initially */
+  hasMore?:             boolean;
 }
 
 // ── Small helpers ──────────────────────────────────────────────────────────────
@@ -301,62 +305,113 @@ function ZoomableImageSlide({ uri, onFreeze, onUnfreeze, onDoubleTap }: Zoomable
 //   • User taps the video area → toggles pause; shows ▶ / ⏸ icon for 800 ms
 //   • Swiping away resets userPaused so the next visit always auto-plays
 
-function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
-  const [paused,     setPaused]     = useState(!active);
-  const [error,      setError]      = useState(false);
-  // Guard seek(0) until the native player has loaded (JSI / New Arch safety).
-  const [loaded,     setLoaded]     = useState(false);
-  // userPaused: true only when the user explicitly tapped to pause.
-  // Kept separate so swiping away doesn't leave the next visit paused.
-  const [userPaused, setUserPaused] = useState(false);
-  // showIcon: drives the brief ▶ / ⏸ overlay after a tap
-  const [showIcon,   setShowIcon]   = useState(false);
-  const iconOpacity = useRef(new Animated.Value(0)).current;
-  const iconTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const videoRef    = useRef<any>(null);
+// ── SVG icon helpers (react-native-svg, no external icon library needed) ───────
+const ICON_SIZE = 22;
+const ICON_COLOR = '#fff';
 
-  // Sync paused state when active changes
+function IconPlay() {
+  return (
+    <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24">
+      <Path d="M6 4l14 8-14 8V4z" fill={ICON_COLOR} />
+    </Svg>
+  );
+}
+function IconPause() {
+  return (
+    <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24">
+      <Path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" fill={ICON_COLOR} />
+    </Svg>
+  );
+}
+function IconVolumeOn() {
+  return (
+    <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24">
+      <Path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" fill={ICON_COLOR} />
+    </Svg>
+  );
+}
+function IconVolumeOff() {
+  return (
+    <Svg width={ICON_SIZE} height={ICON_SIZE} viewBox="0 0 24 24">
+      <Path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" fill={ICON_COLOR} />
+    </Svg>
+  );
+}
+
+function VideoSlide({ uri, active, distance }: { uri: string; active: boolean; distance: number }) {
+  const insets = useSafeAreaInsets();
+  const [paused,     setPaused]     = useState(true);
+  const [error,      setError]      = useState(false);
+  const [loaded,     setLoaded]     = useState(false);
+  const [userPaused, setUserPaused] = useState(false);
+  const [muted,      setMuted]      = useState(false);
+  const [showIcon,   setShowIcon]   = useState(false);
+  const iconOpacity  = useRef(new Animated.Value(0)).current;
+  const iconTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const videoRef     = useRef<any>(null);
+  // Track mount state — prevents seek/setState on unmounted component (Fabric crash guard)
+  const mountedRef   = useRef(true);
+  const seekTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (seekTimer.current)  clearTimeout(seekTimer.current);
+      if (iconTimer.current)  clearTimeout(iconTimer.current);
+    };
+  }, []);
+
   useEffect(() => {
     if (!active) {
-      // Swiped away: pause and reset userPaused so the next visit auto-plays
       setPaused(true);
       setUserPaused(false);
     } else {
-      // Became active: play unless the user previously tapped to pause
       if (!userPaused) setPaused(false);
-      if (loaded) videoRef.current?.seek(0);
+      // Delay seek so the Fabric/JSI bridge has settled — eliminates the most
+      // common New Architecture crash on rapid swipe
+      if (loaded) {
+        if (seekTimer.current) clearTimeout(seekTimer.current);
+        seekTimer.current = setTimeout(() => {
+          if (mountedRef.current) videoRef.current?.seek(0);
+        }, 80);
+      }
     }
-  }, [active]); // intentionally omits userPaused / loaded — see handlers below
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Once video loads, start playing if active and not user-paused
   const handleLoad = useCallback(() => {
+    if (!mountedRef.current) return;
     setLoaded(true);
     if (active && !userPaused) {
       setPaused(false);
-      videoRef.current?.seek(0);
+      // Small delay — let onLoad callback return before seeking
+      setTimeout(() => {
+        if (mountedRef.current) videoRef.current?.seek(0);
+      }, 50);
     }
   }, [active, userPaused]);
 
-  // Tap handler: toggle pause, flash icon
   const handleTap = useCallback(() => {
     if (!active) return;
-    setPaused(prev => {
-      const next = !prev;
-      setUserPaused(next);
-      // Flash the icon
-      if (iconTimer.current) clearTimeout(iconTimer.current);
-      setShowIcon(true);
-      iconOpacity.setValue(1);
-      iconTimer.current = setTimeout(() => {
-        Animated.timing(iconOpacity, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }).start(() => setShowIcon(false));
-      }, 400);
-      return next;
-    });
-  }, [active, iconOpacity]);
+    const next = !paused;
+    setPaused(next);
+    setUserPaused(next);
+    setShowIcon(true);
+    iconOpacity.setValue(1);
+    if (iconTimer.current) clearTimeout(iconTimer.current);
+    iconTimer.current = setTimeout(() => {
+      Animated.timing(iconOpacity, {
+        toValue: 0, duration: 400, useNativeDriver: true,
+      }).start(() => { if (mountedRef.current) setShowIcon(false); });
+    }, 400);
+  }, [active, paused, iconOpacity]);
+
+  // ── YouTube/Instagram approach: items ±2+ away are dark placeholders ──────────
+  // Only active (0) and adjacent (1) items have a live ExoPlayer instance.
+  // This prevents the OOM / threading crashes caused by 5 simultaneous players.
+  if (distance > 1) {
+    return <View style={[s.slideContainer, { backgroundColor: '#000' }]} />;
+  }
 
   if (error) {
     return (
@@ -365,30 +420,80 @@ function VideoSlide({ uri, active }: { uri: string; active: boolean }) {
       </View>
     );
   }
+
+  const ctrlBottom = insets.bottom + 98;
+
   return (
-    <TouchableWithoutFeedback onPress={handleTap}>
-      <View style={s.slideContainer}>
-        <Video
-          ref={videoRef}
-          source={{ uri }}
-          style={s.slideMedia}
-          resizeMode="cover"
-          paused={paused}
-          repeat
-          onLoad={handleLoad}
-          onError={() => setError(true)}
-        />
-        {/* Brief ▶ / ⏸ icon — only visible for ~800 ms after a tap */}
-        {showIcon && (
-          <Animated.View
-            pointerEvents="none"
-            style={[s.videoIconOverlay, { opacity: iconOpacity }]}
-          >
-            <Text style={s.videoIconText}>{paused ? '▶' : '⏸'}</Text>
-          </Animated.View>
-        )}
+    <View style={s.slideContainer}>
+      <Video
+        ref={videoRef}
+        source={{ uri }}
+        style={s.slideMedia}
+        resizeMode="cover"
+        paused={paused}
+        muted={muted}
+        repeat
+        onLoad={handleLoad}
+        onError={() => { if (mountedRef.current) setError(true); }}
+        bufferConfig={{
+          minBufferMs: 2000,
+          maxBufferMs: 8000,
+          bufferForPlaybackMs: 1000,
+          bufferForPlaybackAfterRebufferMs: 2000,
+        }}
+      />
+
+      {/*
+        ── Centre-tap layer ──────────────────────────────────────────────────────
+        Raw-responder View that covers everything EXCEPT the control-button row.
+        We leave a gap at the bottom equal to ctrlBottom so that the TouchableOpacity
+        buttons below are never shadowed by this layer and always receive their taps.
+
+        onStartShouldSetResponder  → claim the touch immediately (no Pressable delay)
+        onResponderRelease         → clean tap  → toggle pause + flash icon
+        onResponderTerminationRequest → yield to the outer FlatList on a swipe so
+                                       onResponderRelease is never triggered by scrolls
+      */}
+      <View
+        style={[StyleSheet.absoluteFillObject, { bottom: ctrlBottom + 56 }]}
+        onStartShouldSetResponder={() => true}
+        onResponderRelease={() => { handleTap(); }}
+        onResponderTerminationRequest={() => true}
+        onResponderTerminate={() => {}}
+      />
+
+      {/*
+        ── Permanent control bar — pause ⏸/▶  and  mute 🔊/🔇 ─────────────────
+        Truly centred across the full screen width (left:0 / right:0).
+        Sidebar is ~72 px wide but the pair only spans ~120 px so it never overlaps.
+        Dark circular buttons + elevation shadow make them readable on any footage.
+        Rendered AFTER the responder layer so it sits on top in z-order and its own
+        TouchableOpacity handlers are never swallowed by the layer above.
+      */}
+      <View style={[s.videoControls, { bottom: ctrlBottom }]}>
+        <TouchableOpacity onPress={handleTap} style={s.controlBtn} hitSlop={10}>
+          {paused ? <IconPlay /> : <IconPause />}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setMuted(m => !m)} style={s.controlBtn} hitSlop={10}>
+          {muted ? <IconVolumeOff /> : <IconVolumeOn />}
+        </TouchableOpacity>
       </View>
-    </TouchableWithoutFeedback>
+
+      {/* Centre flash icon — appears only for ~800 ms after a centre-area tap */}
+      {showIcon && (
+        <Animated.View
+          pointerEvents="none"
+          style={[s.videoIconOverlay, { opacity: iconOpacity }]}
+        >
+          <Svg width={36} height={36} viewBox="0 0 24 24">
+            {paused
+              ? <Path d="M6 4l14 8-14 8V4z" fill="#fff" />
+              : <Path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" fill="#fff" />
+            }
+          </Svg>
+        </Animated.View>
+      )}
+    </View>
   );
 }
 
@@ -499,6 +604,7 @@ function PostDescriptionSheet({ visible, post, onClose, viewCountOverride }: Des
 interface PostSlideProps {
   post:               Post;
   isActive:           boolean;
+  distance:           number;  // abs(index - activePost) — controls video loading strategy
   onFreeze:           () => void;
   onUnfreeze:         () => void;
   onLike:             (postId: number, wasLiked: boolean) => void;
@@ -510,7 +616,7 @@ interface PostSlideProps {
 }
 
 function PostShortsSlide({
-  post, isActive, onFreeze, onUnfreeze,
+  post, isActive, distance, onFreeze, onUnfreeze,
   onLike, onComment, onDelete, onVolunteerPress, currentUserId, viewCountOverride,
 }: PostSlideProps) {
   const insets     = useSafeAreaInsets();
@@ -633,7 +739,7 @@ function PostShortsSlide({
         </View>
       ) : urls.length === 1 ? (
         types[0] === 'VIDEO'
-          ? <VideoSlide uri={urls[0]} active={isActive} />
+          ? <VideoSlide uri={urls[0]} active={isActive} distance={distance} />
           : <ZoomableImageSlide uri={urls[0]} onFreeze={handleFreeze} onUnfreeze={handleUnfreeze} onDoubleTap={handleDoubleTap} />
       ) : (
         <FlatList
@@ -649,7 +755,7 @@ function PostShortsSlide({
           getItemLayout={(_, i) => ({ length: SW, offset: SW * i, index: i })}
           renderItem={({ item: url, index }) =>
             types[index] === 'VIDEO'
-              ? <VideoSlide uri={url} active={isActive && activeMedia === index} />
+              ? <VideoSlide uri={url} active={isActive && activeMedia === index} distance={distance} />
               : <ZoomableImageSlide
                   key={index}
                   uri={url}
@@ -805,6 +911,8 @@ export default function FeedShortsModal({
   onCommentPress,
   onDelete,
   onVolunteerPress,
+  onLoadMore,
+  hasMore = true,
 }: FeedShortsModalProps) {
   const insets = useSafeAreaInsets();
 
@@ -911,13 +1019,16 @@ export default function FeedShortsModal({
           viewabilityConfig={viewConfig}
           getItemLayout={(_, index) => ({ length: SH, offset: SH * index, index })}
           initialScrollIndex={Math.min(initialPostIndex, Math.max(0, posts.length - 1))}
-          windowSize={5}
-          maxToRenderPerBatch={2}
-          removeClippedSubviews={false}
+          windowSize={3}
+          maxToRenderPerBatch={1}
+          removeClippedSubviews={true}
+          onEndReachedThreshold={0.8}
+          onEndReached={() => { if (hasMore) onLoadMore?.(); }}
           renderItem={({ item, index }) => (
             <PostShortsSlide
               post={item}
               isActive={index === activePost}
+              distance={Math.abs(index - activePost)}
               onFreeze={handleFreeze}
               onUnfreeze={handleUnfreeze}
               onLike={onLike}
@@ -995,6 +1106,36 @@ const s = StyleSheet.create({
     fontSize: 32,
     lineHeight: 36,
   },
+
+  // ── Permanent video control bar — pause + mute ───────────────────────────────
+  // Rules:
+  //   • left: 0 / right: 0  → full-width container, pair truly centred at SW/2
+  //   • no padding needed    → pair is ~120 px wide, sidebar is ~72 px at right edge,
+  //                            50 px gap between them on every screen width
+  //   • bottom is injected inline as (insets.bottom + 128) so it adapts to every
+  //     device's safe-area (3-button nav, gesture nav, notch phones)
+  //   • elevation + border make buttons pop on any footage colour
+  videoControls: {
+    position: 'absolute',
+    left: 0,
+    right: 0,               // full-width → justifyContent centres at exactly SW/2
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  controlBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.32)',
+    elevation: 4,            // Android shadow — helps on bright footage
+  },
+  // controlBtnIcon removed — icons now use react-native-svg (no Text needed)
 
   // multi-media dots (top-right of each slide)
   mediaCounter: {

@@ -34,6 +34,8 @@ local.properties
 *.keystore
 !debug.keystore
 .kotlin/
+# Release signing credentials — NEVER commit this file
+android/keystore.properties
 
 # node.js
 #

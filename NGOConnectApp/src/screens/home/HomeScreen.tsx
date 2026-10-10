@@ -1847,6 +1847,8 @@ export default function HomeScreen() {
         onLike={handleLike}
         onCommentPress={handleCommentPress}
         onDelete={handleDeletePost}
+        onLoadMore={onEndReached}
+        hasMore={feedTab === 'org' ? orgHasMore : hasMore}
       />
 
       {/* ── Comments Modal ──────────────────────────────────────────────── */}

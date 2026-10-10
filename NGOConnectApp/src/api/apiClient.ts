@@ -8,6 +8,10 @@ import AppConfig from '../config/AppConfig';
 import {ApiResponse, AuthTokens} from '../types/api.types';
 
 // ── Secure storage (10x faster than AsyncStorage) ────────────────────────────
+// TODO: add encryptionKey in a future session with proper migration —
+// adding it to an existing unencrypted MMKV instance crashes on first open.
+// Migration strategy: use a new MMKV id ('token-store-v2') with encryptionKey,
+// detect old id on startup, copy values, delete old file.
 export const storage = new MMKV();
 
 const STORAGE_KEYS = {

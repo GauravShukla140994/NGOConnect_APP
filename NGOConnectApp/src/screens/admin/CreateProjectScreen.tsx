@@ -1316,7 +1316,7 @@ export default function CreateProjectScreen() {
               onMessage={onMapMessage}
               javaScriptEnabled
               domStorageEnabled
-              mixedContentMode="always"
+              mixedContentMode="compatibility"
             />
             {!tilesLoaded && (
               <View style={s.mapLoadingOverlay}>

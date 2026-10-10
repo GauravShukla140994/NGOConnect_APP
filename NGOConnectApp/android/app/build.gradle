@@ -3,6 +3,13 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: "com.google.gms.google-services"
 
+// ── Load release signing credentials from keystore.properties (NOT in git) ──
+def keystorePropsFile = rootProject.file("keystore.properties")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -95,11 +102,11 @@ android {
             keyPassword 'android'
         }
         release {
-            // Credentials are stored in android/gradle.properties (NOT committed to git)
-            storeFile file(RIPPLEHUB_UPLOAD_STORE_FILE)
-            storePassword RIPPLEHUB_UPLOAD_STORE_PASSWORD
-            keyAlias RIPPLEHUB_UPLOAD_KEY_ALIAS
-            keyPassword RIPPLEHUB_UPLOAD_KEY_PASSWORD
+            // Credentials loaded from android/keystore.properties (gitignored)
+            storeFile file(keystoreProps['RIPPLEHUB_UPLOAD_STORE_FILE'] ?: 'ripplehub-release.keystore')
+            storePassword keystoreProps['RIPPLEHUB_UPLOAD_STORE_PASSWORD'] ?: ''
+            keyAlias keystoreProps['RIPPLEHUB_UPLOAD_KEY_ALIAS'] ?: ''
+            keyPassword keystoreProps['RIPPLEHUB_UPLOAD_KEY_PASSWORD'] ?: ''
         }
     }
     buildTypes {
