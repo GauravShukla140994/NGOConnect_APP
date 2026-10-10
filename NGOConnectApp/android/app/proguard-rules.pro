@@ -48,6 +48,17 @@
 -keep public class * extends java.lang.Exception  # keeps exception class names readable
 -dontwarn io.sentry.**
 
+# ── react-native-screens (Software Mansion) ──────────────────────────────────
+# ScreenFragment.<init> IllegalStateException crash seen in production.
+# Keeping all swmansion classes prevents R8 from inlining/removing internal
+# state-guards that prevent the fragment from being created in a saved state.
+-keep class com.swmansion.rnscreens.** { *; }
+-dontwarn com.swmansion.rnscreens.**
+
+# ── react-native-gesture-handler (Software Mansion) ──────────────────────────
+-keep class com.swmansion.gesturehandler.** { *; }
+-dontwarn com.swmansion.gesturehandler.**
+
 # ── React Native Blob Util ────────────────────────────────────────────────────
 -keep class com.RNFetchBlob.** { *; }
 
