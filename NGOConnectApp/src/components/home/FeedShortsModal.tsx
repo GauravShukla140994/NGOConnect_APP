@@ -421,7 +421,7 @@ function VideoSlide({ uri, active, distance }: { uri: string; active: boolean; d
     );
   }
 
-  const ctrlBottom = insets.bottom + 98;
+  const ctrlBottom = insets.bottom + 116;
 
   return (
     <View style={s.slideContainer}>
@@ -534,10 +534,17 @@ function PostDescriptionSheet({ visible, post, onClose, viewCountOverride }: Des
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <Pressable style={ds.overlay} onPress={onClose}>
-        <Pressable style={[ds.sheet, { height: sheetH, paddingBottom: Math.max(insets.bottom, 16) }]}
-          onPress={() => {/* swallow taps so backdrop press doesn't fire */}}
-        >
+      {/*
+        Backdrop and sheet are SIBLINGS inside the overlay View — NOT parent/child.
+        The backdrop Pressable only covers the area above the sheet (flex:1).
+        Touches on the sheet never reach the backdrop, so scrolling never closes the modal.
+      */}
+      <View style={ds.overlay}>
+        {/* Backdrop — only the empty area above the sheet */}
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
+
+        {/* Sheet — sibling of the backdrop, not its child */}
+        <View style={[ds.sheet, { height: sheetH, paddingBottom: Math.max(insets.bottom, 16) }]}>
           {/* Drag handle */}
           <View style={ds.handle} />
 
@@ -549,7 +556,7 @@ function PostDescriptionSheet({ visible, post, onClose, viewCountOverride }: Des
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={ds.body} showsVerticalScrollIndicator={false}>
+          <ScrollView style={ds.body} showsVerticalScrollIndicator={false} nestedScrollEnabled={true}>
 
             {/* Author row */}
             <View style={ds.authorRow}>
@@ -592,8 +599,8 @@ function PostDescriptionSheet({ visible, post, onClose, viewCountOverride }: Des
               <Text style={ds.caption}>{post.content}</Text>
             )}
           </ScrollView>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -851,22 +858,21 @@ function PostShortsSlide({
           )}
         </View>
 
-        {/* Caption — always tappable to open the description sheet */}
+        {/* Caption — always 1 line, tap to open full description sheet */}
         {!!caption && (
           <TouchableOpacity
             onPress={async () => {
               setDescriptionOpen(true);
-              // Fetch live stats from server so the view count reflects all users
               try {
                 const res = await feedApi.getPost(post.postId!);
                 const fresh = res.data?.data;
                 if (fresh?.viewCount != null) setLiveViewCount(fresh.viewCount);
-              } catch { /* fire-and-forget — sheet still shows local estimate */ }
+              } catch { /* fire-and-forget */ }
             }}
             activeOpacity={0.75}
           >
-            <Text style={s.caption} numberOfLines={2}>{caption}</Text>
-            {isLong && <Text style={s.moreLink}>…more</Text>}
+            <Text style={s.caption} numberOfLines={1}>{caption}</Text>
+            {caption.length > 40 && <Text style={s.moreLink}>…more</Text>}
           </TouchableOpacity>
         )}
       </View>
@@ -1152,7 +1158,7 @@ const s = StyleSheet.create({
   // thin gradient fade only behind the author bar — NOT behind the full sidebar
   scrimOuter: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    height: 130,
+    height: 152,
     backgroundColor: 'rgba(18,10,46,0.55)',
   },
 
