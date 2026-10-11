@@ -11,6 +11,11 @@ const DEV_API_URL   = 'http://10.252.71.135:58411/api/v1';
 const STAGE_API_URL = 'https://ngoconnectapi-staging.up.railway.app/api/v1';
 const PROD_API_URL  = 'https://api.ripplehub.app/api/v1';
 
+// Public website base URL — mirrors Settings table key PUBLIC_WEB_BASE_URL.
+// Used as a last-resort share-link fallback when the API is unreachable.
+// If the domain ever changes, update both this constant and the Settings table value.
+export const WEB_BASE_URL = 'https://www.ripplehub.app';
+
 const AppConfig = {
   // ── Base URL ─────────────────────────────────────────────────────────────
   // Dev: local machine  |  Release: production

@@ -67,8 +67,7 @@
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.DEFAULT" />
             <category android:name="android.intent.category.BROWSABLE" />
-            <!-- Hosts: bare domain, www, and staging -->
-            <data android:scheme="https" android:host="ripplehub.app" />
+            <!-- Hosts: www and staging only (bare domain not used) -->
             <data android:scheme="https" android:host="www.ripplehub.app" />
             <data android:scheme="https" android:host="stage.ripplehub.app" />
             <!-- Supported path prefixes -->

@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import AppConfig from '../../config/AppConfig';
+import AppConfig, { WEB_BASE_URL } from '../../config/AppConfig';
 import { list as listProjects } from '../../api/project.api';
 import { shareApi } from '../../api/share.api';
 import { lookupApi } from '../../api/lookup.api';
@@ -110,7 +110,7 @@ function ShareSheet({ project, onClose }: { project: Project | null; onClose: ()
     if (project) {
       setCopied(false);
       // Fetch encrypted share URL (non-blocking — UI shows legacy fallback meanwhile)
-      const fallback = `https://ripplehub.app/opportunity/${project.projectId}`;
+      const fallback = `${WEB_BASE_URL}/opportunity/${project.projectId}`;
       setShareUrl(fallback);   // show immediately so the URL row isn't empty
       shareApi.getToken('OPP', project.projectId)
         .then(res => {
@@ -135,7 +135,7 @@ function ShareSheet({ project, onClose }: { project: Project | null; onClose: ()
 
   if (!project) return null;
 
-  const url   = shareUrl ?? `https://ripplehub.app/opportunity/${project.projectId}`;
+  const url   = shareUrl ?? `${WEB_BASE_URL}/opportunity/${project.projectId}`;
   const title = project.title ?? project.projectName ?? 'Volunteer Opportunity';
   const org   = project.orgName ?? '';
   const schedType = deriveScheduleType(project);

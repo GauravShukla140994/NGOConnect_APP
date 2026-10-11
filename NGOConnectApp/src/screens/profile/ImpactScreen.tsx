@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import AppConfig from '../../config/AppConfig';
+import AppConfig, { WEB_BASE_URL } from '../../config/AppConfig';
 import { getImpactSummary, withdrawApplication } from '../../api/user.api';
 import { projectApi } from '../../api/project.api';
 import type { ImpactSummary, UserApplication, UserBadge } from '../../types/api.types';
@@ -728,7 +728,7 @@ export default function ImpactScreen() {
   const onShare = useCallback(async () => {
     try {
       await Share.share({
-        message: `I'm a ${rankName} on RippleHub with an impact score of ${score.toLocaleString()}! 🌍 Join me at ripplehub.app`,
+        message: `I'm a ${rankName} on RippleHub with an impact score of ${score.toLocaleString()}! 🌍 Join me at ${WEB_BASE_URL}`,
       });
     } catch { /* ignore */ }
   }, [rankName, score]);

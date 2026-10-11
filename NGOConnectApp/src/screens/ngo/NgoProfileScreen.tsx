@@ -18,7 +18,7 @@ import {
 import Video from 'react-native-video';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
-import AppConfig from '../../config/AppConfig';
+import AppConfig, { WEB_BASE_URL } from '../../config/AppConfig';
 import { fmtDate, isProjectExpired } from '../../utils/dateUtils';
 import { parseRichSegments } from '../../utils/richText';
 import apiClient from '../../api/apiClient';
@@ -768,10 +768,10 @@ export default function NgoProfileScreen() {
       const res = await shareApi.getToken('ORG', orgId);
       const url = res.data?.data?.url;
       const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
-      await Share.share({ message: url ?? `https://ripplehub.app/ngo/${orgId}`, title });
+      await Share.share({ message: url ?? `${WEB_BASE_URL}/ngo/${orgId}`, title });
     } catch {
       const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
-      Share.share({ message: `https://ripplehub.app/ngo/${orgId}`, title }).catch(() => {});
+      Share.share({ message: `${WEB_BASE_URL}/ngo/${orgId}`, title }).catch(() => {});
     } finally {
       setSharing(false);
     }
