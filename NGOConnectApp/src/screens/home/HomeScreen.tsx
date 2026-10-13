@@ -343,6 +343,114 @@ function MediaImage({ uri, style, fixedHeight, ...touchProps }: { uri: string; s
   );
 }
 
+/* ─── Explore NGO Nudge Banner ──────────────────────────────────────────────── */
+function ExploreNudgeBanner({
+  onDismiss,
+  onExplore,
+}: {
+  onDismiss: () => void;
+  onExplore: () => void;
+}) {
+  const shakeAnim  = useRef(new Animated.Value(0)).current;
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    let pulseLoop: Animated.CompositeAnimation | null = null;
+    let repeatInterval: ReturnType<typeof setInterval> | null = null;
+
+    const SHAKE_DURATION = 6 * 70; // 6 steps × 70 ms = 420 ms
+
+    const doShake = (onDone?: () => void) =>
+      Animated.sequence([
+        Animated.timing(shakeAnim, { toValue:  8, duration: 70, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: -8, duration: 70, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue:  6, duration: 70, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: -6, duration: 70, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue:  3, duration: 70, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue:  0, duration: 70, useNativeDriver: true }),
+      ]).start(onDone);
+
+    const startPulse = () => {
+      // ── Button pulse starts AFTER first hand shake finishes ────────────
+      pulseLoop = Animated.loop(
+        Animated.sequence([
+          Animated.parallel([
+            Animated.sequence([
+              Animated.timing(pulseScale,   { toValue: 1.05, duration: 350, useNativeDriver: true }),
+              Animated.timing(pulseScale,   { toValue: 1.00, duration: 350, useNativeDriver: true }),
+            ]),
+            Animated.sequence([
+              Animated.timing(pulseOpacity, { toValue: 0.6,  duration: 350, useNativeDriver: true }),
+              Animated.timing(pulseOpacity, { toValue: 0.0,  duration: 350, useNativeDriver: true }),
+            ]),
+          ]),
+          Animated.delay(2800),
+        ]),
+      );
+      pulseLoop.start();
+    };
+
+    // ── Sequence: wait 1.5 s → shake hand once → start button pulse loop ─
+    const firstShake = setTimeout(() => {
+      doShake(() => startPulse());
+    }, 1500);
+
+    return () => {
+      clearTimeout(firstShake);
+      if (repeatInterval) clearInterval(repeatInterval);
+      pulseLoop?.stop();
+    };
+  }, []);
+
+  return (
+    <View style={styles.exploreNudge}>
+      {/* ── Top row: title + hand + dismiss ── */}
+      <View style={styles.exploreNudgeTop}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Animated.Text style={{ fontSize: 18, transform: [{ translateX: shakeAnim }] }}>
+            👋
+          </Animated.Text>
+          <Text style={styles.exploreNudgeTitle}>Get started with NGOs</Text>
+        </View>
+        <TouchableOpacity
+          onPress={onDismiss}
+          hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+          accessibilityLabel="Dismiss"
+        >
+          <Text style={styles.exploreNudgeDismiss}>✕</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Body ── */}
+      <Text style={styles.exploreNudgeBody}>
+        You're not part of any organisation yet. Explore NGOs, follow their work, and apply to join.
+      </Text>
+
+      {/* ── CTA button with pulse ring + scale ── */}
+      <View style={{ alignSelf: 'flex-start' }}>
+        {/* Glow ring — expands and fades behind the button */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.exploreNudgeBtnGlow,
+            { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
+          ]}
+        />
+        <Animated.View style={{ transform: [{ scale: pulseScale }] }}>
+          <TouchableOpacity
+            style={styles.exploreNudgeBtn}
+            onPress={onExplore}
+            activeOpacity={0.82}
+          >
+            <Text style={styles.exploreNudgeBtnText}>Explore Organisations →</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
 /* ─── Action Row (shared by PostCard for media + text-only positions) ───────── */
 // Extracted so the row can be placed either after media OR after caption depending
 // on whether the post has any media attachments.
@@ -1073,6 +1181,8 @@ export default function HomeScreen() {
 
   const [projects,       setProjects]       = useState<Project[]>([]);
   const [userOrgs,       setUserOrgs]       = useState<Organisation[]>([]);
+  // Session-only dismiss — banner reappears each time the app is opened (intentional)
+  const [exploreNoticeDismissed, setExploreNoticeDismissed] = useState(false);
   // Cursor-based pagination — replaces page number for personalised feed
   const [cursorPostId,   setCursorPostId]   = useState<number | null>(null);
   const [cursorScore,    setCursorScore]    = useState<number | null>(null);
@@ -1726,6 +1836,16 @@ export default function HomeScreen() {
                 ))
               }
 
+              {/* ── Explore-NGO nudge banner ───────────────────────────────────────
+                   Shown only when the user has no approved NGO memberships AND
+                   hasn't dismissed it yet this session. Reappears on next open. */}
+              {!exploreNoticeDismissed && approvedOrgs.length === 0 && (
+                <ExploreNudgeBanner
+                  onDismiss={() => setExploreNoticeDismissed(true)}
+                  onExplore={() => nav.navigate('Explore')}
+                />
+              )}
+
               <View style={styles.section}>
                 <View style={styles.sectionRow}>
                   <Text style={styles.sectionTitle}>📍 Nearby Opportunities</Text>
@@ -2143,6 +2263,57 @@ const styles = StyleSheet.create({
   },
   feedChipTextActive: {
     color: '#FFFFFF',
+  },
+
+  // ── Explore NGO nudge banner (shown when user has 0 approved orgs) ──────────
+  exploreNudge: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#EEF4FF',
+    borderWidth: 1,
+    borderColor: '#C7D9F8',
+    borderRadius: 14,
+    padding: 14,
+  },
+  exploreNudgeTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  exploreNudgeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1A3A6B',
+  },
+  exploreNudgeDismiss: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  exploreNudgeBody: {
+    fontSize: 13,
+    color: '#374151',
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  exploreNudgeBtn: {
+    backgroundColor: C.PRIMARY,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  exploreNudgeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  // Glow ring that pulses behind the CTA button
+  exploreNudgeBtnGlow: {
+    position: 'absolute',
+    top: -6, left: -6, right: -6, bottom: -6,
+    borderRadius: 26,
+    backgroundColor: C.PRIMARY,
   },
 
   // ── My Orgs zero-state CTA ──────────────────────────────────────────────────
