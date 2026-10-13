@@ -28,6 +28,7 @@ import { list as listProjects, projectApi, apply } from '../../api/project.api';
 import { shareApi } from '../../api/share.api';
 import ReviewsTab from './ReviewsTab';
 import MediaPreviewModal, { MediaItem } from '../../components/MediaPreviewModal';
+import ShareIcon from '../../components/common/ShareIcon';
 import type { ApiResponse, Organisation, Post, Project, PagedResult } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
@@ -984,7 +985,7 @@ export default function NgoProfileScreen() {
           >
             {sharing
               ? <ActivityIndicator size="small" color={C.PRIMARY} />
-              : <Text style={styles.actionBtnShareIcon}>📤</Text>
+              : <ShareIcon size={20} color="#808080" />
             }
           </TouchableOpacity>
         </View>

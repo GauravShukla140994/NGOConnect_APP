@@ -36,6 +36,7 @@ import CreateFeedPostModal from '../../components/home/CreateFeedPostModal';
 import FeedCommentsModal from '../../components/home/FeedCommentsModal';
 import ApplyModal from '../../components/project/ApplyModal';
 import VerifiedBadge from '../../components/common/VerifiedBadge';
+import ShareIcon   from '../../components/common/ShareIcon';
 import { feedApi, getPersonalizedFeed, likePost, unlikePost } from '../../api/feed.api';
 import { notificationApi } from '../../api/notification.api';
 import { shareApi } from '../../api/share.api';
@@ -342,6 +343,58 @@ function MediaImage({ uri, style, fixedHeight, ...touchProps }: { uri: string; s
   );
 }
 
+/* ─── Action Row (shared by PostCard for media + text-only positions) ───────── */
+// Extracted so the row can be placed either after media OR after caption depending
+// on whether the post has any media attachments.
+function ActionRow({
+  post,
+  onLike,
+  onCommentPress,
+}: {
+  post:           Post;
+  onLike:         (id: number, liked: boolean) => void;
+  onCommentPress: (post: Post) => void;
+}) {
+  return (
+    <View style={styles.igActionRow}>
+      <TouchableOpacity
+        style={styles.igActionBtn}
+        onPress={() => onLike(post.postId, !!post.isLiked)}
+        accessibilityLabel="Like post"
+      >
+        <Text style={[styles.igActionIcon, post.isLiked && styles.igActionIconLiked]}>
+          {post.isLiked ? '❤️' : '🤍'}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.igActionBtn}
+        onPress={() => onCommentPress(post)}
+        accessibilityLabel="Comment"
+      >
+        <Text style={styles.igActionIcon}>💬</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.igActionBtn}
+        onPress={async () => {
+          try {
+            await Share.share({
+              message: [post.content, `— ${post.authorName ?? post.orgName ?? 'NGO Connect'}`]
+                .filter(Boolean).join('\n'),
+            });
+          } catch (_) { /* dismissed */ }
+        }}
+        accessibilityLabel="Share post"
+      >
+        {/* size=21: emoji at fontSize:22 render ~90% of the line height as glyph;
+            21pt SVG matches that perceived size.
+            color='#606060' / strokeWidth 1.6: visually matches the gray stroke
+            weight of the 💬 emoji on both iOS and Android. */}
+        <ShareIcon size={24} color="#808080" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 /* ─── Post Card (Instagram style) ──────────────────────────────────────────── */
 const PostCard = React.memo(function PostCard({
   post,
@@ -628,14 +681,20 @@ const PostCard = React.memo(function PostCard({
                 label: isFollowingOrg ? 'Unfollow NGO' : 'Follow NGO',
                 onPress: handleFollowNGO,
               }] : []),
-              { icon: '📤', label: 'Share', onPress: handleShare },
-              { icon: '🔖', label: bookmarked ? 'Unsave' : 'Save',           onPress: handleSaveToggle },
+              { icon: '🔖', label: bookmarked ? 'Unsave' : 'Save', onPress: handleSaveToggle },
             ].map(item => (
               <TouchableOpacity key={item.label} style={styles.menuRow} onPress={item.onPress}>
                 <Text style={styles.menuIcon}>{item.icon}</Text>
                 <Text style={styles.menuLabel}>{item.label}</Text>
               </TouchableOpacity>
             ))}
+            {/* Share row — uses SVG paper plane to match the action-row icon */}
+            <TouchableOpacity style={styles.menuRow} onPress={handleShare}>
+              <View style={styles.menuIconSvg}>
+                <ShareIcon size={20} color="#808080" />
+              </View>
+              <Text style={styles.menuLabel}>Share</Text>
+            </TouchableOpacity>
             {!!user?.userId && Number(user.userId) === Number(post.userId) && (
               <TouchableOpacity style={[styles.menuRow, styles.menuRowReport]} onPress={handleDeletePost}>
                 <Text style={styles.menuIcon}>🗑️</Text>
@@ -831,25 +890,9 @@ const PostCard = React.memo(function PostCard({
 
       ) : null}
 
-      {/* ── Action row ─────────────────────────────────────────────── */}
-      <View style={styles.igActionRow}>
-        <TouchableOpacity
-          style={styles.igActionBtn}
-          onPress={() => onLike(post.postId, !!post.isLiked)}
-          accessibilityLabel="Like post"
-        >
-          <Text style={[styles.igActionIcon, post.isLiked && styles.igActionIconLiked]}>
-            {post.isLiked ? '❤️' : '🤍'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.igActionBtn}
-          onPress={() => onCommentPress(post)}
-          accessibilityLabel="Comment"
-        >
-          <Text style={styles.igActionIcon}>💬</Text>
-        </TouchableOpacity>
-      </View>
+      {/* ── Action row — shown here only when there is media (Instagram pattern).
+           For text-only posts it is rendered after the caption below. ─────── */}
+      {mediaUrls.length > 0 ? <ActionRow post={post} onLike={onLike} onCommentPress={onCommentPress} /> : null}
 
       {/* ── Likes count ────────────────────────────────────────────── */}
       {(post.likeCount ?? 0) > 0 ? (
@@ -893,6 +936,9 @@ const PostCard = React.memo(function PostCard({
           </TouchableOpacity>
         ) : null}
       </View>
+
+      {/* ── Action row — text-only posts: shown after the caption ─────── */}
+      {mediaUrls.length === 0 ? <ActionRow post={post} onLike={onLike} onCommentPress={onCommentPress} /> : null}
 
       {/* ── Campaign / Fundraise box ────────────────────────────────── */}
       {post.campaignGoal ? (
@@ -2310,6 +2356,7 @@ const styles = StyleSheet.create({
   menuHandle:     { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 8 },
   menuRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, gap: 14, borderTopWidth: 1, borderTopColor: C.BORDER },
   menuIcon:       { fontSize: 20, width: 26, textAlign: 'center' },
+  menuIconSvg:    { width: 26, alignItems: 'center', justifyContent: 'center' },
   menuLabel:      { fontSize: 15, color: C.TEXT, flex: 1 },
   menuRowReport:  { borderTopColor: '#FEE2E2' },
 
