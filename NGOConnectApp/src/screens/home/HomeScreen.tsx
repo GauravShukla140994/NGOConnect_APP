@@ -485,11 +485,17 @@ function ActionRow({
         style={styles.igActionBtn}
         onPress={async () => {
           try {
+            const res    = await shareApi.getToken('POST', post.postId!);
+            const url    = res.data?.data?.url;
+            if (!url) throw new Error('no url');
+            const snippet = (post.content ?? '').trim().slice(0, 100);
+            const who     = post.orgName ? `${post.orgName} on RippleHub` : 'A post on RippleHub';
             await Share.share({
-              message: [post.content, `— ${post.authorName ?? post.orgName ?? 'NGO Connect'}`]
-                .filter(Boolean).join('\n'),
+              message: snippet ? `${who}: ${snippet}\n\n${url}` : `${who}\n${url}`,
             });
-          } catch (_) { /* dismissed */ }
+          } catch (_) {
+            Alert.alert('Error', 'Could not share this post. Please try again.');
+          }
         }}
         accessibilityLabel="Share post"
       >
@@ -632,11 +638,9 @@ const PostCard = React.memo(function PostCard({
       if (!url) { throw new Error('no url'); }
       const snippet = (post.content ?? '').trim().slice(0, 100);
       const who     = post.orgName ? `${post.orgName} on RippleHub` : 'A post on RippleHub';
-      await Share.share(
-        Platform.OS === 'ios'
-          ? { message: snippet ? `${who}: ${snippet}` : who, url }
-          : { message: `${snippet ? `${who}: ${snippet}\n\n` : `${who}\n`}${url}` },
-      );
+      await Share.share({
+        message: snippet ? `${who}: ${snippet}\n\n${url}` : `${who}\n${url}`,
+      });
     } catch {
       Alert.alert('Error', 'Could not share this post. Please try again.');
     }

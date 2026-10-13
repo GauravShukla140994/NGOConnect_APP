@@ -768,11 +768,12 @@ export default function NgoProfileScreen() {
     try {
       const res = await shareApi.getToken('ORG', orgId);
       const url = res.data?.data?.url;
-      const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
-      await Share.share({ message: url ?? `${WEB_BASE_URL}/ngo/${orgId}`, title });
+      const name = org?.orgName ?? org?.name ?? 'RippleHub';
+      const shareUrl = url ?? `${WEB_BASE_URL}/organisation/${orgId}`;
+      await Share.share({ message: `${name} on RippleHub\n\n${shareUrl}` });
     } catch {
-      const title = org ? `${org.orgName ?? org.name ?? 'NGO'} on RippleHub` : 'RippleHub';
-      Share.share({ message: `${WEB_BASE_URL}/ngo/${orgId}`, title }).catch(() => {});
+      const name = org?.orgName ?? org?.name ?? 'RippleHub';
+      Share.share({ message: `${name} on RippleHub\n\n${WEB_BASE_URL}/organisation/${orgId}` }).catch(() => {});
     } finally {
       setSharing(false);
     }

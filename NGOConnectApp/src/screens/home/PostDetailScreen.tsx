@@ -14,26 +14,47 @@ import {
   Alert,
   Dimensions,
   Image,
+  KeyboardAvoidingView,
   Linking,
+  Modal,
+  Platform,
+  Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { parseRichSegments } from '../../utils/richText';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import { shareApi } from '../../api/share.api';
+import ShareIcon from '../../components/common/ShareIcon';
 import {
   feedApi,
   likePost, unlikePost,
 } from '../../api/feed.api';
+import { orgApi } from '../../api/org.api';
+import { useAuthStore } from '../../store/authStore';
 import type { Post } from '../../types/api.types';
 import FeedCommentsModal from '../../components/home/FeedCommentsModal';
 import VideoFeedPlayer  from '../../components/home/VideoFeedPlayer';
 import VerifiedBadge    from '../../components/common/VerifiedBadge';
 import { fmtDate } from '../../utils/dateUtils';
+
+// ── Report reasons (mirrors HomeScreen) ──────────────────────────────────────
+type ReportReason = { code: string; label: string; sub: string };
+const REPORT_REASONS: ReportReason[] = [
+  { code: 'SPAM',          label: 'Spam or misleading information', sub: 'False claims or promotional content' },
+  { code: 'HARASSMENT',    label: 'Harassment or bullying',         sub: 'Targeted abuse or threats' },
+  { code: 'HATE_SPEECH',   label: 'Hate speech',                    sub: 'Content that promotes hate' },
+  { code: 'INAPPROPRIATE', label: 'Inappropriate content',          sub: 'Graphic or adult content' },
+  { code: 'FRAUD',         label: 'Fraud or scam',                  sub: 'Fake fundraising or deceptive' },
+  { code: 'OTHER',         label: 'Other',                          sub: 'Something else entirely' },
+];
 
 const C        = AppConfig.COLORS;
 const SCREEN_W = Dimensions.get('window').width;
@@ -91,6 +112,19 @@ export default function PostDetailScreen() {
   const [commentOpen, setCommentOpen] = useState(false);
   const [muted,       setMuted]       = useState(true);
 
+  // ── menu / report / save / follow state (mirrors HomeScreen PostCard) ──────
+  const { user }                               = useAuthStore();
+  const insets                                 = useSafeAreaInsets();
+  const [bookmarked,       setBookmarked]      = useState(false);
+  const [isFollowingOrg,   setIsFollowingOrg]  = useState(false);
+  const [followingOrgLoad, setFollowingOrgLoad]= useState(false);
+  const [showMenu,         setShowMenu]        = useState(false);
+  const [showReport,       setShowReport]      = useState(false);
+  const [selectedReason,   setSelectedReason]  = useState<ReportReason | null>(null);
+  const [reportDetails,    setReportDetails]   = useState('');
+  const [reportSubmitting, setReportSubmitting]= useState(false);
+  const [reportDone,       setReportDone]      = useState(false);
+
   // ── fetch post ────────────────────────────────────────────────────────────
   const fetchPost = useCallback(async () => {
     setPostLoading(true);
@@ -103,6 +137,8 @@ export default function PostDetailScreen() {
         setLiked(!!p.isLiked);
         setLikeCount(p.likeCount ?? 0);
         setCommentCount(p.commentCount ?? 0);
+        setBookmarked(!!p.isSaved);
+        setIsFollowingOrg(!!(p as any).isFollowing);
       } else {
         setPostError(true);
       }
@@ -114,6 +150,109 @@ export default function PostDetailScreen() {
   }, [postId]);
 
   useEffect(() => { fetchPost(); }, [fetchPost]);
+
+  // ── share ─────────────────────────────────────────────────────────────────
+  const handleShare = useCallback(async () => {
+    setShowMenu(false);
+    if (!post) return;
+    try {
+      const res = await shareApi.getToken('POST', post.postId!);
+      const url = res.data?.data?.url;
+      if (!url) throw new Error('no url');
+      const snippet = (post.content ?? '').trim().slice(0, 100);
+      const who     = post.orgName ? `${post.orgName} on RippleHub` : 'A post on RippleHub';
+      await Share.share({
+        message: snippet ? `${who}: ${snippet}\n\n${url}` : `${who}\n${url}`,
+      });
+    } catch {
+      Alert.alert('Could not share', 'Please try again.');
+    }
+  }, [post]);
+
+  // ── follow/unfollow org ───────────────────────────────────────────────────
+  const handleFollowNGO = useCallback(async () => {
+    setShowMenu(false);
+    if (!post?.orgId || followingOrgLoad) return;
+    setFollowingOrgLoad(true);
+    try {
+      if (isFollowingOrg) {
+        const res = await orgApi.unfollowOrg(post.orgId);
+        if (res.data?.isSuccess) setIsFollowingOrg(false);
+      } else {
+        const res = await orgApi.followOrg(post.orgId);
+        if (res.data?.isSuccess) setIsFollowingOrg(true);
+      }
+    } catch { /* silent */ }
+    finally { setFollowingOrgLoad(false); }
+  }, [post?.orgId, isFollowingOrg, followingOrgLoad]);
+
+  // ── save / unsave toggle ──────────────────────────────────────────────────
+  const handleSaveToggle = useCallback(async () => {
+    setShowMenu(false);
+    if (!post) return;
+    const wasSaved = bookmarked;
+    setBookmarked(!wasSaved);
+    try {
+      wasSaved ? await feedApi.unsavePost(post.postId!) : await feedApi.savePost(post.postId!);
+    } catch {
+      setBookmarked(wasSaved);
+    }
+  }, [bookmarked, post]);
+
+  // ── delete post ───────────────────────────────────────────────────────────
+  const handleDeletePost = useCallback(() => {
+    setShowMenu(false);
+    setTimeout(() => {
+      Alert.alert(
+        'Delete Post',
+        'Are you sure you want to delete this post? This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await feedApi.deletePost(post!.postId!);
+                nav.goBack();
+              } catch {
+                Alert.alert('Error', 'Could not delete post. Please try again.');
+              }
+            },
+          },
+        ],
+      );
+    }, 350);
+  }, [post, nav]);
+
+  // ── report ────────────────────────────────────────────────────────────────
+  const openReport = () => {
+    setShowMenu(false);
+    setSelectedReason(null);
+    setReportDetails('');
+    setReportDone(false);
+    setTimeout(() => setShowReport(true), 350);
+  };
+
+  const submitReport = async () => {
+    if (!selectedReason || !post) return;
+    setReportSubmitting(true);
+    try {
+      const res = await feedApi.reportPost(post.postId!, {
+        reasonCode: selectedReason.code,
+        details: reportDetails.trim() || undefined,
+      });
+      if (res.data?.isSuccess) {
+        setReportDone(true);
+      } else {
+        Alert.alert('Error', res.data?.message || 'Could not submit report. Please try again.');
+      }
+    } catch {
+      Alert.alert('Error', 'Could not submit report. Please try again.');
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
 
   // ── like (optimistic) ─────────────────────────────────────────────────────
   const handleLike = async () => {
@@ -235,7 +374,127 @@ export default function PostDetailScreen() {
                 <Text style={s.igAuthorSub}>{post.orgName}</Text>
               )}
             </View>
+            <TouchableOpacity onPress={() => setShowMenu(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Post options">
+              <Text style={s.igMore}>•••</Text>
+            </TouchableOpacity>
           </View>
+
+          {/* ── Post options sheet ────────────────────────────────────── */}
+          {showMenu && (
+            <Modal visible transparent animationType="slide" onRequestClose={() => setShowMenu(false)}>
+              <Pressable style={s.menuOverlay} onPress={() => setShowMenu(false)}>
+                <View style={[s.menuSheet, { paddingBottom: insets.bottom + 8 }]}>
+                  <View style={s.menuHandle} />
+                  {[
+                    ...(post.orgId ? [{
+                      icon: '🏢',
+                      label: 'View Organisation Profile',
+                      onPress: () => { setShowMenu(false); nav.navigate('NgoProfile', { orgId: post.orgId }); },
+                    }] : []),
+                    ...(post.orgId ? [{
+                      icon: isFollowingOrg ? '✓' : '➕',
+                      label: isFollowingOrg ? 'Unfollow NGO' : 'Follow NGO',
+                      onPress: handleFollowNGO,
+                    }] : []),
+                    { icon: '🔖', label: bookmarked ? 'Unsave' : 'Save', onPress: handleSaveToggle },
+                  ].map(item => (
+                    <TouchableOpacity key={item.label} style={s.menuRow} onPress={item.onPress}>
+                      <Text style={s.menuIcon}>{item.icon}</Text>
+                      <Text style={s.menuLabel}>{item.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity style={s.menuRow} onPress={handleShare}>
+                    <View style={s.menuIconSvg}><ShareIcon size={20} color="#808080" /></View>
+                    <Text style={s.menuLabel}>Share</Text>
+                  </TouchableOpacity>
+                  {!!user?.userId && Number(user.userId) === Number(post.userId) && (
+                    <TouchableOpacity style={[s.menuRow, s.menuRowReport]} onPress={handleDeletePost}>
+                      <Text style={s.menuIcon}>🗑️</Text>
+                      <Text style={[s.menuLabel, { color: '#DC2626' }]}>Delete Post</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={[s.menuRow, s.menuRowReport]} onPress={openReport}>
+                    <Text style={s.menuIcon}>🚩</Text>
+                    <Text style={[s.menuLabel, { color: '#DC2626' }]}>Report</Text>
+                  </TouchableOpacity>
+                </View>
+              </Pressable>
+            </Modal>
+          )}
+
+          {/* ── Report Post modal ─────────────────────────────────────── */}
+          {showReport && (
+            <Modal visible transparent animationType="slide" onRequestClose={() => setShowReport(false)}>
+              <SafeAreaProvider>
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+                  <Pressable style={s.menuOverlay} onPress={() => !reportSubmitting && setShowReport(false)}>
+                    <Pressable style={s.reportSheet} onPress={e => e.stopPropagation()}>
+                      <View style={s.menuHandle} />
+                      <View style={s.reportHeader}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ fontSize: 16 }}>🚩</Text>
+                          <Text style={s.reportTitle}>Report Post</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => setShowReport(false)} disabled={reportSubmitting}>
+                          <Text style={s.reportClose}>✕</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {reportDone ? (
+                        <View style={s.reportSuccess}>
+                          <Text style={{ fontSize: 40, marginBottom: 12 }}>✅</Text>
+                          <Text style={s.reportSuccessTitle}>Report Submitted</Text>
+                          <Text style={s.reportSuccessSub}>Our team will review this post and take appropriate action.</Text>
+                          <TouchableOpacity style={[s.reportSubmitBtn, { alignSelf: 'stretch' }]} onPress={() => setShowReport(false)}>
+                            <Text style={s.reportSubmitText}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <>
+                          <Text style={s.reportSubtitle}>Help us understand what's wrong with this post</Text>
+                          <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
+                            {REPORT_REASONS.map(r => (
+                              <TouchableOpacity
+                                key={r.code}
+                                style={[s.reportReason, selectedReason?.code === r.code && s.reportReasonSelected]}
+                                onPress={() => setSelectedReason(r)}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[s.reportReasonText, selectedReason?.code === r.code && { color: C.PRIMARY }]}>{r.label}</Text>
+                                  {r.sub ? <Text style={s.reportReasonSub}>{r.sub}</Text> : null}
+                                </View>
+                                {selectedReason?.code === r.code && <Text style={{ color: C.PRIMARY, fontSize: 16 }}>✓</Text>}
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                          <Text style={s.reportDetailsLabel}>Additional details (optional)</Text>
+                          <TextInput
+                            style={s.reportDetailsInput}
+                            placeholder="Describe the issue in more detail…"
+                            placeholderTextColor={C.TEXT3}
+                            multiline
+                            numberOfLines={3}
+                            value={reportDetails}
+                            onChangeText={setReportDetails}
+                          />
+                          <TouchableOpacity
+                            style={[s.reportSubmitBtn, (!selectedReason || reportSubmitting) && s.reportSubmitBtnDisabled]}
+                            onPress={submitReport}
+                            disabled={!selectedReason || reportSubmitting}
+                          >
+                            {reportSubmitting
+                              ? <ActivityIndicator color="#FFFFFF" />
+                              : <Text style={s.reportSubmitText}>Submit Report</Text>
+                            }
+                          </TouchableOpacity>
+                        </>
+                      )}
+                      <SafeAreaView edges={['bottom']} style={{ minHeight: 16 }} />
+                    </Pressable>
+                  </Pressable>
+                </KeyboardAvoidingView>
+              </SafeAreaProvider>
+            </Modal>
+          )}
 
           {/* Media */}
           {mediaUrls.length > 0 && (
@@ -302,7 +561,7 @@ export default function PostDetailScreen() {
             </>
           )}
 
-          {/* Action row — ❤️  💬  */}
+          {/* Action row — ❤️  💬  ✈️  */}
           <View style={s.igActionRow}>
             <TouchableOpacity style={s.igActionBtn} onPress={handleLike} accessibilityLabel="Like post">
               <Text style={[s.igActionIcon, liked && s.igActionIconLiked]}>
@@ -311,6 +570,9 @@ export default function PostDetailScreen() {
             </TouchableOpacity>
             <TouchableOpacity style={s.igActionBtn} onPress={() => setCommentOpen(true)} accessibilityLabel="Comment">
               <Text style={s.igActionIcon}>💬</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.igActionBtn} onPress={handleShare} accessibilityLabel="Share post">
+              <ShareIcon size={24} color="#808080" />
             </TouchableOpacity>
           </View>
 
@@ -475,4 +737,35 @@ const s = StyleSheet.create({
   igViewComments:     { paddingHorizontal: 14, paddingBottom: 4 },
   igViewCommentsText: { fontSize: 13, color: C.TEXT2 },
   igTimestamp: { paddingHorizontal: 14, paddingBottom: 10, fontSize: 10, color: C.TEXT3, letterSpacing: 0.5 },
+
+  igMore: { fontSize: 18, color: C.TEXT3, paddingHorizontal: 4, paddingVertical: 4, letterSpacing: 2 },
+
+  // ── Post menu (3-dot) ──────────────────────────────────────────────────
+  menuOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  menuSheet:     { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 0 },
+  menuHandle:    { width: 36, height: 4, borderRadius: 2, backgroundColor: C.BORDER, alignSelf: 'center', marginTop: 10, marginBottom: 8 },
+  menuRow:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15, gap: 14, borderTopWidth: 1, borderTopColor: C.BORDER },
+  menuIcon:      { fontSize: 20, width: 26, textAlign: 'center' },
+  menuIconSvg:   { width: 26, alignItems: 'center', justifyContent: 'center' },
+  menuLabel:     { fontSize: 15, color: C.TEXT, flex: 1 },
+  menuRowReport: { borderTopColor: '#FEE2E2' },
+
+  // ── Report sheet ───────────────────────────────────────────────────────
+  reportSheet:             { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  reportHeader:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  reportTitle:             { fontSize: 16, fontWeight: '700', color: C.TEXT },
+  reportClose:             { fontSize: 18, color: C.TEXT2, padding: 4 },
+  reportSubtitle:          { fontSize: 13, color: C.TEXT2, paddingHorizontal: 16, paddingVertical: 10 },
+  reportReason:            { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.BORDER, gap: 12 },
+  reportReasonSelected:    { backgroundColor: C.PRIMARY + '0D' },
+  reportReasonText:        { fontSize: 14, fontWeight: '600', color: C.TEXT },
+  reportReasonSub:         { fontSize: 12, color: C.TEXT2, marginTop: 2 },
+  reportDetailsLabel:      { fontSize: 12, fontWeight: '600', color: C.TEXT2, paddingHorizontal: 16, marginTop: 12, marginBottom: 6 },
+  reportDetailsInput:      { marginHorizontal: 16, backgroundColor: C.BG, borderRadius: 10, padding: 12, fontSize: 13, color: C.TEXT, minHeight: 72, textAlignVertical: 'top', borderWidth: 1, borderColor: C.BORDER },
+  reportSubmitBtn:         { backgroundColor: C.PRIMARY, margin: 16, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  reportSubmitBtnDisabled: { opacity: 0.5 },
+  reportSubmitText:        { color: '#fff', fontSize: 15, fontWeight: '700' },
+  reportSuccess:           { alignItems: 'center', padding: 24 },
+  reportSuccessTitle:      { fontSize: 18, fontWeight: '700', color: C.TEXT, marginBottom: 6 },
+  reportSuccessSub:        { fontSize: 13, color: C.TEXT2, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
 });

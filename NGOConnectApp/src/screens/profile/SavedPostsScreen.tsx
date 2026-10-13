@@ -18,6 +18,7 @@ import {
   FlatList,
   Image,
   Linking,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -32,6 +33,8 @@ import VerifiedBadge from '../../components/common/VerifiedBadge';
 import { fmtDate } from '../../utils/dateUtils';
 import { parseRichSegments } from '../../utils/richText';
 import { feedApi } from '../../api/feed.api';
+import { shareApi } from '../../api/share.api';
+import ShareIcon from '../../components/common/ShareIcon';
 import MediaPreviewModal, { MediaItem } from '../../components/MediaPreviewModal';
 import type { Post } from '../../types/api.types';
 
@@ -61,10 +64,12 @@ function SavedPostCard({
   item,
   onUnsave,
   onMediaPress,
+  onShare,
 }: {
   item: Post;
   onUnsave: (postId: number) => void;
   onMediaPress: (items: MediaItem[], index: number) => void;
+  onShare: (item: Post) => void;
 }) {
   const meta      = TYPE_META[item.postTypeLkpCode ?? 'GENERAL'] ?? TYPE_META.GENERAL;
   const initials  = (item.authorName ?? 'NA').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
@@ -245,6 +250,9 @@ function SavedPostCard({
         <View style={s.stats}>
           <Text style={s.statText}>❤️ {item.likeCount ?? 0}</Text>
           <Text style={s.statText}>💬 {item.commentCount ?? 0}</Text>
+          <TouchableOpacity onPress={() => onShare(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Share post">
+            <ShareIcon size={18} color="#808080" />
+          </TouchableOpacity>
         </View>
         {savedDate ? <Text style={s.savedDate}>{savedDate}</Text> : null}
       </View>
@@ -313,6 +321,22 @@ export default function SavedPostsScreen() {
     if (!loadingMore && hasMore) load(page + 1);
   }, [loadingMore, hasMore, page, load]);
 
+  // ── Share ─────────────────────────────────────────────────────────
+  const handleShare = useCallback(async (item: Post) => {
+    try {
+      const res = await shareApi.getToken('POST', item.postId!);
+      const url = res.data?.data?.url;
+      if (!url) throw new Error('no url');
+      const snippet = (item.content ?? '').trim().slice(0, 100);
+      const who     = item.orgName ? `${item.orgName} on RippleHub` : 'A post on RippleHub';
+      await Share.share({
+        message: snippet ? `${who}: ${snippet}\n\n${url}` : `${who}\n${url}`,
+      });
+    } catch {
+      Alert.alert('Could not share', 'Please try again.');
+    }
+  }, []);
+
   // ── Unsave (optimistic) ───────────────────────────────────────────
   const handleUnsave = useCallback((postId: number) => {
     Alert.alert(
@@ -342,7 +366,7 @@ export default function SavedPostsScreen() {
   // ── Render ────────────────────────────────────────────────────────
   const renderItem = useCallback(
     ({ item }: { item: Post }) => (
-      <SavedPostCard item={item} onUnsave={handleUnsave} onMediaPress={handleMediaPress} />
+      <SavedPostCard item={item} onUnsave={handleUnsave} onMediaPress={handleMediaPress} onShare={handleShare} />
     ),
     [handleUnsave, handleMediaPress],
   );
