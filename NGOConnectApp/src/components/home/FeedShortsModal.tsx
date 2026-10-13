@@ -48,6 +48,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { Post } from '../../types/api.types';
 import AppConfig from '../../config/AppConfig';
+import VerifiedBadge from '../common/VerifiedBadge';
 import { feedApi } from '../../api/feed.api';
 import { orgApi } from '../../api/org.api';
 
@@ -568,7 +569,10 @@ function PostDescriptionSheet({ visible, post, onClose, viewCountOverride }: Des
                 </View>
               )}
               <View>
-                <Text style={ds.authorName}>{name}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={ds.authorName}>{name}</Text>
+                  {post.isAuthorVerified ? <VerifiedBadge size={14} /> : null}
+                </View>
                 {post.orgName && post.orgName !== name && (
                   <Text style={ds.orgName}>{post.orgName}</Text>
                 )}
@@ -840,7 +844,10 @@ function PostShortsSlide({
             </View>
           )}
           <View style={{ flex: 1 }}>
-            <Text style={s.authorName} numberOfLines={1}>{name}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={s.authorName} numberOfLines={1}>{name}</Text>
+              {post.isAuthorVerified ? <VerifiedBadge size={14} /> : null}
+            </View>
             {post.orgName && post.orgName !== name && (
               <Text style={s.orgName} numberOfLines={1}>{post.orgName}</Text>
             )}

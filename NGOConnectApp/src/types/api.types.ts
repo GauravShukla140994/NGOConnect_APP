@@ -587,8 +587,9 @@ export interface Post {
   viewCount?:    number;            // denormalized unique-user view count
   isEmergency?:  number | boolean;
   isEvergreen?:  number | boolean;
-  feedSource?:   string;           // MY_ORG | FOLLOWED_ORG | TRENDING | EMERGENCY | INTEREST | RECENT
-  feedScore?:    number;
+  feedSource?:       string;           // MY_ORG | FOLLOWED_ORG | TRENDING | EMERGENCY | INTEREST | RECENT
+  feedScore?:        number;
+  isAuthorVerified?: number | boolean; // 1 if author's profile is platform-verified
   createdAt: string;
 }
 

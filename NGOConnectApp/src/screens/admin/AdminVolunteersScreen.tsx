@@ -56,9 +56,13 @@ function PendingCard({
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Text style={styles.memberName}>{member.fullName}</Text>
-            {member.profileVerificationStatusCode === 'VERIFIED' && (
+            {member.profileVerificationStatusCode === 'VERIFIED' ? (
               <View style={styles.verifiedBadge}>
                 <Text style={styles.verifiedBadgeText}>✓ Verified</Text>
+              </View>
+            ) : (
+              <View style={styles.unverifiedBadge}>
+                <Text style={styles.unverifiedBadgeText}>⚠ Unverified</Text>
               </View>
             )}
           </View>
@@ -398,6 +402,15 @@ function MemberDetailsSheet({
                 </View>
               </View>
             </View>
+
+            {/* Unverified notice */}
+            {member.profileVerificationStatusCode !== 'VERIFIED' && (
+              <View style={styles.unverifiedNotice}>
+                <Text style={styles.unverifiedNoticeText}>
+                  {'⚠  This member\'s profile is not yet verified by the platform.\n   You may ask them to complete their profile for verification.'}
+                </Text>
+              </View>
+            )}
 
             {/* Contact info */}
             <View style={styles.contactCard}>
@@ -1084,6 +1097,10 @@ const styles = StyleSheet.create({
   pendingBadge: { backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   verifiedBadge: { backgroundColor: '#ECFDF5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#6EE7B7' },
   verifiedBadgeText: { fontSize: 10, fontWeight: '700', color: '#059669' },
+  unverifiedBadge: { backgroundColor: '#FFF7ED', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#FCD34D' },
+  unverifiedBadgeText: { fontSize: 10, fontWeight: '700', color: '#D97706' },
+  unverifiedNotice: { backgroundColor: '#FFF7ED', borderWidth: 1, borderColor: '#FCD34D', borderRadius: 10, padding: 12, marginBottom: 12 },
+  unverifiedNoticeText: { fontSize: 12, color: '#D97706', lineHeight: 18 },
   pendingBadgeText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
 
   // Pending card details

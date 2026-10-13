@@ -35,6 +35,7 @@ import ComposeFab from '../../components/common/ComposeFab';
 import CreateFeedPostModal from '../../components/home/CreateFeedPostModal';
 import FeedCommentsModal from '../../components/home/FeedCommentsModal';
 import ApplyModal from '../../components/project/ApplyModal';
+import VerifiedBadge from '../../components/common/VerifiedBadge';
 import { feedApi, getPersonalizedFeed, likePost, unlikePost } from '../../api/feed.api';
 import { notificationApi } from '../../api/notification.api';
 import { shareApi } from '../../api/share.api';
@@ -591,8 +592,9 @@ const PostCard = React.memo(function PostCard({
           )
         }
         <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
             <Text style={styles.igAuthorName}>{post.authorName ?? post.orgName ?? 'NGO'}</Text>
+            {post.isAuthorVerified ? <VerifiedBadge size={14} /> : null}
             {meta.label !== 'POST' ? (
               <View style={[styles.igTypePill, { backgroundColor: meta.bg }]}>
                 <Text style={[styles.igTypePillText, { color: meta.color }]}>

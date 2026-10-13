@@ -32,6 +32,7 @@ import {
 import type { Post } from '../../types/api.types';
 import FeedCommentsModal from '../../components/home/FeedCommentsModal';
 import VideoFeedPlayer  from '../../components/home/VideoFeedPlayer';
+import VerifiedBadge    from '../../components/common/VerifiedBadge';
 import { fmtDate } from '../../utils/dateUtils';
 
 const C        = AppConfig.COLORS;
@@ -219,8 +220,9 @@ export default function PostDetailScreen() {
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 <Text style={s.igAuthorName}>{authorName}</Text>
+                {post.isAuthorVerified ? <VerifiedBadge size={14} /> : null}
                 {meta.label !== 'POST' && (
                   <View style={[s.igTypePill, { backgroundColor: meta.bg }]}>
                     <Text style={[s.igTypePillText, { color: meta.color }]}>

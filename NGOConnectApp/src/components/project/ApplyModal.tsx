@@ -16,7 +16,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Project } from '../../types/api.types';
 import * as projectApi from '../../api/project.api';
-import { getMyDocuments } from '../../api/user.api';
 import { useAuthStore } from '../../store/authStore';
 
 /* ─── helpers ───────────────────────────────────────────────────────────────── */
@@ -203,22 +202,9 @@ export default function ApplyModal({ visible, project, onClose, onSuccess, onPro
       if (!u?.firstName || !u?.lastName) missing.push('Full name');
       if (!u?.city)                       missing.push('City');
       if (!u?.mobile)                     missing.push('Mobile number');
-      let hasGovtId = true, hasAddrProof = true;
-      try {
-        const docRes = await getMyDocuments();
-        if (docRes.data?.isSuccess && Array.isArray(docRes.data.data)) {
-          const docs = docRes.data.data as Array<{ docTypeCode: string }>;
-          const GOVT_ID_CODES = ['PHOTO_ID', 'AADHAAR', 'PAN', 'PASSPORT', 'VOTER_ID', 'DRIVING_LIC'];
-          hasGovtId    = docs.some(d => GOVT_ID_CODES.includes(d.docTypeCode));
-          hasAddrProof = docs.some(d => d.docTypeCode === 'ADDR_PROOF');
-        }
-      } catch { /* API unreachable — skip doc check, don't block user */ }
-      if (!hasGovtId)    missing.push('Government Photo ID');
-      if (!hasAddrProof) missing.push('Address Proof');
       if (missing.length > 0) {
-        const onlyDocsMissing = missing.every(m => m === 'Government Photo ID' || m === 'Address Proof');
         onClose();
-        setTimeout(() => onProfileIncomplete(missing, onlyDocsMissing ? 4 : 0), 300);
+        setTimeout(() => onProfileIncomplete(missing, 0), 300);
         return;
       }
     }

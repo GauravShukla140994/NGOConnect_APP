@@ -67,13 +67,13 @@ export const DOC_TYPES: { code: string; label: string; sub: string; required: bo
     code: 'PHOTO_ID',
     label: 'Government Photo ID',
     sub: 'National ID card, passport, or any govt-issued photo ID',
-    required: true,
+    required: false,
   },
   {
     code: 'ADDR_PROOF',
     label: 'Address Proof',
     sub: 'Utility bill, bank statement, or government letter',
-    required: true,
+    required: false,
   },
   {
     code: 'PASSPORT',
@@ -404,10 +404,7 @@ export default function DocumentUploadSection({ onDocsChange, initialDocs, compa
         return (
           <View key={type.code} style={styles.docRow}>
             <View style={styles.docLabelRow}>
-              <Text style={styles.docLabel}>
-                {type.label}
-                {type.required && <Text style={{ color: '#EF4444' }}> *</Text>}
-              </Text>
+              <Text style={styles.docLabel}>{type.label}</Text>
               {existing?.isVerified && (
                 <View style={styles.verifiedBadge}>
                   <Text style={styles.verifiedText}>✓ Verified</Text>

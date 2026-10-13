@@ -28,6 +28,7 @@ import Video from 'react-native-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import VerifiedBadge from '../../components/common/VerifiedBadge';
 import { fmtDate } from '../../utils/dateUtils';
 import { parseRichSegments } from '../../utils/richText';
 import { feedApi } from '../../api/feed.api';
@@ -112,8 +113,9 @@ function SavedPostCard({
         )}
 
         <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
             <Text style={s.authorName}>{item.authorName ?? item.orgName ?? 'NGO'}</Text>
+            {item.isAuthorVerified ? <VerifiedBadge size={14} /> : null}
             {meta.label !== 'POST' ? (
               <View style={[s.typePill, { backgroundColor: meta.bg }]}>
                 <Text style={[s.typePillText, { color: meta.color }]}>
