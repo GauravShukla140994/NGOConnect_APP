@@ -489,7 +489,7 @@ function ActionRow({
             const url    = res.data?.data?.url;
             if (!url) throw new Error('no url');
             const snippet = (post.content ?? '').trim().slice(0, 100);
-            const who     = post.orgName ? `${post.orgName} on RippleHub` : 'A post on RippleHub';
+            const who     = post.orgName ? `${post.orgName} on RippleHub` : `${post.fullName || post.authorName || 'A member'} on RippleHub`;
             await Share.share({
               message: snippet ? `${who}: ${snippet}\n\n${url}` : `${who}\n${url}`,
             });
@@ -629,7 +629,7 @@ const PostCard = React.memo(function PostCard({
     finally { setFollowingOrgLoad(false); }
   };
 
-  // ── Share: encrypted https://ripplehub.app/post/{token} link → OS share sheet ──
+  // ── Share: encrypted https://www.ripplehub.app/post/{token} link (org AND personal posts) → OS share sheet ──
   const handleShare = useCallback(async () => {
     setShowMenu(false);
     try {
@@ -637,14 +637,14 @@ const PostCard = React.memo(function PostCard({
       const url = res.data?.data?.url;
       if (!url) { throw new Error('no url'); }
       const snippet = (post.content ?? '').trim().slice(0, 100);
-      const who     = post.orgName ? `${post.orgName} on RippleHub` : 'A post on RippleHub';
+      const who     = post.orgName ? `${post.orgName} on RippleHub` : `${post.fullName || post.authorName || 'A member'} on RippleHub`;
       await Share.share({
         message: snippet ? `${who}: ${snippet}\n\n${url}` : `${who}\n${url}`,
       });
     } catch {
       Alert.alert('Error', 'Could not share this post. Please try again.');
     }
-  }, [post.postId, post.content, post.orgName]);
+  }, [post.postId, post.content, post.orgName, post.fullName, post.authorName]);
 
   // ── Save / unsave toggle (optimistic, reverts on error) ───────────────────
   const handleSaveToggle = useCallback(async () => {
@@ -1243,9 +1243,11 @@ export default function HomeScreen() {
   const [gateMissing,      setGateMissing]      = useState<string[]>([]);
   const [gateTargetStep,   setGateTargetStep]   = useState(0);
   const [showOrgSwitcher,  setShowOrgSwitcher]  = useState(false);
-  // Initialise from MMKV so the last-selected org is remembered across sessions
+  // Initialise from MMKV so the last-selected org/mode is remembered across sessions.
+  // stored 0 = "Personal" mode explicitly chosen; stored >0 = orgId; undefined = first launch
   const [activeOrgId, setActiveOrgId] = useState<number | null>(() => {
     const saved = storage.getNumber(ACTIVE_ORG_KEY);
+    if (saved === 0) return null;   // 0 is the Personal sentinel
     return saved ?? null;
   });
   const [locationLabel,    setLocationLabel]    = useState<string>(user?.city ?? '');
@@ -1493,14 +1495,21 @@ export default function HomeScreen() {
           const approvedOrgs = orgs.filter((o: Organisation) =>
             o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED'
           );
-          // Try to restore the previously selected org (validate it's still approved)
+          // Restore the previously selected org or Personal mode.
+          // savedId === 0  → Personal mode was explicitly chosen; honour it, don't auto-select an org.
+          // savedId > 0    → try to restore that org; fall back to first approved org.
+          // savedId undefined → first launch; auto-select first approved org.
           const savedId  = storage.getNumber(ACTIVE_ORG_KEY);
-          const restored = savedId ? approvedOrgs.find((o: Organisation) => o.orgId === savedId) : null;
-          const chosen   = restored ?? approvedOrgs[0] ?? null;
-          if (chosen) {
-            setActiveOrgId(chosen.orgId);
-            // Always write back so the key stays fresh
-            storage.set(ACTIVE_ORG_KEY, chosen.orgId);
+          if (savedId === 0) {
+            // Personal mode explicitly chosen — keep activeOrgId as null, do nothing
+          } else {
+            const restored = savedId ? approvedOrgs.find((o: Organisation) => o.orgId === savedId) : null;
+            const chosen   = restored ?? approvedOrgs[0] ?? null;
+            if (chosen) {
+              setActiveOrgId(chosen.orgId);
+              storage.set(ACTIVE_ORG_KEY, chosen.orgId);
+            }
+            // If no approved orgs at all, activeOrgId stays null (Personal mode by default)
           }
         }
       }).catch(() => {}),
@@ -1573,9 +1582,14 @@ export default function HomeScreen() {
   // An org is active-eligible only when BOTH the user's membership AND the org itself are approved
   const isFullyApproved = (o: Organisation) =>
     o.memberStatusCode === 'APPROVED' && o.orgStatusCode === 'APPROVED';
-  const activeOrg    = userOrgs.find(o => o.orgId === activeOrgId && isFullyApproved(o))
-                    ?? userOrgs.find(isFullyApproved);
-  const orgName      = activeOrg?.orgName ?? activeOrg?.name ?? 'RippleHub';
+  // When activeOrgId is null AND the user explicitly stored 0 in MMKV → Personal mode.
+  // When activeOrgId is null AND MMKV is undefined → still loading / no orgs yet.
+  // Either way, if no activeOrg resolves, we treat it as Personal.
+  const isPersonalMode = activeOrgId === null;
+  const activeOrg    = isPersonalMode
+                     ? undefined
+                     : userOrgs.find(o => o.orgId === activeOrgId && isFullyApproved(o));
+  const orgName      = activeOrg?.orgName ?? activeOrg?.name ?? 'Personal';
   const orgInitials  = orgName.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
   const approvedOrgs = userOrgs
     .filter(isFullyApproved)
@@ -1588,8 +1602,9 @@ export default function HomeScreen() {
   // ── Create Post: permission gate ──────────────────────────────────────────
   // Called when FAB is tapped. Checks org-level posting rules before opening modal.
   const handleComposeFabPress = useCallback(async () => {
-    if (!activeOrg) {
-      Alert.alert('No Organisation', 'Please select an organisation from the header first.');
+    // Personal mode: no org permission check needed — the SP checks CanUserPost server-side
+    if (isPersonalMode || !activeOrg) {
+      setShowCreatePost(true);
       return;
     }
     if (permChecking) return;
@@ -1626,7 +1641,7 @@ export default function HomeScreen() {
     } finally {
       setPermChecking(false);
     }
-  }, [activeOrg, permChecking]);
+  }, [activeOrg, isPersonalMode, permChecking]);
 
   // ── Comment gate ─────────────────────────────────────────────────────────────
   // Uses cached permissions if available (populated by FAB press).
@@ -1987,13 +2002,11 @@ export default function HomeScreen() {
       )}
 
 
-      {/* ── FAB — only visible when user has at least one approved org ─── */}
-      {approvedOrgs.length > 0 && (
-        <ComposeFab
-          onPress={handleComposeFabPress}
-          accessibilityLabel={permChecking ? 'Checking permissions…' : 'Create new post'}
-        />
-      )}
+      {/* ── FAB — always visible; Personal mode bypasses org permission check ─── */}
+      <ComposeFab
+        onPress={handleComposeFabPress}
+        accessibilityLabel={permChecking ? 'Checking permissions…' : 'Create new post'}
+      />
 
       {/* ── Create Post Modal ───────────────────────────────────────────── */}
       <CreateFeedPostModal
@@ -2080,6 +2093,36 @@ export default function HomeScreen() {
               keyboardShouldPersistTaps="handled"
               bounces={false}
             >
+
+            {/* Personal row — always first */}
+            <Pressable
+              style={[styles.orgSwitcherItem, isPersonalMode && styles.orgSwitcherItemActive]}
+              onPress={() => {
+                setActiveOrgId(null);
+                setActiveOrg(null);
+                storage.set(ACTIVE_ORG_KEY, 0);  // 0 = Personal sentinel
+                setShowOrgSwitcher(false);
+              }}
+              accessibilityLabel="Switch to Personal mode"
+            >
+              <View style={[styles.orgSwitcherAvatar, { backgroundColor: '#6C63FF' }]}>
+                <Text style={styles.orgSwitcherAvatarText}>P</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.orgSwitcherName, isPersonalMode && { color: C.PRIMARY }]}>
+                  Personal
+                </Text>
+                <Text style={styles.orgSwitcherMeta}>Post to your personal profile</Text>
+              </View>
+              {isPersonalMode ? (
+                <View style={styles.orgSwitcherCheck}>
+                  <Text style={styles.orgSwitcherCheckText}>✓</Text>
+                </View>
+              ) : (
+                <Text style={styles.orgSwitcherChevron}>›</Text>
+              )}
+            </Pressable>
+
             {approvedOrgs.map((org) => {
               const oName    = org.orgName ?? (org as any).name ?? 'NGO';
               const isActive = org.orgId === activeOrgId;

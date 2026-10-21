@@ -98,17 +98,20 @@ export default function CreateFeedPostModal({
     lookupApi.getValuesByTypeCode(AppConfig.LOOKUP.POST_VISIBILITY)
       .then(res => {
         if (res.data?.isSuccess) {
-          // FOLLOWERS hidden for now
-          const opts: LookupValue[] = (res.data.data ?? []).filter(
-            (o: LookupValue) => o.valueCode !== 'FOLLOWERS',
-          );
+          // FOLLOWERS hidden for now.
+          // ORG_MEMBERS hidden when posting in Personal mode (no org context).
+          const opts: LookupValue[] = (res.data.data ?? []).filter((o: LookupValue) => {
+            if (o.valueCode === 'FOLLOWERS') return false;
+            if (o.valueCode === 'ORG_MEMBERS' && !activeOrg) return false;
+            return true;
+          });
           setVisOptions(opts);
           const pub = opts.find(o => o.valueCode === 'PUBLIC') ?? opts[0];
           if (pub) setVisLkpId(pub.lookupValueId);
         }
       })
       .finally(() => setVisReady(true));
-  }, []);
+  }, [activeOrg]);
 
   // ── Keyboard tracking ──────────────────────────────────────────────────────
   // We track the keyboard height and use it to position the sheet via
@@ -220,7 +223,7 @@ export default function CreateFeedPostModal({
   // ── Derived values ─────────────────────────────────────────────────────────
   const userInitials = [user?.firstName?.[0], user?.lastName?.[0]].filter(Boolean).join('').toUpperCase() || 'ME';
   const userName     = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'You';
-  const orgName      = activeOrg?.orgName ?? activeOrg?.name ?? 'RippleHub';
+  const orgName      = activeOrg?.orgName ?? activeOrg?.name ?? 'Personal Profile';
   const selVis       = visOptions.find(o => o.lookupValueId === visLkpId);
   const visIcon      = selVis ? (VIS_META[selVis.valueCode]?.icon ?? '🌐') : '🌐';
   const visSub       = selVis ? (VIS_META[selVis.valueCode]?.sub(orgName) ?? 'Public') : 'Public';
@@ -286,8 +289,10 @@ export default function CreateFeedPostModal({
           <View style={{ flex: 1 }}>
             <Text style={s.authorName}>{userName}</Text>
             <Text style={s.authorRole}>
-              <Text style={{ color: C.PRIMARY }}>{roleLabel}</Text>
-              {' · '}{orgName}
+              {activeOrg
+                ? <><Text style={{ color: C.PRIMARY }}>{roleLabel}</Text>{' · '}{orgName}</>
+                : <Text style={{ color: C.PRIMARY }}>Personal Post</Text>
+              }
             </Text>
           </View>
         </View>
