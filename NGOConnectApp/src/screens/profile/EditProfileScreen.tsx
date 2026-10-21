@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -679,6 +680,10 @@ export default function EditProfileScreen() {
       <StepBar current={step} />
 
       {/* Content */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
@@ -1242,6 +1247,7 @@ export default function EditProfileScreen() {
         )}
 
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Footer — safe area aware */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}>
