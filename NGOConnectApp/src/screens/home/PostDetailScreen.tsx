@@ -8,10 +8,11 @@
  * Route params: { postId: number }
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
   Image,
   KeyboardAvoidingView,
@@ -124,6 +125,37 @@ export default function PostDetailScreen() {
   const [reportDetails,    setReportDetails]   = useState('');
   const [reportSubmitting, setReportSubmitting]= useState(false);
   const [reportDone,       setReportDone]      = useState(false);
+
+  // ── double-tap to like (mirrors HomeScreen PostCard) ─────────────────────
+  const lastTapRef  = useRef<number>(0);
+  const [heartPos,  setHeartPos]  = useState<{ x: number; y: number } | null>(null);
+  const heartAnim   = useRef(new Animated.Value(0)).current;
+  const heartScale  = heartAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.3, 1.3, 1] });
+
+  const handleMediaTap = useCallback((x: number, y: number) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      // double-tap — trigger like + floating heart
+      lastTapRef.current = 0;
+      if (!liked) {
+        setLiked(true);
+        setLikeCount(c => c + 1);
+        likePost(post?.postId).catch(() => {
+          setLiked(false);
+          setLikeCount(c => Math.max(0, c - 1));
+        });
+      }
+      setHeartPos({ x, y });
+      heartAnim.setValue(0);
+      Animated.sequence([
+        Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 12 }),
+        Animated.delay(400),
+        Animated.timing(heartAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+      ]).start(() => setHeartPos(null));
+    } else {
+      lastTapRef.current = now;
+    }
+  }, [liked, post?.postId, heartAnim]);
 
   // ── fetch post ────────────────────────────────────────────────────────────
   const fetchPost = useCallback(async () => {
@@ -510,47 +542,77 @@ export default function PostDetailScreen() {
                     height={CAROUSEL_H}
                   />
                 ) : (
-                  <Image
-                    source={{ uri: mediaUrls[0] }}
+                  <Pressable
+                    onPress={e => handleMediaTap(e.nativeEvent.locationX, e.nativeEvent.locationY)}
                     style={{ width: SCREEN_W, height: CAROUSEL_H }}
-                    resizeMode="cover"
-                  />
+                  >
+                    <Image
+                      source={{ uri: mediaUrls[0] }}
+                      style={{ width: SCREEN_W, height: CAROUSEL_H }}
+                      resizeMode="cover"
+                    />
+                    {/* Floating heart on double-tap */}
+                    {heartPos && (
+                      <Animated.Text style={[s.floatingHeart, {
+                        left: heartPos.x - 36,
+                        top:  heartPos.y - 36,
+                        opacity: heartAnim,
+                        transform: [{ scale: heartScale }],
+                      }]}>❤️</Animated.Text>
+                    )}
+                  </Pressable>
                 )
               ) : (
                 <>
-                  <ScrollView
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    decelerationRate="fast"
-                    style={{ height: CAROUSEL_H }}
-                    onScroll={e => {
-                      const slide = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
-                      setActiveSlide(slide);
-                    }}
-                    scrollEventThrottle={16}
-                  >
-                    {mediaUrls.map((url, i) =>
-                      isVideo(i) ? (
-                        <VideoFeedPlayer
-                          key={i}
-                          uri={url}
-                          isActive={!commentOpen && activeSlide === i}
-                          muted={muted}
-                          onToggleMute={() => setMuted(m => !m)}
-                          width={SCREEN_W}
-                          height={CAROUSEL_H}
-                        />
-                      ) : (
-                        <Image
-                          key={i}
-                          source={{ uri: url }}
-                          style={{ width: SCREEN_W, height: CAROUSEL_H }}
-                          resizeMode="cover"
-                        />
-                      )
+                  <View style={{ height: CAROUSEL_H }}>
+                    <ScrollView
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      decelerationRate="fast"
+                      style={{ height: CAROUSEL_H }}
+                      onScroll={e => {
+                        const slide = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+                        setActiveSlide(slide);
+                      }}
+                      scrollEventThrottle={16}
+                    >
+                      {mediaUrls.map((url, i) =>
+                        isVideo(i) ? (
+                          <VideoFeedPlayer
+                            key={i}
+                            uri={url}
+                            isActive={!commentOpen && activeSlide === i}
+                            muted={muted}
+                            onToggleMute={() => setMuted(m => !m)}
+                            width={SCREEN_W}
+                            height={CAROUSEL_H}
+                          />
+                        ) : (
+                          <Pressable
+                            key={i}
+                            onPress={e => handleMediaTap(e.nativeEvent.locationX, e.nativeEvent.locationY)}
+                            style={{ width: SCREEN_W, height: CAROUSEL_H }}
+                          >
+                            <Image
+                              source={{ uri: url }}
+                              style={{ width: SCREEN_W, height: CAROUSEL_H }}
+                              resizeMode="cover"
+                            />
+                          </Pressable>
+                        )
+                      )}
+                    </ScrollView>
+                    {/* Floating heart overlaid on carousel */}
+                    {heartPos && (
+                      <Animated.Text pointerEvents="none" style={[s.floatingHeart, {
+                        left: heartPos.x - 36,
+                        top:  heartPos.y - 36,
+                        opacity: heartAnim,
+                        transform: [{ scale: heartScale }],
+                      }]}>❤️</Animated.Text>
                     )}
-                  </ScrollView>
+                  </View>
                   <View style={s.igDots}>
                     {mediaUrls.map((_, i) => (
                       <View key={i} style={[s.igDot, i === activeSlide && s.igDotActive]} />
@@ -716,6 +778,7 @@ const s = StyleSheet.create({
   igActionBtn:       { paddingHorizontal: 6, paddingVertical: 6 },
   igActionIcon:      { fontSize: 22 },
   igActionIconLiked: { color: C.RED },
+  floatingHeart:     { position: 'absolute', fontSize: 72, zIndex: 99 },
 
   igLikesCount:  { paddingHorizontal: 14, fontSize: 13, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
   igCaption:     { paddingHorizontal: 14, paddingBottom: 4 },
