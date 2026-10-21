@@ -879,15 +879,19 @@ export default function CommunityScreen() {
                     key={org.orgId}
                     style={[styles.orgSwitcherItem, isActive && styles.orgSwitcherItemActive]}
                     onPress={() => {
-                      setActiveOrgId(org.orgId);
-                      setActiveOrg(org);
                       setShowOrgSwitcher(false);
-                      // Reload feed for the new org
+                      if (org.orgId === activeOrgId) return; // already active — nothing to do
+                      // Clear stale data immediately so the user sees a loading state
+                      // for the new org rather than the old org's posts.
+                      // fetchFeed + fetchSosAlerts are NOT called here — they use a stale
+                      // closure (old orgId). The useEffect([fetchFeed, fetchSosAlerts, ...])
+                      // fires automatically when orgId changes and calls them with the
+                      // correct new orgId.
                       setPosts([]);
                       setPage(1);
                       setTotalCount(0);
-                      fetchFeed(1);
-                      fetchSosAlerts();
+                      setActiveOrg(org);
+                      setActiveOrgId(org.orgId);
                     }}
                     accessibilityLabel={`Switch to ${oName}`}
                   >
