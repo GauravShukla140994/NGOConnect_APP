@@ -126,36 +126,15 @@ export default function PostDetailScreen() {
   const [reportSubmitting, setReportSubmitting]= useState(false);
   const [reportDone,       setReportDone]      = useState(false);
 
-  // ── double-tap to like (mirrors HomeScreen PostCard) ─────────────────────
-  const lastTapRef  = useRef<number>(0);
+  // ── double-tap to like ────────────────────────────────────────────────────
+  // handleLikeRef always points to the latest handleLike so the stable
+  // tap handler never has a stale closure over liked / postId.
+  const lastTapRef     = useRef<number>(0);
   const [heartPos,  setHeartPos]  = useState<{ x: number; y: number } | null>(null);
   const heartAnim   = useRef(new Animated.Value(0)).current;
   const heartScale  = heartAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.3, 1.3, 1] });
-
-  const handleMediaTap = useCallback((x: number, y: number) => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 300) {
-      // double-tap — trigger like + floating heart
-      lastTapRef.current = 0;
-      if (!liked) {
-        setLiked(true);
-        setLikeCount(c => c + 1);
-        likePost(post?.postId).catch(() => {
-          setLiked(false);
-          setLikeCount(c => Math.max(0, c - 1));
-        });
-      }
-      setHeartPos({ x, y });
-      heartAnim.setValue(0);
-      Animated.sequence([
-        Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 12 }),
-        Animated.delay(400),
-        Animated.timing(heartAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
-      ]).start(() => setHeartPos(null));
-    } else {
-      lastTapRef.current = now;
-    }
-  }, [liked, post?.postId, heartAnim]);
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
+  const handleLikeRef  = useRef<() => void>(() => {});
 
   // ── fetch post ────────────────────────────────────────────────────────────
   const fetchPost = useCallback(async () => {
@@ -299,6 +278,40 @@ export default function PostDetailScreen() {
       setLikeCount(c => wasLiked ? c + 1 : Math.max(0, c - 1));
     }
   };
+  // Keep the ref current so handleMediaTap always calls the latest handleLike
+  handleLikeRef.current = handleLike;
+
+  // Used by VideoFeedPlayer's onDoubleTap — the player already confirmed the
+  // double-tap internally, so we skip timing detection and trigger directly.
+  const triggerLike = useCallback((x: number, y: number) => {
+    if (!liked) { handleLikeRef.current(); }
+    setHeartPos({ x, y });
+    heartAnim.setValue(0);
+    Animated.sequence([
+      Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 12 }),
+      Animated.delay(400),
+      Animated.timing(heartAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+    ]).start(() => setHeartPos(null));
+  }, [liked, heartAnim]);
+
+  // For images / text posts — called on every tap; detects double-tap via timing.
+  const handleMediaTap = useCallback((x: number, y: number) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300) {
+      lastTapRef.current = 0;
+      // Only like on double-tap, never unlike (mirrors Instagram UX)
+      if (!liked) { handleLikeRef.current(); }
+      setHeartPos({ x, y });
+      heartAnim.setValue(0);
+      Animated.sequence([
+        Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 12 }),
+        Animated.delay(400),
+        Animated.timing(heartAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+      ]).start(() => setHeartPos(null));
+    } else {
+      lastTapRef.current = now;
+    }
+  }, [liked, heartAnim]);
 
   // ── media — mirrors HomeScreen PostCard ──────────────────────────────────
   const mediaUrls: string[] = post
@@ -533,11 +546,17 @@ export default function PostDetailScreen() {
             <>
               {mediaUrls.length === 1 ? (
                 isVideo(0) ? (
+                  // VideoFeedPlayer has its own Pressable + tap handler.
+                  // VideoFeedPlayer has its own Pressable + tap handler.
+                  // onDoubleTap fires once (double-tap already confirmed) so we
+                  // use triggerLike directly instead of handleMediaTap (which
+                  // needs two calls to detect a double-tap itself).
                   <VideoFeedPlayer
                     uri={mediaUrls[0]}
                     isActive={!commentOpen}
                     muted={muted}
                     onToggleMute={() => setMuted(m => !m)}
+                    onDoubleTap={() => triggerLike(SCREEN_W / 2, CAROUSEL_H / 2)}
                     width={SCREEN_W}
                     height={CAROUSEL_H}
                   />
@@ -585,6 +604,7 @@ export default function PostDetailScreen() {
                             isActive={!commentOpen && activeSlide === i}
                             muted={muted}
                             onToggleMute={() => setMuted(m => !m)}
+                            onDoubleTap={() => triggerLike(SCREEN_W / 2, CAROUSEL_H / 2)}
                             width={SCREEN_W}
                             height={CAROUSEL_H}
                           />
@@ -645,8 +665,13 @@ export default function PostDetailScreen() {
             </Text>
           )}
 
-          {/* Caption */}
-          <View style={s.igCaption}>
+          {/* Caption — also acts as double-tap zone for text-only posts */}
+          <Pressable
+            style={s.igCaption}
+            onPress={mediaUrls.length === 0
+              ? (e => handleMediaTap(e.nativeEvent.locationX, e.nativeEvent.locationY))
+              : undefined}
+          >
             {!!post.title && <Text style={s.igPostTitle}>{post.title}</Text>}
             <Text style={s.igCaptionText} numberOfLines={expanded ? undefined : 3} selectable>
               <Text style={s.igCaptionAuthor}>{authorName}{' '}</Text>
@@ -673,7 +698,16 @@ export default function PostDetailScreen() {
                 <Text style={s.igMoreLink}>...more</Text>
               </TouchableOpacity>
             )}
-          </View>
+            {/* Floating heart for text-only double-tap */}
+            {mediaUrls.length === 0 && heartPos && (
+              <Animated.Text pointerEvents="none" style={[s.floatingHeart, {
+                left: heartPos.x - 36,
+                top:  heartPos.y - 36,
+                opacity: heartAnim,
+                transform: [{ scale: heartScale }],
+              }]}>❤️</Animated.Text>
+            )}
+          </Pressable>
 
           {/* Campaign / Fundraise */}
           {!!post.campaignGoal && (
