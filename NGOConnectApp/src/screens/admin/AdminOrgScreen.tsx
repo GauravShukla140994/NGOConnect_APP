@@ -271,12 +271,22 @@ export default function AdminOrgScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── Read-only notice ────────────────────────────────────────────────── */}
-      <View style={styles.readOnlyBanner}>
-        <Text style={styles.readOnlyIcon}>ℹ️</Text>
-        <Text style={styles.readOnlyText}>
-          Profile editing is coming soon. Tap <Text style={{ fontWeight: '700' }}>Preview</Text> to see how your public page looks.
-        </Text>
+      {/* ── Profile update CTA banner ──────────────────────────────────────── */}
+      <View style={styles.ctaBanner}>
+        <View style={styles.ctaLeft}>
+          <Text style={styles.ctaTitle}>Want to update your profile?</Text>
+          <Text style={styles.ctaSub}>Direct editing is coming soon. Raise a request and our team will update it for you.</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.ctaBtn}
+          onPress={() => nav.navigate('HelpSupport', {
+            initialCategory: 'ORG_APPROVAL',
+            initialSubject:  'Organisation Profile Update Request – ' + orgName,
+          })}
+          accessibilityLabel="Request profile update"
+        >
+          <Text style={styles.ctaBtnText}>📝 Request{'\n'}Update</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -407,11 +417,16 @@ const styles = StyleSheet.create({
                  paddingVertical: 6, borderWidth: 1.5, borderColor: C.PRIMARY + '40' },
   previewBtnText:{ fontSize: 12, fontWeight: '700', color: C.PRIMARY },
 
-  // Read-only banner
-  readOnlyBanner:{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#EFF6FF',
-                   borderBottomWidth: 1, borderBottomColor: '#BFDBFE', paddingHorizontal: 14, paddingVertical: 10 },
-  readOnlyIcon:  { fontSize: 14 },
-  readOnlyText:  { flex: 1, fontSize: 12, color: '#1D4ED8', lineHeight: 18 },
+  // Profile update CTA banner
+  ctaBanner:   { flexDirection: 'row', alignItems: 'center', gap: 12,
+                 backgroundColor: '#EFF6FF', borderBottomWidth: 1, borderBottomColor: '#BFDBFE',
+                 paddingHorizontal: 14, paddingVertical: 12 },
+  ctaLeft:     { flex: 1 },
+  ctaTitle:    { fontSize: 13, fontWeight: '700', color: '#1D4ED8', marginBottom: 3 },
+  ctaSub:      { fontSize: 11, color: '#3B82F6', lineHeight: 16 },
+  ctaBtn:      { backgroundColor: '#1D4ED8', borderRadius: 10, paddingHorizontal: 12,
+                 paddingVertical: 8, alignItems: 'center', minWidth: 72 },
+  ctaBtnText:  { fontSize: 11, fontWeight: '700', color: '#fff', textAlign: 'center', lineHeight: 16 },
 
   // Sections
   sectionHead: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 6 },

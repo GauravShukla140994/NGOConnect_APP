@@ -5,7 +5,7 @@ import {
   KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import DocumentPicker, { types as DocTypes } from 'react-native-document-picker';
 import { launchImageLibrary } from 'react-native-image-picker';
 import AppConfig from '../../config/AppConfig';
@@ -39,11 +39,17 @@ interface Attachment {
 
 export default function HelpSupportScreen() {
   const nav       = useNavigation();
+  const route     = useRoute<any>();
   const user      = useAuthStore(s => s.user);
   const scrollRef = useRef<ScrollView>(null);
 
-  const [category,     setCategory]     = useState<CategoryCode | null>(null);
-  const [subject,      setSubject]      = useState('');
+  // Optional deep-link params — pre-fill category / subject when navigated
+  // from a specific context (e.g. "Request Profile Update" on AdminOrgScreen).
+  const initCategory = route.params?.initialCategory as CategoryCode | undefined;
+  const initSubject  = route.params?.initialSubject  as string        | undefined;
+
+  const [category,     setCategory]     = useState<CategoryCode | null>(initCategory ?? null);
+  const [subject,      setSubject]      = useState(initSubject ?? '');
   const [description,  setDescription]  = useState('');
   const [contactName,  setContactName]  = useState('');
   const [contactEmail, setContactEmail] = useState('');
