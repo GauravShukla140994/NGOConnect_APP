@@ -1680,8 +1680,12 @@ export default function HomeScreen() {
   // Push local active org into the shared store whenever it changes
   useEffect(() => { setActiveOrg(activeOrg ?? null); }, [activeOrg, setActiveOrg]);
 
-  // Sync FROM store when Community/Explore switches the active org
+  // Sync FROM store when Community/Explore switches the active org.
+  // Guard: if the user explicitly chose Personal mode (MMKV sentinel = 0),
+  // don't let another screen's org selection snap Home back to an org.
   useEffect(() => {
+    const savedId = storage.getNumber(ACTIVE_ORG_KEY);
+    if (savedId === 0) return; // Personal mode — ignore store sync
     if (storeActiveOrg?.orgId && storeActiveOrg.orgId !== activeOrgId) {
       setActiveOrgId(storeActiveOrg.orgId);
       storage.set(ACTIVE_ORG_KEY, storeActiveOrg.orgId);
