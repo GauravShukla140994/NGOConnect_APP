@@ -29,6 +29,7 @@ import { shareApi } from '../../api/share.api';
 import ReviewsTab from './ReviewsTab';
 import MediaPreviewModal, { MediaItem } from '../../components/MediaPreviewModal';
 import ShareIcon from '../../components/common/ShareIcon';
+import DonateIcon from '../../components/common/DonateIcon';
 import type { ApiResponse, Organisation, Post, Project, PagedResult } from '../../types/api.types';
 
 const C = AppConfig.COLORS;
@@ -973,10 +974,15 @@ export default function NgoProfileScreen() {
               {isFollowing ? '✓ Following' : '+ Follow'}
             </Text>
           </TouchableOpacity>
-          {/* Donate button hidden — feature coming soon */}
-          {/* <TouchableOpacity style={styles.actionBtnOutline} onPress={handleDonate} activeOpacity={0.85}>
-            <Text style={styles.actionBtnOutlineText}>💛 Donate</Text>
-          </TouchableOpacity> */}
+          {/* Donate icon button — same size as share button */}
+          <TouchableOpacity
+            style={styles.actionBtnShare}
+            onPress={handleDonate}
+            activeOpacity={0.85}
+            accessibilityLabel="Donate to this NGO"
+          >
+            <DonateIcon size={20} color="#808080" />
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.actionBtnShare, sharing && { opacity: 0.55 }]}
             onPress={handleShare}

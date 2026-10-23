@@ -2,6 +2,7 @@ import apiClient from './apiClient';
 import {ApiResponse, DonationCampaign, DonationTransaction, RecurringDonation, PagedResult} from '../types/api.types';
 
 export const donationApi = {
+  // ── Campaigns ────────────────────────────────────────────────────────────────
   listCampaigns: (params: {orgId?: number; keyword?: string; pageNumber?: number; pageSize?: number}) =>
     apiClient.get<ApiResponse<PagedResult<DonationCampaign>>>('/donation/campaigns', {params}),
 
@@ -11,17 +12,37 @@ export const donationApi = {
   createCampaign: (data: Partial<DonationCampaign>) =>
     apiClient.post<ApiResponse<{campaignId: number}>>('/donation/campaigns', data),
 
-  initiateDonation: (data: {campaignId: number; amount: number; note?: string; isAnonymous?: boolean; payMethodLkpId: number}) =>
-    apiClient.post<ApiResponse<{donationRef: string; razorpayOrderId?: string}>>('/donation/donate', data),
+  // ── Donation flow ─────────────────────────────────────────────────────────────
+  /** Phase 1: Creates DB record → returns transactionId + donationId.
+   *  Phase 2: Also returns gatewayOrderId for Razorpay. */
+  initiateDonation: (data: {
+    campaignId: number;
+    amount: number;
+    donTypeLkpId: number;
+    payMethodLkpId: number;
+    visibilityLkpId: number;
+    donorPan?: string;
+  }) =>
+    apiClient.post<ApiResponse<{transactionId: number; donationId: string; gatewayOrderId: string | null}>>(
+      '/donation/initiate', data),
 
-  confirmPayment: (donationRef: string) =>
-    apiClient.post<ApiResponse<null>>('/donation/confirm-payment', {donationRef}),
+  /** Confirm payment. Phase 1: pass statusCode="SUCCESS" to simulate. */
+  confirmPayment: (data: {transactionId: number; statusCode: string; gatewayPaymentId?: string}) =>
+    apiClient.post<ApiResponse<null>>('/donation/confirm', data),
 
-  getHistory: (params: {pageNumber?: number; pageSize?: number}) =>
+  /** Get single donation detail (member view) */
+  getDonationDetail: (donationRef: string) =>
+    apiClient.get<ApiResponse<any>>(`/donation/detail/${donationRef}`),
+
+  // ── Member views ──────────────────────────────────────────────────────────────
+  getHistory: (params: {status?: string; pageNumber?: number; pageSize?: number}) =>
     apiClient.get<ApiResponse<PagedResult<DonationTransaction>>>('/donation/history', {params}),
 
-  getReceipt: (receiptId: number) =>
-    apiClient.get<ApiResponse<{receiptUrl: string}>>(`/donation/receipts/${receiptId}`),
+  getReceiptList: (params: {orgId?: number; dateFrom?: string; dateTo?: string; pageNumber?: number; pageSize?: number}) =>
+    apiClient.get<ApiResponse<PagedResult<any>>>('/donation/receipts', {params}),
+
+  getRecurring: () =>
+    apiClient.get<ApiResponse<RecurringDonation[]>>('/donation/recurring'),
 
   setupRecurring: (data: {orgId: number; campaignId?: number; amount: number; frequencyLkpId: number; startDate: string}) =>
     apiClient.post<ApiResponse<null>>('/donation/recurring', data),
@@ -35,9 +56,32 @@ export const donationApi = {
   cancelRecurring: (recurringId: number) =>
     apiClient.delete<ApiResponse<null>>(`/donation/recurring/${recurringId}`),
 
+  // ── Member analytics ──────────────────────────────────────────────────────────
   getAnnualSummary: (year: number) =>
-    apiClient.get('/donation/annual-summary', {params: {year}}),
+    apiClient.get<ApiResponse<any>>('/donation/annual-summary', {params: {year}}),
 
   getSupportedNgos: () =>
-    apiClient.get('/donation/supported-ngos'),
+    apiClient.get<ApiResponse<any[]>>('/donation/supported-ngos'),
+
+  // ── Admin views ───────────────────────────────────────────────────────────────
+  getOrgDashboard: (orgId: number) =>
+    apiClient.get<ApiResponse<any[]>>(`/donation/org/${orgId}/dashboard`),
+
+  getOrgTransactions: (orgId: number, params: {
+    status?: string; dateFrom?: string; dateTo?: string;
+    search?: string; pageNumber?: number; pageSize?: number;
+  }) =>
+    apiClient.get<ApiResponse<PagedResult<any>>>(`/donation/org/${orgId}/transactions`, {params}),
+
+  getOrgDonorList: (orgId: number, params: {
+    dateFrom?: string; dateTo?: string; search?: string;
+    pageNumber?: number; pageSize?: number;
+  }) =>
+    apiClient.get<ApiResponse<PagedResult<any>>>(`/donation/org/${orgId}/donors`, {params}),
+
+  getDonorDetail: (orgId: number, donorUserId: number, params?: {dateFrom?: string; dateTo?: string}) =>
+    apiClient.get<ApiResponse<any[]>>(`/donation/org/${orgId}/donor/${donorUserId}`, {params}),
+
+  getDonationDetailAdmin: (donationRef: string) =>
+    apiClient.get<ApiResponse<any>>(`/donation/admin/detail/${donationRef}`),
 };

@@ -22,10 +22,13 @@ import AllOpportunitiesScreen from '../screens/volunteer/AllOpportunitiesScreen'
 import EditProfileScreen   from '../screens/profile/EditProfileScreen';
 import MyOrgsScreen        from '../screens/ngo/MyOrgsScreen';
 import CreateOrgScreen     from '../screens/ngo/CreateOrgScreen';
-import DonateScreen        from '../screens/donations/DonateScreen';
-import DonationPaymentScreen from '../screens/donations/DonationPaymentScreen';
-import DonationSuccessScreen from '../screens/donations/DonationSuccessScreen';
-import MyDonationsScreen   from '../screens/donations/MyDonationsScreen';
+import DonateScreen            from '../screens/donations/DonateScreen';
+import DonationPaymentScreen   from '../screens/donations/DonationPaymentScreen';
+import DonationSuccessScreen   from '../screens/donations/DonationSuccessScreen';
+import MyDonationsScreen       from '../screens/donations/MyDonationsScreen';
+import DonationDetailScreen    from '../screens/donations/DonationDetailScreen';
+import AdminDonorDetailScreen  from '../screens/admin/AdminDonorDetailScreen';
+import AdminDonationDetailScreen from '../screens/admin/AdminDonationDetailScreen';
 import SosTriggerScreen    from '../screens/sos/SosTriggerScreen';
 import SosActiveScreen     from '../screens/sos/SosActiveScreen';
 import SosResolvedScreen   from '../screens/sos/SosResolvedScreen';
@@ -169,11 +172,15 @@ const AppNavigator = () => (
     {/* Profile */}
     <Stack.Screen name="EditProfile"      component={EditProfileScreen}      />
 
-    {/* Donations */}
-    <Stack.Screen name="Donate"           component={DonateScreen}           />
-    <Stack.Screen name="DonationPayment"  component={DonationPaymentScreen}  />
-    <Stack.Screen name="DonationSuccess"  component={DonationSuccessScreen}  />
-    <Stack.Screen name="MyDonations"      component={MyDonationsScreen}      />
+    {/* Donations — member */}
+    <Stack.Screen name="Donate"              component={DonateScreen}              />
+    <Stack.Screen name="DonationPayment"     component={DonationPaymentScreen}     />
+    <Stack.Screen name="DonationSuccess"     component={DonationSuccessScreen}     />
+    <Stack.Screen name="MyDonations"         component={MyDonationsScreen}         />
+    <Stack.Screen name="DonationDetail"      component={DonationDetailScreen}      />
+    {/* Donations — admin */}
+    <Stack.Screen name="AdminDonorDetail"    component={AdminDonorDetailScreen}    />
+    <Stack.Screen name="AdminDonationDetail" component={AdminDonationDetailScreen} />
 
     {/* SOS */}
     <Stack.Screen name="SosTrigger"       component={SosTriggerScreen}       />

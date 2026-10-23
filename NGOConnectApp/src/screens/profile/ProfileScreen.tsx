@@ -38,7 +38,7 @@ const ACTIVITY_ITEMS = [
   { icon: '✏️', label: 'Edit Profile',       screen: 'EditProfile' },
   { icon: '🏢', label: 'Admin Dashboard',     screen: 'AdminTabs' },
   { icon: '🏛', label: 'My Organizations',   screen: 'MyOrgs' },
-  // { icon: '💛', label: 'My Donations',        screen: 'MyDonations' },   // hidden: not yet functional
+  { icon: '💛', label: 'My Donations',        screen: 'MyDonations' },
   { icon: '🔖', label: 'Saved Posts',         screen: 'SavedPosts' },
   { icon: '✍️', label: 'My Posts',            screen: 'MyPosts'    },
 ];
