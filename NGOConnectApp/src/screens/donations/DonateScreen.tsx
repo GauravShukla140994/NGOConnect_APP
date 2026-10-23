@@ -229,15 +229,11 @@ const DonateScreen = () => {
       Alert.alert('Invalid amount', 'Please enter a valid donation amount.');
       return;
     }
-    if (!selCampaign) {
-      Alert.alert('No campaign', 'This NGO has no active campaigns at the moment.');
-      return;
-    }
-
     setSubmitting(true);
     try {
       const res = await donationApi.initiateDonation({
-        campaignId:      selCampaign.campaignId,
+        orgId,
+        campaignId:      selCampaign?.campaignId ?? undefined,
         amount:          finalAmount,
         donTypeLkpId,
         payMethodLkpId,
@@ -252,7 +248,7 @@ const DonateScreen = () => {
           donationId,
           amount:       finalAmount,
           orgName,
-          campaignName: selCampaign.campaignName,
+          campaignName: selCampaign?.campaignName ?? 'General Donation',
           payMethod:    selPayMethod.valueName,
         });
       } else {
@@ -322,7 +318,7 @@ const DonateScreen = () => {
               {lastGiftMsg ? (
                 <Text style={s.orgCardSub} numberOfLines={1}>{lastGiftMsg}</Text>
               ) : (
-                <Text style={s.orgCardSub} numberOfLines={1}>100% of your donation reaches the NGO</Text>
+                <Text style={s.orgCardSub} numberOfLines={1}>100% of your donation reaches the Organisation</Text>
               )}
             </View>
           </View>
@@ -359,7 +355,7 @@ const DonateScreen = () => {
           {campaigns.length === 0 && (
             <View style={s.noCampaignCard}>
               <Text style={s.noCampaignText}>
-                This NGO has no active campaigns at the moment.{'\n'}You can still proceed with a general donation.
+                No specific campaigns right now — your donation will go directly to the organisation.
               </Text>
             </View>
           )}
@@ -504,7 +500,7 @@ const DonateScreen = () => {
                   : 'Enter an amount'}
               </Text>}
         </TouchableOpacity>
-        <Text style={s.secureNote}>🔒 Secure checkout via Razorpay · 100% reaches the NGO</Text>
+        <Text style={s.secureNote}>🔒 Secure & encrypted payment · 100% reaches the Organisation</Text>
       </View>
     </SafeAreaView>
   );

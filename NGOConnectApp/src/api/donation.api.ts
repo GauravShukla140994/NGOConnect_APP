@@ -16,7 +16,8 @@ export const donationApi = {
   /** Phase 1: Creates DB record → returns transactionId + donationId.
    *  Phase 2: Also returns gatewayOrderId for Razorpay. */
   initiateDonation: (data: {
-    campaignId: number;
+    orgId: number;
+    campaignId?: number;     // optional — null/undefined = general donation to org
     amount: number;
     donTypeLkpId: number;
     payMethodLkpId: number;
