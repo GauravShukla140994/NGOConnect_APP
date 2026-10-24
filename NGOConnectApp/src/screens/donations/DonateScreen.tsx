@@ -209,19 +209,10 @@ const DonateScreen = () => {
   const regNo        = selCampaign?.reg80GNo ?? paramRegNo;
   const regValidity  = selCampaign?.reg80GValid ?? paramRegValidity;
 
-  // Resolve lookup IDs — for static fallbacks (id < 0), the SP needs a real ID.
-  // We pass 0 and let the SP use its default / skip validation. The DB patch
-  // (009_DonationLookupSeeds.sql) seeds real rows so this is only a transition guard.
-  const donTypeLkpId = (() => {
-    const found = donTypes.find(d => d.valueCode === donType);
-    return (found && found.lookupValueId > 0) ? found.lookupValueId : 0;
-  })();
-  const visLkpId = (() => {
-    const code = isAnonymous ? 'ANONYMOUS' : 'PUBLIC';
-    const found = visibilityLkps.find(v => v.valueCode === code);
-    return (found && found.lookupValueId > 0) ? found.lookupValueId : 0;
-  })();
-  const payMethodLkpId = selPayMethod.lookupValueId > 0 ? selPayMethod.lookupValueId : 0;
+  // SP now resolves LookupValueIds from codes internally — just pass the valueCode.
+  const donTypeCode    = donType;                          // 'ONE_TIME' | 'MONTHLY'
+  const visibilityCode = isAnonymous ? 'ANONYMOUS' : 'PUBLIC';
+  const payMethodCode  = selPayMethod.valueCode;           // 'UPI' | 'CARD' | 'NET_BANKING'
 
   // ── Submit ───────────────────────────────────────────────────────────────────
   const handlePay = useCallback(async () => {
@@ -235,9 +226,9 @@ const DonateScreen = () => {
         orgId,
         campaignId:      selCampaign?.campaignId ?? undefined,
         amount:          finalAmount,
-        donTypeLkpId,
-        payMethodLkpId,
-        visibilityLkpId: visLkpId,
+        donTypeCode,
+        payMethodCode,
+        visibilityCode,
         donorPan:        pan.trim() || undefined,
       });
 
@@ -260,7 +251,7 @@ const DonateScreen = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [finalAmount, selCampaign, donTypeLkpId, payMethodLkpId, visLkpId, pan, orgName, selPayMethod, nav]);
+  }, [finalAmount, selCampaign, donTypeCode, payMethodCode, visibilityCode, pan, orgName, selPayMethod, nav]);
 
   // ── Loading ──────────────────────────────────────────────────────────────────
   if (pageLoading) {

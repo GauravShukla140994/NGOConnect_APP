@@ -17,11 +17,11 @@ export const donationApi = {
    *  Phase 2: Also returns gatewayOrderId for Razorpay. */
   initiateDonation: (data: {
     orgId: number;
-    campaignId?: number;     // optional — null/undefined = general donation to org
+    campaignId?: number;       // optional — null/undefined = general donation to org
     amount: number;
-    donTypeLkpId: number;
-    payMethodLkpId: number;
-    visibilityLkpId: number;
+    donTypeCode: string;       // 'ONE_TIME' | 'MONTHLY' — SP resolves LkpId internally
+    payMethodCode: string;     // 'UPI' | 'CARD' | 'NET_BANKING'
+    visibilityCode: string;    // 'PUBLIC' | 'ANONYMOUS'
     donorPan?: string;
   }) =>
     apiClient.post<ApiResponse<{transactionId: number; donationId: string; gatewayOrderId: string | null}>>(

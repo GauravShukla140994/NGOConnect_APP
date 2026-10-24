@@ -1199,7 +1199,7 @@ function ReceiptsTab() {
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={s.receiptAmount}>₹{Number(item.donationAmount).toLocaleString('en-IN')}</Text>
-            {item.receiptUrl
+            {item.pdfUrl
               ? <TouchableOpacity style={s.downloadBtn}>
                   <Text style={s.downloadBtnText}>📥 Download</Text>
                 </TouchableOpacity>
@@ -1240,7 +1240,7 @@ function NgosTab() {
 
   useEffect(() => { load(); }, []);
 
-  const totalAllNgos = items.reduce((a: number, i: any) => a + (Number(i.totalGiven) || 0), 0) || 1;
+  const totalAllNgos = items.reduce((a: number, i: any) => a + (Number(i.totalDonated) || 0), 0) || 1;
 
   const filtered = items.filter(i =>
     !search || (i.orgName ?? '').toLowerCase().includes(search.toLowerCase())
@@ -1284,10 +1284,10 @@ function NgosTab() {
           : <EmptyState icon="🏢" text="No organisations supported yet" />
         }
         renderItem={({ item }) => {
-          const pct      = Math.round(((Number(item.totalGiven) || 0) / totalAllNgos) * 100);
+          const pct      = Math.round(((Number(item.totalDonated) || 0) / totalAllNgos) * 100);
           const last     = lastDate(item.orgId);
           const procAmt  = processing(item.orgId);
-          const giftCnt  = item.giftCount ?? orgHistory(item.orgId).filter((d: any) => d.payStatus === 'SUCCESS').length;
+          const giftCnt  = item.transactions ?? orgHistory(item.orgId).filter((d: any) => d.payStatus === 'SUCCESS').length;
 
           return (
             <TouchableOpacity style={s.ngoCard} activeOpacity={0.75}
@@ -1308,7 +1308,7 @@ function NgosTab() {
                     <Text style={s.ngoProcessing}>₹{procAmt.toLocaleString('en-IN')} processing</Text>
                   )}
                 </View>
-                <Text style={s.ngoTotal}>₹{Number(item.totalGiven).toLocaleString('en-IN')}</Text>
+                <Text style={s.ngoTotal}>₹{(Number(item.totalDonated) || 0).toLocaleString('en-IN')}</Text>
                 <Text style={s.ngoChevron}>›</Text>
               </View>
               <View style={s.ngoShareRow}>
