@@ -1,6 +1,6 @@
 /**
  * MyDonationsScreen — s-my-donations
- * 4 tabs: History | Recurring | Receipts | NGOs
+ * 4 tabs: History | Recurring | Receipts | Orgs
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -12,11 +12,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { donationApi } from '../../api/donation.api';
+import { orgApi }      from '../../api/org.api';
 
 const C = AppConfig.COLORS;
 
 // ── Tab config ────────────────────────────────────────────────────────────────
-const TABS = ['History', 'Recurring', 'Receipts', 'NGOs'] as const;
+const TABS = ['History', 'Recurring', 'Receipts', 'Orgs'] as const;
 type TabType = typeof TABS[number];
 
 // ── Status chips ──────────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ export default function MyDonationsScreen() {
       {activeTab === 'History'   && <HistoryTab />}
       {activeTab === 'Recurring' && <RecurringTab />}
       {activeTab === 'Receipts'  && <ReceiptsTab />}
-      {activeTab === 'NGOs'      && <NgosTab />}
+      {activeTab === 'Orgs'      && <NgosTab />}
     </SafeAreaView>
   );
 }
@@ -203,7 +204,7 @@ function HistoryTab() {
         <View style={s.summaryTileGrid}>
           <View style={s.summaryTile}>
             <Text style={s.summaryStatValue}>{ngosSupported}</Text>
-            <Text style={s.summaryStatLabel}>NGOs supported</Text>
+            <Text style={s.summaryStatLabel}>Orgs supported</Text>
           </View>
           <View style={s.summaryTile}>
             <Text style={s.summaryStatValue}>{successItems.length}</Text>
@@ -229,7 +230,7 @@ function HistoryTab() {
         <Text style={s.searchIcon}>🔍</Text>
         <TextInput
           style={s.searchInput}
-          placeholder="Search NGO or donation ID"
+          placeholder="Search organisation or donation ID"
           placeholderTextColor={C.TEXT2}
           value={search}
           onChangeText={setSearch}
@@ -631,35 +632,68 @@ function EditRecurModal({
 // ─────────────────────────────────────────────────────────────────────────────
 function SetupRecurringModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const insets = useSafeAreaInsets();
-  const [recentOrgs,     setRecentOrgs]     = useState<any[]>([]);
-  const [orgId,          setOrgId]          = useState<number | null>(null);
-  const [orgName,        setOrgName]        = useState('');
-  const [searchText,     setSearchText]     = useState('');
-  const [amount,         setAmount]         = useState('500');
-  const [frequencyCode,  setFrequencyCode]  = useState('MONTHLY');
-  const [payMethod,      setPayMethod]      = useState('UPI_AUTOPAY');
-  const [saving,         setSaving]         = useState(false);
+  const [recentOrgs,      setRecentOrgs]      = useState<any[]>([]);
+  const [selectedOrg,     setSelectedOrg]     = useState<any | null>(null);   // full org object
+  const [amount,          setAmount]          = useState('500');
+  const [frequencyCode,   setFrequencyCode]   = useState('MONTHLY');
+  const [payMethod,       setPayMethod]       = useState('UPI_AUTOPAY');
+  const [saving,          setSaving]          = useState(false);
+  const [loadingOrgs,     setLoadingOrgs]     = useState(true);
+  // browse / search state
+  const [browseOpen,      setBrowseOpen]      = useState(false);
+  const [browseQuery,     setBrowseQuery]     = useState('');
+  const [browseResults,   setBrowseResults]   = useState<any[]>([]);
+  const [browseLoading,   setBrowseLoading]   = useState(false);
+  const browseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     donationApi.getSupportedNgos()
       .then(res => { if (res.data?.isSuccess === 1) setRecentOrgs(res.data.data ?? []); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingOrgs(false));
   }, []);
 
-  const finalAmount = Number(amount) || 0;
-  const freqLabel   = FREQUENCIES.find(f => f.code === frequencyCode)?.label ?? 'month';
-  const tomorrow    = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-  const firstDebitStr = tomorrow.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  // Debounced live search against full org DB
+  useEffect(() => {
+    if (!browseOpen) return;
+    if (browseTimer.current) clearTimeout(browseTimer.current);
+    if (browseQuery.trim().length === 0) {
+      // Load first page with no keyword so user sees options immediately
+      setBrowseLoading(true);
+      orgApi.list({ pageNumber: 1, pageSize: 10 })
+        .then(res => setBrowseResults(res.data?.data?.items ?? []))
+        .catch(() => {})
+        .finally(() => setBrowseLoading(false));
+      return;
+    }
+    browseTimer.current = setTimeout(() => {
+      setBrowseLoading(true);
+      orgApi.list({ keyword: browseQuery.trim(), pageNumber: 1, pageSize: 10 })
+        .then(res => setBrowseResults(res.data?.data?.items ?? []))
+        .catch(() => {})
+        .finally(() => setBrowseLoading(false));
+    }, 350);
+    return () => { if (browseTimer.current) clearTimeout(browseTimer.current); };
+  }, [browseQuery, browseOpen]);
+
+  const selectOrg = (org: any) => {
+    setSelectedOrg(org);
+    setBrowseOpen(false); setBrowseQuery(''); setBrowseResults([]);
+  };
+
+  const finalAmount      = Number(amount) || 0;
+  const tomorrow         = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const firstDebitStr    = tomorrow.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const annualMultiplier = frequencyCode === 'MONTHLY' ? 12 : frequencyCode === 'QUARTERLY' ? 4 : 1;
+  const annualAmt        = finalAmount * annualMultiplier;
 
   const handleStart = async () => {
-    if (!orgId) { Alert.alert('Select NGO', 'Please select an NGO to donate to.'); return; }
+    if (!selectedOrg) { Alert.alert('Select Organisation', 'Please select an organisation to donate to.'); return; }
     if (finalAmount < 1) { Alert.alert('Invalid amount', 'Please enter a valid donation amount.'); return; }
     setSaving(true);
     try {
       const res = await donationApi.setupRecurring({
-        orgId,
-        amount: finalAmount,
-        frequencyCode,
+        orgId: selectedOrg.orgId, amount: finalAmount, frequencyCode,
         startDate: tomorrow.toISOString().split('T')[0],
       });
       if (res.data?.isSuccess === 1) { onSaved(); onClose(); }
@@ -668,9 +702,13 @@ function SetupRecurringModal({ onClose, onSaved }: { onClose: () => void; onSave
     finally { setSaving(false); }
   };
 
-  const filteredOrgs = searchText.trim()
-    ? recentOrgs.filter(o => (o.orgName ?? '').toLowerCase().includes(searchText.toLowerCase()))
-    : recentOrgs;
+  const lastGaveLabel = (org: any) => {
+    const amt  = org.lastAmount ? `₹${Number(org.lastAmount).toLocaleString('en-IN')}` : '';
+    const date = org.lastDonatedAt
+      ? new Date(org.lastDonatedAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+      : '';
+    return amt && date ? `Last gave ${amt} · ${date}` : amt || '';
+  };
 
   return (
     <Modal transparent animationType="slide" visible onRequestClose={onClose}>
@@ -679,79 +717,167 @@ function SetupRecurringModal({ onClose, onSaved }: { onClose: () => void; onSave
         <View style={[s.editRecurSheet, { maxHeight: '92%' }]}>
           <View style={s.editRecurHandle} />
 
-          {/* Header */}
+          {/* ── Header ──────────────────────────────────────────────────── */}
           <View style={s.editRecurHeader}>
             <View style={{ flex: 1 }}>
               <Text style={s.editRecurTitle}>Start a recurring donation</Text>
               <Text style={{ fontSize: 13, color: C.TEXT2, marginTop: 2 }}>
-                Set up automatic debits to support NGOs
+                Give automatically. Pause or cancel anytime.
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
-              <Text style={{ fontSize: 18, color: C.TEXT2 }}>✕</Text>
+            <TouchableOpacity onPress={onClose} style={s.setupCloseBtn}>
+              <Text style={{ fontSize: 16, color: C.TEXT2, fontWeight: '600' }}>✕</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 8 }}>
 
-            {/* ── Select NGO ───────────────────────────────────────────── */}
-            <Text style={s.editRecurSectionLabel}>Select NGO</Text>
-            <View style={s.setupSearchRow}>
-              <Text style={{ fontSize: 15, marginRight: 8, color: C.TEXT2 }}>🔍</Text>
-              <TextInput
-                style={{ flex: 1, fontSize: 14, color: C.TEXT, paddingVertical: 0 }}
-                placeholder="Search NGOs you've donated to…"
-                placeholderTextColor={C.TEXT2}
-                value={searchText}
-                onChangeText={setSearchText}
-              />
-            </View>
-
-            {filteredOrgs.length > 0 && (
+            {/* ── Recently donated orgs ────────────────────────────────── */}
+            {(loadingOrgs || recentOrgs.length > 0) && (
               <>
-                <Text style={[s.editRecurSectionLabel, { marginTop: 12, fontSize: 12, color: C.TEXT2 }]}>
-                  Recently donated
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                  style={{ marginHorizontal: -20 }}
-                  contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}>
-                  {filteredOrgs.map((org: any) => {
-                    const isSelected = org.orgId === orgId;
-                    const initials = (org.orgName ?? 'N').split(' ').slice(0, 2)
-                      .map((w: string) => w[0]).join('').toUpperCase();
-                    return (
-                      <TouchableOpacity key={org.orgId}
-                        style={[s.setupOrgCard, isSelected && s.setupOrgCardActive]}
-                        onPress={() => { setOrgId(org.orgId); setOrgName(org.orgName ?? ''); setSearchText(''); }}>
-                        <View style={[s.setupOrgAvatar, { backgroundColor: avatarColor(org.orgId) }]}>
-                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>{initials}</Text>
-                        </View>
-                        <Text style={[s.setupOrgName, isSelected && { color: C.PRIMARY }]}
-                          numberOfLines={2}>{org.orgName}</Text>
-                        {isSelected && (
-                          <Text style={{ fontSize: 11, color: C.PRIMARY, fontWeight: '700', marginTop: 2 }}>✓ Selected</Text>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+                <View style={s.setupSectionRow}>
+                  <Text style={s.editRecurSectionLabel}>Recently donated</Text>
+                  <Text style={{ fontSize: 12, color: C.TEXT2 }}>Tap to select</Text>
+                </View>
+                {loadingOrgs
+                  ? <ActivityIndicator color={C.PRIMARY} style={{ marginVertical: 16 }} />
+                  : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                      style={{ marginHorizontal: -20 }}
+                      contentContainerStyle={{ paddingHorizontal: 20, gap: 10, paddingBottom: 4 }}>
+                      {recentOrgs.map((org: any) => {
+                        const isSelected = org.orgId === selectedOrg?.orgId;
+                        const initials   = (org.orgName ?? 'N').split(' ').slice(0, 2)
+                          .map((w: string) => w[0]).join('').toUpperCase();
+                        return (
+                          <TouchableOpacity key={org.orgId}
+                            style={[s.setupOrgCard, isSelected && s.setupOrgCardActive]}
+                            onPress={() => selectOrg(org)}>
+                            <View style={[s.setupOrgAvatar, { backgroundColor: avatarColor(org.orgId) }]}>
+                              <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>{initials}</Text>
+                            </View>
+                            <Text style={[s.setupOrgCardName, isSelected && { color: C.PRIMARY }]}
+                              numberOfLines={2}>{org.orgName}</Text>
+                            <Text style={s.setupOrgCardCampaign} numberOfLines={1}>
+                              {org.lastCampaignName ?? 'General Donation'}
+                            </Text>
+                            {lastGaveLabel(org) !== '' && (
+                              <Text style={[s.setupOrgCardLastGave, isSelected && { color: C.PRIMARY }]}>
+                                {lastGaveLabel(org)}
+                              </Text>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  )
+                }
               </>
             )}
 
-            {filteredOrgs.length === 0 && searchText.trim() !== '' && (
-              <Text style={{ fontSize: 13, color: C.TEXT2, marginTop: 8, textAlign: 'center' }}>
-                No matching NGOs found
-              </Text>
-            )}
+            {/* ── Browse / search all organisations ────────────────────── */}
+            <Text style={[s.editRecurSectionLabel, { marginTop: recentOrgs.length > 0 ? 20 : 0 }]}>
+              {recentOrgs.length > 0 ? 'Or support a new organisation' : 'Select organisation'}
+            </Text>
 
-            {orgName !== '' && (
-              <View style={s.setupSelectedOrg}>
-                <Text style={{ fontSize: 13, color: C.PRIMARY, fontWeight: '600' }}>✓ {orgName}</Text>
+            {!browseOpen ? (
+              <TouchableOpacity style={s.setupBrowseRow} activeOpacity={0.75}
+                onPress={() => setBrowseOpen(true)}>
+                <Text style={{ fontSize: 14, color: C.TEXT2, flex: 1 }}>
+                  Search all verified organisations…
+                </Text>
+                <Text style={{ fontSize: 16, color: C.PRIMARY }}>🔍</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={s.setupBrowseExpanded}>
+                {/* Search input */}
+                <View style={s.setupBrowseInputRow}>
+                  <Text style={{ fontSize: 14, marginRight: 8, color: C.TEXT2 }}>🔍</Text>
+                  <TextInput
+                    style={{ flex: 1, fontSize: 14, color: C.TEXT, paddingVertical: 0 }}
+                    placeholder="Type organisation name…"
+                    placeholderTextColor={C.TEXT2}
+                    value={browseQuery}
+                    onChangeText={setBrowseQuery}
+                    autoFocus
+                  />
+                  {browseQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setBrowseQuery('')}>
+                      <Text style={{ fontSize: 15, color: C.TEXT2, paddingLeft: 8 }}>✕</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Results */}
+                {browseLoading
+                  ? <ActivityIndicator color={C.PRIMARY} style={{ marginVertical: 12 }} />
+                  : browseResults.length === 0
+                    ? <Text style={{ fontSize: 13, color: C.TEXT2, textAlign: 'center', paddingVertical: 12 }}>
+                        No organisations found
+                      </Text>
+                    : browseResults.map((org: any) => {
+                        const isSelected = org.orgId === selectedOrg?.orgId;
+                        const initials   = (org.orgName ?? 'N').split(' ').slice(0, 2)
+                          .map((w: string) => w[0]).join('').toUpperCase();
+                        return (
+                          <TouchableOpacity key={org.orgId}
+                            style={[s.setupBrowseResult, isSelected && s.setupBrowseResultActive]}
+                            onPress={() => selectOrg(org)}>
+                            <View style={[s.setupBrowseAvatar, { backgroundColor: avatarColor(org.orgId) }]}>
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>{initials}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[s.setupBrowseOrgName, isSelected && { color: C.PRIMARY }]}
+                                numberOfLines={1}>{org.orgName}</Text>
+                              {org.city && (
+                                <Text style={{ fontSize: 11, color: C.TEXT2 }}>{org.city}</Text>
+                              )}
+                            </View>
+                            {isSelected && (
+                              <Text style={{ fontSize: 14, color: C.PRIMARY, fontWeight: '700' }}>✓</Text>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })
+                }
               </View>
             )}
 
-            {/* ── Amount ──────────────────────────────────────────────── */}
+            {selectedOrg && (
+              <View style={s.setupSelectedCard}>
+                {/* Avatar */}
+                <View style={[s.setupSelectedAvatar,
+                  { backgroundColor: avatarColor(selectedOrg.orgId) }]}>
+                  <Text style={s.setupSelectedAvatarText}>
+                    {(selectedOrg.orgName ?? 'N').split(' ').slice(0, 2)
+                      .map((w: string) => w[0]).join('').toUpperCase()}
+                  </Text>
+                </View>
+                {/* Info */}
+                <View style={{ flex: 1 }}>
+                  <Text style={s.setupSelectedOrgName} numberOfLines={1}>
+                    {selectedOrg.orgName ?? ''}
+                  </Text>
+                  <Text style={s.setupSelectedCampaign} numberOfLines={1}>
+                    {selectedOrg.lastCampaignName ?? 'General Donation'}
+                  </Text>
+                  {selectedOrg.lastAmount ? (
+                    <Text style={s.setupSelectedLastGave}>
+                      {lastGaveLabel(selectedOrg)}
+                    </Text>
+                  ) : null}
+                </View>
+                {/* Change button */}
+                <TouchableOpacity
+                  onPress={() => setSelectedOrg(null)}
+                  style={s.setupSelectedChangeBtn}>
+                  <Text style={s.setupSelectedChangeBtnText}>Change</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── Amount per debit ────────────────────────────────────── */}
             <Text style={[s.editRecurSectionLabel, { marginTop: 20 }]}>Amount per debit</Text>
             <View style={s.editRecurChipRow}>
               {QUICK_AMOUNTS.map(a => (
@@ -807,16 +933,16 @@ function SetupRecurringModal({ onClose, onSaved }: { onClose: () => void; onSave
             </Text>
 
             {/* ── Summary ─────────────────────────────────────────────── */}
-            {orgId && finalAmount >= 1 && (
+            {selectedOrg && finalAmount >= 1 && (
               <View style={s.editRecurSummary}>
                 <Text style={s.editRecurSummaryText}>
-                  ₹{finalAmount.toLocaleString('en-IN')} per {freqLabel.toLowerCase()} · first debit {firstDebitStr}
+                  ₹{annualAmt.toLocaleString('en-IN')} per year · first debit {firstDebitStr}
                 </Text>
               </View>
             )}
           </ScrollView>
 
-          {/* ── Footer ─────────────────────────────────────────────────── */}
+          {/* ── Footer ──────────────────────────────────────────────────── */}
           <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16, paddingTop: 8 }}>
             <View style={s.editRecurBtns}>
               <TouchableOpacity style={s.editRecurCancelBtn} onPress={onClose} disabled={saving}>
@@ -1135,7 +1261,7 @@ function NgosTab() {
         <Text style={s.searchIcon}>🔍</Text>
         <TextInput
           style={s.searchInput}
-          placeholder="Search NGO, cause or city"
+          placeholder="Search organisation, cause or city"
           placeholderTextColor={C.TEXT2}
           value={search}
           onChangeText={setSearch}
@@ -1155,7 +1281,7 @@ function NgosTab() {
         contentContainerStyle={{ padding: 16, paddingBottom: 32, paddingTop: 8 }}
         ListEmptyComponent={loading
           ? <ActivityIndicator color={C.PRIMARY} style={{ marginTop: 40 }} size="large" />
-          : <EmptyState icon="🏢" text="No NGOs supported yet" />
+          : <EmptyState icon="🏢" text="No organisations supported yet" />
         }
         renderItem={({ item }) => {
           const pct      = Math.round(((Number(item.totalGiven) || 0) / totalAllNgos) * 100);
@@ -1480,29 +1606,91 @@ const s = StyleSheet.create({
   donateAgainBtnText: { fontSize: 13, fontWeight: '700', color: C.PRIMARY },
 
   // ── Setup Recurring Modal ──────────────────────────────────────────────────
-  setupSearchRow: {
+  setupCloseBtn: {
+    padding: 6, borderRadius: 20, backgroundColor: C.BORDER + '60',
+  },
+  setupSectionRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 10,
+  },
+  setupOrgCard: {
+    width: 110, paddingVertical: 14, paddingHorizontal: 10,
+    borderRadius: 14, borderWidth: 1.5, borderColor: C.BORDER, backgroundColor: C.CARD,
+  },
+  setupOrgCardActive: {
+    borderColor: C.PRIMARY, backgroundColor: C.PRIMARY + '0D',
+  },
+  setupOrgAvatar: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
+  setupOrgCardName: {
+    fontSize: 12, fontWeight: '700', color: C.TEXT, lineHeight: 16, marginBottom: 2,
+  },
+  setupOrgCardCampaign: {
+    fontSize: 11, color: C.TEXT2, lineHeight: 14, marginBottom: 4,
+  },
+  setupOrgCardLastGave: {
+    fontSize: 10, color: C.PRIMARY, fontWeight: '600', lineHeight: 13,
+  },
+  setupBrowseRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 14, paddingHorizontal: 14,
+    borderRadius: 12, borderWidth: 1.5, borderColor: C.BORDER,
+    backgroundColor: C.CARD, marginBottom: 6,
+  },
+  setupBrowseExpanded: {
+    borderRadius: 12, borderWidth: 1.5, borderColor: C.PRIMARY + '60',
+    backgroundColor: C.CARD, marginBottom: 6, overflow: 'hidden',
+  },
+  setupBrowseInputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: C.BORDER,
+  },
+  setupBrowseResult: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.BORDER,
+  },
+  setupBrowseResultActive: {
+    backgroundColor: C.PRIMARY + '0D',
+  },
+  setupBrowseAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  setupBrowseOrgName: {
+    fontSize: 13, fontWeight: '600', color: C.TEXT,
+  },
+  // ── Selected-org rich card ─────────────────────────────────────────────────
+  setupSelectedCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginTop: 12, padding: 14, borderRadius: 14,
+    backgroundColor: C.PRIMARY + '0D',
+    borderWidth: 1.5, borderColor: C.PRIMARY + '33',
+  },
+  setupSelectedAvatar: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  setupSelectedAvatarText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  setupSelectedOrgName:    { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 2 },
+  setupSelectedCampaign:   { fontSize: 12, color: C.TEXT2, marginBottom: 2 },
+  setupSelectedLastGave:   { fontSize: 12, color: C.PRIMARY, fontWeight: '600' },
+  setupSelectedChangeBtn:  {
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 8, borderWidth: 1.5, borderColor: C.PRIMARY,
+    backgroundColor: '#fff', flexShrink: 0,
+  },
+  setupSelectedChangeBtnText: { fontSize: 12, fontWeight: '700', color: C.PRIMARY },
+  setupSearchRow: {                // legacy — kept for safety, unused now
     flexDirection: 'row', alignItems: 'center',
     borderRadius: 10, borderWidth: 1.5, borderColor: C.BORDER,
     paddingHorizontal: 12, paddingVertical: 10,
     backgroundColor: C.CARD, marginBottom: 4,
   },
-  setupOrgCard: {
-    alignItems: 'center', width: 90, paddingVertical: 14, paddingHorizontal: 8,
-    borderRadius: 14, borderWidth: 1.5, borderColor: C.BORDER, backgroundColor: C.CARD,
-  },
-  setupOrgCardActive: {
-    borderColor: C.PRIMARY, backgroundColor: C.PRIMARY + '10',
-  },
-  setupOrgAvatar: {
-    width: 44, height: 44, borderRadius: 22,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
-  },
-  setupOrgName: {
-    fontSize: 11, color: C.TEXT, textAlign: 'center', lineHeight: 14,
-  },
-  setupSelectedOrg: {
-    marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: C.PRIMARY + '10',
-  },
+  setupOrgName: { fontSize: 11, color: C.TEXT, textAlign: 'center', lineHeight: 14 }, // legacy
 
   // ── Empty state ────────────────────────────────────────────────────────────
   emptyWrap:  { alignItems: 'center', marginTop: 60, paddingHorizontal: 32 },

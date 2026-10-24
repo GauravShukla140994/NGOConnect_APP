@@ -31,7 +31,7 @@ const DonationSuccessScreen = () => {
 
   const amount          = Number(p.amount);
   const donationId      = p.donationId ?? p.donationRef ?? '';
-  const orgName         = p.orgName ?? 'the NGO';
+  const orgName         = p.orgName ?? 'the organisation';
   const campaignName    = p.campaignName ?? 'General Donation';
   const payMethod       = p.payMethod ?? 'UPI';
   const gatewayPayId    = p.gatewayPaymentId ?? '[RAZORPAY PAYMENT ID]';

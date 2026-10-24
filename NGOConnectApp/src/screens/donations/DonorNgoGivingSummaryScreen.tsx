@@ -1,7 +1,7 @@
 /**
  * DonorNgoGivingSummaryScreen
- * Shown when a donor taps an NGO card in the MyDonations NGOs tab.
- * Shows: NGO card, stat summary, funds breakdown, impact updates,
+ * Shown when a donor taps an organisation card in the MyDonations Orgs tab.
+ * Shows: Organisation card, stat summary, funds breakdown, impact updates,
  *        all donations list, recurring plan, sticky "Donate again" button.
  *
  * Route params: { orgId: number, orgName?: string }
@@ -85,7 +85,7 @@ export default function DonorNgoGivingSummaryScreen() {
     { text: 'Your donation made a real difference to the community.', date: fmtDate(latestDate) },
   ];
 
-  const orgName = history[0]?.orgName ?? paramOrgName ?? 'This NGO';
+  const orgName = history[0]?.orgName ?? paramOrgName ?? 'This organisation';
   const color   = avatarBg(orgId);
 
   const handleShare = async () => {
@@ -132,7 +132,7 @@ export default function DonorNgoGivingSummaryScreen() {
               </Text>
               <TouchableOpacity style={s.viewProfileBtn}
                 onPress={() => nav.navigate('NgoProfile', { orgId })}>
-                <Text style={s.viewProfileBtnText}>View NGO profile</Text>
+                <Text style={s.viewProfileBtnText}>View organisation profile</Text>
               </TouchableOpacity>
             </View>
 
@@ -265,7 +265,7 @@ export default function DonorNgoGivingSummaryScreen() {
             {history.length === 0 && !loading && (
               <View style={s.emptyWrap}>
                 <Text style={s.emptyIcon}>💛</Text>
-                <Text style={s.emptyText}>No donations to this NGO yet</Text>
+                <Text style={s.emptyText}>No donations to this organisation yet</Text>
               </View>
             )}
 

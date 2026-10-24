@@ -423,7 +423,7 @@ const DonateScreen = () => {
               <View style={s.card80GHeader}>
                 <View style={s.badge80GWrap}><Text style={s.badge80G}>80G</Text></View>
                 <Text style={s.card80GTitle}>
-                  <Text style={{ fontWeight: '700' }}>{orgName || 'This NGO'}</Text> can issue an 80G tax certificate.
+                  <Text style={{ fontWeight: '700' }}>{orgName || 'This organisation'}</Text> can issue an 80G tax certificate.
                 </Text>
               </View>
               <Text style={s.card80GInfo}>

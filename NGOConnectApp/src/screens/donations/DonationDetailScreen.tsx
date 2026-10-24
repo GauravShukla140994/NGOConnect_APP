@@ -56,7 +56,7 @@ const JOURNEY: Array<{
     failWhen: ['FAILED'],
   },
   {
-    label: (d: any) => `Received by ${d?.orgName ?? 'NGO'}` as any,
+    label: (d: any) => `Received by ${d?.orgName ?? 'Organisation'}` as any,
     sub: () => 'After confirmation',
     doneWhen: ['SUCCESS', 'REFUNDED'],
     activeWhen: [],
@@ -278,10 +278,10 @@ export default function DonationDetailScreen() {
           <DetailRow
             label="Platform fee"
             value="₹0"
-            sub="100% goes to the NGO"
+            sub="100% goes to the organisation"
           />
           <DetailRow
-            label="Amount to NGO"
+            label="Amount to organisation"
             value={`₹${Number(data.orgReceivesAmt ?? data.donationAmount).toLocaleString('en-IN')}`}
             highlight
             isLast
