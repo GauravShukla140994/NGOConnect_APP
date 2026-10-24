@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Share, Clipboard, Alert,
+  ActivityIndicator, Clipboard, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -97,13 +97,11 @@ export default function DonationDetailScreen() {
     if (data) Alert.alert('Status updated', `Current status: ${data.payStatus ?? 'Unknown'}`);
   };
 
-  const handleShare = async () => {
-    if (!data) return;
-    try {
-      await Share.share({
-        message: `I donated ₹${Number(data.donationAmount).toLocaleString('en-IN')} to ${data.orgName ?? 'an NGO'} via NGO Connect! 🎉`,
-      });
-    } catch (_) {}
+  const handleGetHelp = () => {
+    nav.navigate('HelpSupport', {
+      initialCategory: 'DONATION_SUPPORT',
+      initialSubject:  `Issue with donation ${donationRef}`,
+    });
   };
 
   const copyToClipboard = (value: string, label: string) => {
@@ -115,7 +113,7 @@ export default function DonationDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={s.container}>
-        <NavHeader title="Donation details" onBack={() => nav.goBack()} onShare={undefined} />
+        <NavHeader title="Donation details" onBack={() => nav.goBack()} />
         <ActivityIndicator color={C.PRIMARY} size="large" style={{ marginTop: 60 }} />
       </SafeAreaView>
     );
@@ -124,7 +122,7 @@ export default function DonationDetailScreen() {
   if (error || !data) {
     return (
       <SafeAreaView style={s.container}>
-        <NavHeader title="Donation details" onBack={() => nav.goBack()} onShare={undefined} />
+        <NavHeader title="Donation details" onBack={() => nav.goBack()} />
         <View style={s.errorWrap}>
           <Text style={s.errorIcon}>⚠️</Text>
           <Text style={s.errorText}>{error || 'Donation not found'}</Text>
@@ -163,7 +161,6 @@ export default function DonationDetailScreen() {
       <NavHeader
         title="Donation details"
         onBack={() => nav.goBack()}
-        onShare={handleShare}
       />
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
@@ -323,7 +320,7 @@ export default function DonationDetailScreen() {
       <View style={s.footer}>
         <TouchableOpacity
           style={s.helpBtn}
-          onPress={() => Alert.alert('Get help', 'For payment issues, email support@ngoconnect.in')}>
+          onPress={handleGetHelp}>
           <Text style={s.helpBtnText}>Get help</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -341,18 +338,15 @@ export default function DonationDetailScreen() {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-function NavHeader({
-  title, onBack, onShare,
-}: { title: string; onBack: () => void; onShare?: () => void }) {
+function NavHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <View style={s.header}>
-      <TouchableOpacity onPress={onBack} style={s.headerBtn}>
-        <Text style={s.headerBackIcon}>←</Text>
+      <TouchableOpacity onPress={onBack} style={s.headerBtn} accessibilityLabel="Back">
+        <Text style={s.headerBackArrow}>←</Text>
+        <Text style={s.headerBackLabel}>Back</Text>
       </TouchableOpacity>
       <Text style={s.headerTitle}>{title}</Text>
-      <TouchableOpacity onPress={onShare} style={s.headerBtn} disabled={!onShare}>
-        {onShare ? <Text style={s.headerShareIcon}>↑</Text> : <View />}
-      </TouchableOpacity>
+      <View style={{ width: 70 }} />
     </View>
   );
 }
@@ -402,10 +396,10 @@ const s = StyleSheet.create({
   header:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8,
                     paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER,
                     backgroundColor: C.CARD },
-  headerBtn:      { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerBackIcon: { fontSize: 22, color: C.TEXT },
-  headerShareIcon:{ fontSize: 18, color: C.PRIMARY },
-  headerTitle:    { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.TEXT },
+  headerBtn:        { minWidth: 70, height: 40, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerBackArrow:  { fontSize: 20, color: C.PRIMARY, fontWeight: '600' },
+  headerBackLabel:  { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
+  headerTitle:      { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.TEXT },
 
   scroll: { paddingHorizontal: 16, paddingTop: 16 },
 

@@ -27,11 +27,11 @@ const STATUS_CHIPS = [
 ];
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  SUCCESS:   { bg: '#DCFCE7', text: '#166534' },
-  INITIATED: { bg: '#FEF9C3', text: '#854D0E' },
-  PENDING:   { bg: '#FEF9C3', text: '#854D0E' },
-  FAILED:    { bg: '#FEE2E2', text: '#991B1B' },
-  REFUNDED:  { bg: '#EFF6FF', text: '#1D4ED8' },
+  SUCCESS:   { bg: '#E7F6EC', text: '#15703A' },
+  INITIATED: { bg: '#FDF1DE', text: '#A14B05' },
+  PENDING:   { bg: '#FDF1DE', text: '#A14B05' },
+  FAILED:    { bg: '#FCE8E8', text: '#B3261E' },
+  REFUNDED:  { bg: '#EAF2FE', text: '#1D4ED8' },
 };
 
 export default function AdminDonationsScreen() {
@@ -64,11 +64,12 @@ export default function AdminDonationsScreen() {
     <SafeAreaView style={s.container}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn}>
-          <Text style={s.backIcon}>←</Text>
+        <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn} accessibilityLabel="Back">
+          <Text style={s.backArrow}>←</Text>
+          <Text style={s.backLabel}>Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Donations</Text>
-        <View style={{ width: 36 }} />
+        <View style={{ width: 70 }} />
       </View>
 
       {/* View toggle */}
@@ -154,13 +155,13 @@ function DonationsView({ orgId, stats, monthPct, campaigns, dashLoading }: any) 
           {dashLoading
             ? <ActivityIndicator color={C.PRIMARY} style={{ marginBottom: 16 }} />
             : <View style={s.statsGrid}>
-                <StatCard label="All-time" value={`₹${fmtK(allTime)}`} />
+                <StatCard label="All-time" value={`₹${fmtK(allTime)}`} tileColor="#D1FAE5" />
                 <StatCard label="This month" value={`₹${fmtK(thisMonth)}`}
                   badge={monthPct !== 0 ? `${monthPct > 0 ? '+' : ''}${monthPct}%` : undefined}
-                  badgeGreen={monthPct > 0} />
-                <StatCard label="Today" value={`₹${fmtK(today)}`} />
+                  badgeGreen={monthPct > 0} tileColor="#DBEAFE" />
+                <StatCard label="Today" value={`₹${fmtK(today)}`} tileColor="#EDE9FE" />
                 <StatCard label="Recurring" value={`₹${fmtK(recurring)}`}
-                  sub={`${stats.activeRecurringDonors ?? 0} donors`} />
+                  sub={`${stats.activeRecurringDonors ?? 0} donors`} tileColor="#FEF3C7" />
               </View>
           }
 
@@ -171,8 +172,8 @@ function DonationsView({ orgId, stats, monthPct, campaigns, dashLoading }: any) 
               <Text style={s.payoutCardBank}>Bank details not configured</Text>
               <Text style={s.payoutCardNote}>Next settlement: T+2 business days</Text>
             </View>
-            <View style={[s.payoutBadge, { backgroundColor: '#DCFCE7' }]}>
-              <Text style={[s.payoutBadgeText, { color: '#166534' }]}>Active</Text>
+            <View style={[s.payoutBadge, { backgroundColor: '#E7F6EC' }]}>
+              <Text style={[s.payoutBadgeText, { color: '#15703A' }]}>Active</Text>
             </View>
           </View>
 
@@ -356,17 +357,17 @@ function DonorListView({ orgId, stats, dashLoading }: any) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-const StatCard = ({ label, value, badge, badgeGreen, sub }:
-  { label: string; value: string; badge?: string; badgeGreen?: boolean; sub?: string }) => (
-  <View style={s.statCard}>
-    <Text style={s.statLabel}>{label}</Text>
-    <Text style={s.statValue}>{value}</Text>
+const StatCard = ({ label, value, badge, badgeGreen, sub, tileColor }:
+  { label: string; value: string; badge?: string; badgeGreen?: boolean; sub?: string; tileColor?: string }) => (
+  <View style={[s.statCard, tileColor ? { backgroundColor: tileColor, borderColor: tileColor } : null]}>
+    <Text style={[s.statLabel, tileColor ? { color: 'rgba(0,0,0,0.55)' } : null]}>{label}</Text>
+    <Text style={[s.statValue, tileColor ? { color: '#17142A' } : null]}>{value}</Text>
     {badge && (
-      <View style={[s.statBadge, { backgroundColor: badgeGreen ? '#DCFCE7' : '#FEE2E2' }]}>
-        <Text style={[s.statBadgeText, { color: badgeGreen ? '#166534' : '#991B1B' }]}>{badge}</Text>
+      <View style={[s.statBadge, { backgroundColor: badgeGreen ? '#E7F6EC' : '#FCE8E8' }]}>
+        <Text style={[s.statBadgeText, { color: badgeGreen ? '#15703A' : '#B3261E' }]}>{badge}</Text>
       </View>
     )}
-    {sub && <Text style={s.statSub}>{sub}</Text>}
+    {sub && <Text style={[s.statSub, tileColor ? { color: 'rgba(0,0,0,0.5)' } : null]}>{sub}</Text>}
   </View>
 );
 const EmptyState = ({ icon, text }: { icon: string; text: string }) => (
@@ -380,8 +381,9 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.BG },
   header:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
                paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backBtn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  backIcon:  { fontSize: 22, color: C.TEXT },
+  backBtn:   { minWidth: 70, height: 40, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  backArrow: { fontSize: 20, color: C.PRIMARY, fontWeight: '600' },
+  backLabel: { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.TEXT },
 
   toggle:    { flexDirection: 'row', margin: 12, backgroundColor: C.CARD,
@@ -434,10 +436,11 @@ const s = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, color: C.TEXT, paddingVertical: 10 },
 
   chipsRow:   { gap: 8, alignItems: 'center' },
-  chip:       { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-                backgroundColor: C.CARD, borderWidth: 1, borderColor: C.BORDER },
+  chip:       { height: 36, paddingHorizontal: 14, borderRadius: 999,
+                backgroundColor: C.CARD, borderWidth: 1, borderColor: C.BORDER,
+                alignItems: 'center', justifyContent: 'center' },
   chipActive: { backgroundColor: C.PRIMARY + '18', borderColor: C.PRIMARY },
-  chipText:   { fontSize: 13, color: C.TEXT2 },
+  chipText:   { fontSize: 13, color: C.TEXT, fontWeight: '600' },
   chipTextActive: { color: C.PRIMARY, fontWeight: '700' },
 
   txCard:   { flexDirection: 'row', backgroundColor: C.CARD, borderRadius: 12,

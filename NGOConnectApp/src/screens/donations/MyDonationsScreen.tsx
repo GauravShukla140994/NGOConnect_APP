@@ -6,8 +6,9 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, RefreshControl, ScrollView, Modal, Pressable,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { donationApi } from '../../api/donation.api';
@@ -27,13 +28,17 @@ const STATUS_CHIPS = [
   { code: 'REFUNDED',  label: 'Refunded'   },
 ];
 
-const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
-  SUCCESS:   { bg: '#DCFCE7', text: '#166534', label: 'Success'    },
-  INITIATED: { bg: '#FFF7ED', text: '#C2410C', label: 'Processing' },
-  PENDING:   { bg: '#FFF7ED', text: '#C2410C', label: 'Processing' },
-  FAILED:    { bg: '#FEE2E2', text: '#991B1B', label: 'Failed'     },
-  REFUNDED:  { bg: '#EFF6FF', text: '#1D4ED8', label: 'Refunded'   },
+const STATUS_META: Record<string, { bg: string; text: string; label: string; dot?: string }> = {
+  // Donation transaction statuses
+  SUCCESS:   { bg: '#E7F6EC', text: '#15703A', label: 'Success'    },
+  INITIATED: { bg: '#FDF1DE', text: '#A14B05', label: 'Processing' },
+  PENDING:   { bg: '#FDF1DE', text: '#A14B05', label: 'Processing' },
+  FAILED:    { bg: '#FCE8E8', text: '#B3261E', label: 'Failed'     },
+  REFUNDED:  { bg: '#EAF2FE', text: '#1D4ED8', label: 'Refunded'   },
   CANCELLED: { bg: '#F3F4F6', text: '#374151', label: 'Cancelled'  },
+  // Recurring donation plan statuses
+  ACTIVE:    { bg: '#E7F6EC', text: '#15703A', label: 'Active',  dot: '#15703A' },
+  PAUSED:    { bg: '#FDF1DE', text: '#A14B05', label: 'Paused',  dot: '#A14B05' },
 };
 
 // Avatar palette — hash orgId to a color
@@ -57,23 +62,23 @@ export default function MyDonationsScreen() {
     <SafeAreaView style={s.container}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn}>
-          <Text style={s.backIcon}>←</Text>
+        <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn} accessibilityLabel="Back">
+          <Text style={s.backArrow}>←</Text>
+          <Text style={s.backLabel}>Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>My Donations</Text>
         <View style={{ width: 36 }} />
       </View>
 
-      {/* Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabsScroll}
-        contentContainerStyle={s.tabsRow}>
+      {/* Tabs — 4-column fixed grid */}
+      <View style={s.tabsRow}>
         {TABS.map(t => (
           <TouchableOpacity key={t} onPress={() => setActiveTab(t)}
             style={[s.tabBtn, activeTab === t && s.tabBtnActive]}>
             <Text style={[s.tabBtnText, activeTab === t && s.tabBtnTextActive]}>{t}</Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+      </View>
 
       {/* Tab content */}
       {activeTab === 'History'   && <HistoryTab />}
@@ -96,6 +101,10 @@ function HistoryTab() {
   const [search, setSearch]           = useState('');
   const [datePresetDays, setDatePresetDays] = useState<number | null>(null);
   const [showDateModal, setShowDateModal]   = useState(false);
+  const [customFrom, setCustomFrom]         = useState('');
+  const [customTo, setCustomTo]             = useState('');
+  const [customRange, setCustomRange]       = useState<{ from: Date; to: Date } | null>(null);
+  const insets = useSafeAreaInsets();
 
   const load = useCallback(async (refresh = false) => {
     refresh ? setRefreshing(true) : setLoading(true);
@@ -122,6 +131,10 @@ function HistoryTab() {
       cutoff.setDate(cutoff.getDate() - datePresetDays);
       if (new Date(item.createdAt) < cutoff) return false;
     }
+    if (customRange) {
+      const d = new Date(item.createdAt);
+      if (d < customRange.from || d > customRange.to) return false;
+    }
     return true;
   });
 
@@ -144,37 +157,74 @@ function HistoryTab() {
   };
 
   const grouped = groupByMonth(filtered);
-  const hasFilter = statusCode !== null || search !== '' || datePresetDays !== null;
+  const hasFilter = statusCode !== null || search !== '' || datePresetDays !== null || customRange !== null;
 
-  const clearAll = () => { setStatusCode(null); setSearch(''); setDatePresetDays(null); };
+  const clearAll = () => {
+    setStatusCode(null); setSearch(''); setDatePresetDays(null);
+    setCustomRange(null); setCustomFrom(''); setCustomTo('');
+  };
 
-  const dateLabel = datePresetDays
+  const parseCustomDate = (str: string): Date | null => {
+    // Accept DD/MM/YYYY
+    const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    const d = new Date(+m[3], +m[2] - 1, +m[1]);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const applyCustomRange = () => {
+    const from = parseCustomDate(customFrom);
+    const to   = parseCustomDate(customTo);
+    if (!from) { Alert.alert('Invalid date', 'Enter From date as DD/MM/YYYY'); return; }
+    if (!to)   { Alert.alert('Invalid date', 'Enter To date as DD/MM/YYYY'); return; }
+    if (from > to) { Alert.alert('Invalid range', '"From" date must be before "To" date'); return; }
+    const toEnd = new Date(to); toEnd.setHours(23, 59, 59, 999);
+    setCustomRange({ from, to: toEnd });
+    setDatePresetDays(null);
+    setShowDateModal(false);
+  };
+
+  const dateLabel = customRange
+    ? `${fmtDateShort(customRange.from.toISOString())} – ${fmtDateShort(customRange.to.toISOString())}`
+    : datePresetDays
     ? DATE_PRESETS.find(p => p.days === datePresetDays)?.label ?? 'Custom'
     : 'All time';
 
-  return (
-    <View style={{ flex: 1 }}>
-      {/* ── Summary card ─────────────────────────────────────────────────── */}
+  // ── Header content (scrolls with the list) ───────────────────────────────
+  const listHeader = (
+    <>
+      {/* Summary card */}
       <View style={s.summaryCard}>
         <Text style={s.summaryLabel}>Total given</Text>
         <Text style={s.summaryBigAmount}>₹{totalGiven.toLocaleString('en-IN')}</Text>
         <Text style={s.summaryBreakdown}>
           {successItems.length} successful · {processingItems.length} processing · {refundedItems.length} refunded
         </Text>
-        <View style={s.summaryStatRow}>
-          <View style={s.summaryStat}>
+        <View style={s.summaryTileGrid}>
+          <View style={s.summaryTile}>
             <Text style={s.summaryStatValue}>{ngosSupported}</Text>
             <Text style={s.summaryStatLabel}>NGOs supported</Text>
           </View>
-          <View style={s.summaryStatDivider} />
-          <View style={s.summaryStat}>
-            <Text style={s.summaryStatValue}>₹{processingAmt.toLocaleString('en-IN')}</Text>
-            <Text style={s.summaryStatLabel}>Processing</Text>
+          <View style={s.summaryTile}>
+            <Text style={s.summaryStatValue}>{successItems.length}</Text>
+            <Text style={s.summaryStatLabel}>Successful</Text>
+          </View>
+          <View style={s.summaryTile}>
+            <Text style={s.summaryStatValue}>{allItems.length}</Text>
+            <Text style={s.summaryStatLabel}>Total donations</Text>
+          </View>
+          <View style={s.summaryTile}>
+            <Text style={s.summaryStatValue}>
+              {processingAmt > 0 ? `₹${processingAmt.toLocaleString('en-IN')}` : refundedItems.length}
+            </Text>
+            <Text style={s.summaryStatLabel}>
+              {processingAmt > 0 ? 'Processing' : 'Refunded'}
+            </Text>
           </View>
         </View>
       </View>
 
-      {/* ── Search bar ───────────────────────────────────────────────────── */}
+      {/* Search bar */}
       <View style={s.searchWrap}>
         <Text style={s.searchIcon}>🔍</Text>
         <TextInput
@@ -191,33 +241,15 @@ function HistoryTab() {
         )}
       </View>
 
-      {/* ── Date range ───────────────────────────────────────────────────── */}
+      {/* Date range button */}
       <TouchableOpacity style={s.dateRangeBtn} onPress={() => setShowDateModal(true)}>
         <Text style={s.dateRangeIcon}>📅</Text>
-        <Text style={s.dateRangeBtnText}>Date range  ·  {dateLabel}</Text>
+        <Text style={s.dateRangeBtnText}>Date range</Text>
+        <Text style={s.dateRangeValue}>{dateLabel}</Text>
         <Text style={s.dateRangeChevron}>▾</Text>
       </TouchableOpacity>
 
-      {/* Date preset modal */}
-      <Modal transparent visible={showDateModal} animationType="fade" onRequestClose={() => setShowDateModal(false)}>
-        <Pressable style={s.modalOverlay} onPress={() => setShowDateModal(false)}>
-          <View style={s.dateModal}>
-            <Text style={s.dateModalTitle}>Select date range</Text>
-            {DATE_PRESETS.map(p => (
-              <TouchableOpacity key={p.days} style={[s.dateModalRow, datePresetDays === p.days && s.dateModalRowActive]}
-                onPress={() => { setDatePresetDays(datePresetDays === p.days ? null : p.days); setShowDateModal(false); }}>
-                <Text style={[s.dateModalLabel, datePresetDays === p.days && s.dateModalLabelActive]}>{p.label}</Text>
-                {datePresetDays === p.days && <Text style={{ color: C.PRIMARY }}>✓</Text>}
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={s.dateModalClear} onPress={() => { setDatePresetDays(null); setShowDateModal(false); }}>
-              <Text style={s.dateModalClearText}>Clear date filter</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* ── Status chips with counts ──────────────────────────────────────── */}
+      {/* Status chips (horizontal scroll) */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
         style={s.chipsScroll} contentContainerStyle={s.chipsRow}>
         {STATUS_CHIPS.map(c => {
@@ -234,45 +266,112 @@ function HistoryTab() {
         })}
       </ScrollView>
 
-      {/* ── Showing X of Y + Clear all ───────────────────────────────────── */}
+      {/* Showing X of Y + Clear all */}
       <View style={s.metaRow}>
-        <Text style={s.metaText}>
-          Showing {filtered.length} of {allItems.length}
-        </Text>
+        <Text style={s.metaText}>Showing {filtered.length} of {allItems.length}</Text>
         {hasFilter && (
           <TouchableOpacity onPress={clearAll}>
             <Text style={s.clearAllText}>Clear all</Text>
           </TouchableOpacity>
         )}
       </View>
+    </>
+  );
 
-      {/* ── Donation list ─────────────────────────────────────────────────── */}
-      {loading
-        ? <ActivityIndicator style={{ marginTop: 40 }} color={C.PRIMARY} size="large" />
-        : <FlatList
-            data={grouped}
-            keyExtractor={(_, i) => String(i)}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.PRIMARY} />}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, paddingTop: 4 }}
-            ListEmptyComponent={<EmptyState icon="💳" text="No donations found" />}
-            renderItem={({ item }) => (
-              <View>
-                <View style={s.monthRow}>
-                  <Text style={s.monthLabel}>{item.month.toUpperCase()}</Text>
-                  <Text style={s.monthTotal}>
-                    ₹{item.items.filter((d:any) => d.payStatus === 'SUCCESS')
-                        .reduce((a:number, d:any) => a + Number(d.donationAmount), 0)
-                        .toLocaleString('en-IN')} given
+  return (
+    <View style={{ flex: 1 }}>
+      {/* Modal lives outside FlatList so it overlays the whole screen */}
+      <Modal transparent visible={showDateModal} animationType="slide" onRequestClose={() => setShowDateModal(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <Pressable style={s.modalOverlay} onPress={() => setShowDateModal(false)}>
+            <Pressable style={[s.dateModal, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}
+              onPress={e => e.stopPropagation()}>
+              <View style={s.dateModalHandle} />
+              <Text style={s.dateModalTitle}>Select date range</Text>
+
+              {DATE_PRESETS.map(p => (
+                <TouchableOpacity key={p.days}
+                  style={[s.dateModalRow, datePresetDays === p.days && s.dateModalRowActive]}
+                  onPress={() => {
+                    const next = datePresetDays === p.days ? null : p.days;
+                    setDatePresetDays(next);
+                    setCustomRange(null); setCustomFrom(''); setCustomTo('');
+                    setShowDateModal(false);
+                  }}>
+                  <Text style={[s.dateModalLabel, datePresetDays === p.days && s.dateModalLabelActive]}>
+                    {p.label}
                   </Text>
+                  {datePresetDays === p.days && <Text style={{ color: C.PRIMARY, fontWeight: '700' }}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+
+              <View style={s.dateModalDivider} />
+              <Text style={s.dateModalSectionLabel}>Custom range</Text>
+              <View style={s.dateCustomRow}>
+                <View style={s.dateCustomField}>
+                  <Text style={s.dateCustomFieldLabel}>From</Text>
+                  <TextInput
+                    style={[s.dateCustomInput, customRange && s.dateCustomInputActive]}
+                    placeholder="DD/MM/YYYY" placeholderTextColor={C.TEXT2}
+                    value={customFrom} onChangeText={setCustomFrom}
+                    keyboardType="numeric" maxLength={10}
+                  />
                 </View>
-                {item.items.map((d: any) => (
-                  <DonationCard key={d.donationId} d={d} onPress={() =>
-                    nav.navigate('DonationDetail', { donationRef: d.donationId })} />
-                ))}
+                <Text style={s.dateCustomSep}>→</Text>
+                <View style={s.dateCustomField}>
+                  <Text style={s.dateCustomFieldLabel}>To</Text>
+                  <TextInput
+                    style={[s.dateCustomInput, customRange && s.dateCustomInputActive]}
+                    placeholder="DD/MM/YYYY" placeholderTextColor={C.TEXT2}
+                    value={customTo} onChangeText={setCustomTo}
+                    keyboardType="numeric" maxLength={10}
+                  />
+                </View>
               </View>
-            )}
-          />
-      }
+              <TouchableOpacity style={s.dateApplyBtn} onPress={applyCustomRange}>
+                <Text style={s.dateApplyBtnText}>Apply custom range</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.dateModalClear}
+                onPress={() => {
+                  setDatePresetDays(null); setCustomRange(null); setCustomFrom(''); setCustomTo('');
+                  setShowDateModal(false);
+                }}>
+                <Text style={s.dateModalClearText}>Clear date filter</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* FlatList owns all scrolling — header + items scroll together */}
+      <FlatList
+        data={loading ? [] : grouped}
+        keyExtractor={(_, i) => String(i)}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.PRIMARY} />}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={
+          loading
+            ? <ActivityIndicator style={{ marginTop: 40 }} color={C.PRIMARY} size="large" />
+            : <EmptyState icon="💳" text="No donations found" />
+        }
+        renderItem={({ item }) => (
+          <View style={{ paddingHorizontal: 16 }}>
+            <View style={s.monthRow}>
+              <Text style={s.monthLabel}>{item.month.toUpperCase()}</Text>
+              <Text style={s.monthTotal}>
+                ₹{item.items.filter((d:any) => d.payStatus === 'SUCCESS')
+                    .reduce((a:number, d:any) => a + Number(d.donationAmount), 0)
+                    .toLocaleString('en-IN')} given
+              </Text>
+            </View>
+            {item.items.map((d: any) => (
+              <DonationCard key={d.donationId} d={d} onPress={() =>
+                nav.navigate('DonationDetail', { donationRef: d.donationId })} />
+            ))}
+          </View>
+        )}
+      />
     </View>
   );
 }
@@ -334,6 +433,408 @@ function DonationCard({ d, onPress }: { d: any; onPress: () => void }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// EDIT RECURRING PLAN MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+const QUICK_AMOUNTS  = [250, 500, 1000, 2000];
+const FREQUENCIES    = [
+  { code: 'MONTHLY',   label: 'Monthly'   },
+  { code: 'QUARTERLY', label: 'Quarterly' },
+  { code: 'YEARLY',    label: 'Yearly'    },
+];
+const PAY_METHODS = [
+  { code: 'UPI_AUTOPAY',    label: 'UPI Autopay'   },
+  { code: 'CARD_MANDATE',   label: 'Card mandate'  },
+];
+
+interface EditRecurPlan {
+  recurringDonId: number;
+  orgName: string;
+  campaignName: string;
+  amount: number;
+  frequencyCode: string;
+  payMethodCode: string;
+  nextChargeDate?: string;
+}
+
+function EditRecurModal({
+  plan, onClose, onSaved,
+}: { plan: EditRecurPlan; onClose: () => void; onSaved: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [amount,    setAmount]    = useState(String(plan.amount));
+  const [freq,      setFreq]      = useState(plan.frequencyCode ?? 'MONTHLY');
+  const [payMethod, setPayMethod] = useState(plan.payMethodCode ?? 'UPI_AUTOPAY');
+  const [saving,    setSaving]    = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
+  const numAmount = parseFloat(amount) || 0;
+  const freqMult  = freq === 'MONTHLY' ? 12 : freq === 'QUARTERLY' ? 4 : 1;
+  const annualAmt = numAmount * freqMult;
+  const nextLabel = plan.nextChargeDate ? fmtDate(plan.nextChargeDate) : '—';
+
+  const handleSave = async () => {
+    if (numAmount < 1) { Alert.alert('Invalid amount', 'Please enter a valid amount.'); return; }
+    setSaving(true);
+    try {
+      const res = await donationApi.updateRecurring(plan.recurringDonId, {
+        amount: numAmount, frequencyCode: freq,
+      });
+      if (res.data?.isSuccess === 1) {
+        onSaved();
+        onClose();
+      } else {
+        Alert.alert('Could not update', res.data?.message ?? 'Please try again.');
+      }
+    } catch (_) {
+      Alert.alert('Error', 'Could not update recurring plan. Please try again.');
+    } finally { setSaving(false); }
+  };
+
+  const handleCancel = () => {
+    Alert.alert(
+      'Cancel recurring plan',
+      'Are you sure you want to cancel this recurring donation? This cannot be undone.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        { text: 'Yes, cancel', style: 'destructive', onPress: async () => {
+          setCancelling(true);
+          try {
+            await donationApi.cancelRecurring?.(plan.recurringDonId);
+            onSaved();
+            onClose();
+          } catch (_) {
+            Alert.alert('Error', 'Could not cancel recurring donation.');
+          } finally { setCancelling(false); }
+        }},
+      ],
+    );
+  };
+
+  return (
+    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+      {/* Full-screen dim — always covers background reliably on both platforms */}
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+        {/* Tap outside to close */}
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+
+        <View style={[s.editRecurSheet, { maxHeight: '90%' }]}>
+          {/* Drag handle */}
+          <View style={s.editRecurHandle} />
+
+          {/* Header */}
+          <View style={s.editRecurHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.editRecurTitle}>Edit recurring plan</Text>
+              <Text style={s.editRecurSub} numberOfLines={1}>
+                {plan.orgName}{plan.campaignName ? ` · ${plan.campaignName}` : ''}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={s.editRecurClose}>
+              <Text style={s.editRecurCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Scrollable body */}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+
+            {/* Amount per debit */}
+            <Text style={s.editRecurSectionLabel}>Amount per debit</Text>
+            <View style={s.editRecurChipRow}>
+              {QUICK_AMOUNTS.map(a => (
+                <TouchableOpacity key={a}
+                  style={[s.editRecurChip, String(a) === amount && s.editRecurChipActive]}
+                  onPress={() => setAmount(String(a))}>
+                  <Text style={[s.editRecurChipText, String(a) === amount && s.editRecurChipTextActive]}>
+                    ₹{a.toLocaleString('en-IN')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={s.editRecurAmtInput}>
+              <Text style={s.editRecurRupee}>₹</Text>
+              <TextInput
+                style={s.editRecurAmtText}
+                keyboardType="numeric"
+                value={amount}
+                onChangeText={v => { setAmount(v.replace(/[^0-9]/g, '')); }}
+                placeholderTextColor={C.TEXT2}
+              />
+            </View>
+
+            {/* Frequency */}
+            <Text style={s.editRecurSectionLabel}>Frequency</Text>
+            <View style={s.editRecurChipRow}>
+              {FREQUENCIES.map(f => (
+                <TouchableOpacity key={f.code}
+                  style={[s.editRecurChip, freq === f.code && s.editRecurChipActive]}
+                  onPress={() => setFreq(f.code)}>
+                  <Text style={[s.editRecurChipText, freq === f.code && s.editRecurChipTextActive]}>
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Pay with — read-only (gateway mandate cannot be changed locally) */}
+            <Text style={s.editRecurSectionLabel}>Pay with</Text>
+            <View style={[s.editRecurChipRow, { marginBottom: 4 }]}>
+              {PAY_METHODS.map(p => (
+                <View key={p.code}
+                  style={[s.editRecurChip, payMethod === p.code && s.editRecurChipActive]}>
+                  <Text style={[s.editRecurChipText, payMethod === p.code && s.editRecurChipTextActive]}>
+                    {p.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <Text style={{ fontSize: 11, color: C.TEXT2, marginBottom: 14 }}>
+              Payment method is set by your bank mandate and cannot be changed here.
+            </Text>
+
+            {/* Summary */}
+            {numAmount > 0 && (
+              <View style={s.editRecurSummary}>
+                <Text style={s.editRecurSummaryText}>
+                  ₹{annualAmt.toLocaleString('en-IN')} per year · next debit {nextLabel}
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Pinned footer — buttons always visible */}
+          <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16, paddingTop: 8 }}>
+            <View style={s.editRecurBtns}>
+              <TouchableOpacity style={s.editRecurCancelBtn} onPress={onClose} disabled={saving}>
+                <Text style={s.editRecurCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.editRecurSaveBtn, saving && { opacity: 0.6 }]}
+                onPress={handleSave} disabled={saving}>
+                <Text style={s.editRecurSaveBtnText}>{saving ? 'Saving…' : 'Save changes'}</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={handleCancel} disabled={cancelling} style={{ alignItems: 'center', marginTop: 10 }}>
+              <Text style={s.editRecurCancelPlan}>
+                {cancelling ? 'Cancelling…' : 'Cancel this recurring plan'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETUP RECURRING MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function SetupRecurringModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [recentOrgs,     setRecentOrgs]     = useState<any[]>([]);
+  const [orgId,          setOrgId]          = useState<number | null>(null);
+  const [orgName,        setOrgName]        = useState('');
+  const [searchText,     setSearchText]     = useState('');
+  const [amount,         setAmount]         = useState('500');
+  const [frequencyCode,  setFrequencyCode]  = useState('MONTHLY');
+  const [payMethod,      setPayMethod]      = useState('UPI_AUTOPAY');
+  const [saving,         setSaving]         = useState(false);
+
+  useEffect(() => {
+    donationApi.getSupportedNgos()
+      .then(res => { if (res.data?.isSuccess === 1) setRecentOrgs(res.data.data ?? []); })
+      .catch(() => {});
+  }, []);
+
+  const finalAmount = Number(amount) || 0;
+  const freqLabel   = FREQUENCIES.find(f => f.code === frequencyCode)?.label ?? 'month';
+  const tomorrow    = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const firstDebitStr = tomorrow.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  const handleStart = async () => {
+    if (!orgId) { Alert.alert('Select NGO', 'Please select an NGO to donate to.'); return; }
+    if (finalAmount < 1) { Alert.alert('Invalid amount', 'Please enter a valid donation amount.'); return; }
+    setSaving(true);
+    try {
+      const res = await donationApi.setupRecurring({
+        orgId,
+        amount: finalAmount,
+        frequencyCode,
+        startDate: tomorrow.toISOString().split('T')[0],
+      });
+      if (res.data?.isSuccess === 1) { onSaved(); onClose(); }
+      else Alert.alert('Error', res.data?.message ?? 'Could not start recurring donation.');
+    } catch { Alert.alert('Error', 'Something went wrong. Please try again.'); }
+    finally { setSaving(false); }
+  };
+
+  const filteredOrgs = searchText.trim()
+    ? recentOrgs.filter(o => (o.orgName ?? '').toLowerCase().includes(searchText.toLowerCase()))
+    : recentOrgs;
+
+  return (
+    <Modal transparent animationType="slide" visible onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+        <View style={[s.editRecurSheet, { maxHeight: '92%' }]}>
+          <View style={s.editRecurHandle} />
+
+          {/* Header */}
+          <View style={s.editRecurHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.editRecurTitle}>Start a recurring donation</Text>
+              <Text style={{ fontSize: 13, color: C.TEXT2, marginTop: 2 }}>
+                Set up automatic debits to support NGOs
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+              <Text style={{ fontSize: 18, color: C.TEXT2 }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+
+            {/* ── Select NGO ───────────────────────────────────────────── */}
+            <Text style={s.editRecurSectionLabel}>Select NGO</Text>
+            <View style={s.setupSearchRow}>
+              <Text style={{ fontSize: 15, marginRight: 8, color: C.TEXT2 }}>🔍</Text>
+              <TextInput
+                style={{ flex: 1, fontSize: 14, color: C.TEXT, paddingVertical: 0 }}
+                placeholder="Search NGOs you've donated to…"
+                placeholderTextColor={C.TEXT2}
+                value={searchText}
+                onChangeText={setSearchText}
+              />
+            </View>
+
+            {filteredOrgs.length > 0 && (
+              <>
+                <Text style={[s.editRecurSectionLabel, { marginTop: 12, fontSize: 12, color: C.TEXT2 }]}>
+                  Recently donated
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  style={{ marginHorizontal: -20 }}
+                  contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}>
+                  {filteredOrgs.map((org: any) => {
+                    const isSelected = org.orgId === orgId;
+                    const initials = (org.orgName ?? 'N').split(' ').slice(0, 2)
+                      .map((w: string) => w[0]).join('').toUpperCase();
+                    return (
+                      <TouchableOpacity key={org.orgId}
+                        style={[s.setupOrgCard, isSelected && s.setupOrgCardActive]}
+                        onPress={() => { setOrgId(org.orgId); setOrgName(org.orgName ?? ''); setSearchText(''); }}>
+                        <View style={[s.setupOrgAvatar, { backgroundColor: avatarColor(org.orgId) }]}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#fff' }}>{initials}</Text>
+                        </View>
+                        <Text style={[s.setupOrgName, isSelected && { color: C.PRIMARY }]}
+                          numberOfLines={2}>{org.orgName}</Text>
+                        {isSelected && (
+                          <Text style={{ fontSize: 11, color: C.PRIMARY, fontWeight: '700', marginTop: 2 }}>✓ Selected</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+
+            {filteredOrgs.length === 0 && searchText.trim() !== '' && (
+              <Text style={{ fontSize: 13, color: C.TEXT2, marginTop: 8, textAlign: 'center' }}>
+                No matching NGOs found
+              </Text>
+            )}
+
+            {orgName !== '' && (
+              <View style={s.setupSelectedOrg}>
+                <Text style={{ fontSize: 13, color: C.PRIMARY, fontWeight: '600' }}>✓ {orgName}</Text>
+              </View>
+            )}
+
+            {/* ── Amount ──────────────────────────────────────────────── */}
+            <Text style={[s.editRecurSectionLabel, { marginTop: 20 }]}>Amount per debit</Text>
+            <View style={s.editRecurChipRow}>
+              {QUICK_AMOUNTS.map(a => (
+                <TouchableOpacity key={a}
+                  style={[s.editRecurChip, String(a) === amount && s.editRecurChipActive]}
+                  onPress={() => setAmount(String(a))}>
+                  <Text style={[s.editRecurChipText, String(a) === amount && s.editRecurChipTextActive]}>
+                    ₹{a.toLocaleString('en-IN')}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={s.editRecurAmtInput}>
+              <Text style={s.editRecurRupee}>₹</Text>
+              <TextInput
+                style={s.editRecurAmtText}
+                keyboardType="numeric"
+                value={amount}
+                onChangeText={v => setAmount(v.replace(/[^0-9]/g, ''))}
+                placeholderTextColor={C.TEXT2}
+              />
+            </View>
+
+            {/* ── Frequency ───────────────────────────────────────────── */}
+            <Text style={[s.editRecurSectionLabel, { marginTop: 20 }]}>Frequency</Text>
+            <View style={s.editRecurChipRow}>
+              {FREQUENCIES.map(f => (
+                <TouchableOpacity key={f.code}
+                  style={[s.editRecurChip, frequencyCode === f.code && s.editRecurChipActive]}
+                  onPress={() => setFrequencyCode(f.code)}>
+                  <Text style={[s.editRecurChipText, frequencyCode === f.code && s.editRecurChipTextActive]}>
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* ── Pay with ────────────────────────────────────────────── */}
+            <Text style={[s.editRecurSectionLabel, { marginTop: 20 }]}>Pay with</Text>
+            <View style={[s.editRecurChipRow, { marginBottom: 4 }]}>
+              {PAY_METHODS.map(pm => (
+                <TouchableOpacity key={pm.code}
+                  style={[s.editRecurChip, payMethod === pm.code && s.editRecurChipActive]}
+                  onPress={() => setPayMethod(pm.code)}>
+                  <Text style={[s.editRecurChipText, payMethod === pm.code && s.editRecurChipTextActive]}>
+                    {pm.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={{ fontSize: 11, color: C.TEXT2, marginBottom: 14 }}>
+              Mandate will be set up via your bank after confirmation
+            </Text>
+
+            {/* ── Summary ─────────────────────────────────────────────── */}
+            {orgId && finalAmount >= 1 && (
+              <View style={s.editRecurSummary}>
+                <Text style={s.editRecurSummaryText}>
+                  ₹{finalAmount.toLocaleString('en-IN')} per {freqLabel.toLowerCase()} · first debit {firstDebitStr}
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+
+          {/* ── Footer ─────────────────────────────────────────────────── */}
+          <View style={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16, paddingTop: 8 }}>
+            <View style={s.editRecurBtns}>
+              <TouchableOpacity style={s.editRecurCancelBtn} onPress={onClose} disabled={saving}>
+                <Text style={s.editRecurCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.editRecurSaveBtn, saving && { opacity: 0.6 }]}
+                onPress={handleStart} disabled={saving}>
+                <Text style={s.editRecurSaveBtnText}>{saving ? 'Starting…' : 'Start plan'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // RECURRING TAB
 // ─────────────────────────────────────────────────────────────────────────────
 function RecurringTab() {
@@ -341,6 +842,8 @@ function RecurringTab() {
   const [items, setItems]     = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [editPlan,  setEditPlan]  = useState<EditRecurPlan | null>(null);
+  const [showSetupModal, setShowSetupModal] = useState(false);
 
   const load = async (refresh = false) => {
     refresh ? setRefreshing(true) : setLoading(true);
@@ -354,95 +857,160 @@ function RecurringTab() {
   useEffect(() => { load(); }, []);
 
   const handlePause = async (id: number) => {
-    try {
-      await donationApi.pauseRecurring(id);
-      load(true);
-    } catch (_) { Alert.alert('Error', 'Could not pause recurring donation'); }
+    try { await donationApi.pauseRecurring(id); load(true); }
+    catch (_) { Alert.alert('Error', 'Could not pause recurring donation'); }
   };
 
   const handleResume = async (id: number) => {
-    try {
-      await donationApi.resumeRecurring(id);
-      load(true);
-    } catch (_) { Alert.alert('Error', 'Could not resume recurring donation'); }
+    try { await donationApi.resumeRecurring(id); load(true); }
+    catch (_) { Alert.alert('Error', 'Could not resume recurring donation'); }
   };
 
-  const annualCommitted = items
-    .filter(i => i.statusCode === 'ACTIVE')
-    .reduce((a, i) => a + (i.annualCommitted ?? 0), 0);
+  const activeItems    = items.filter(i => i.statusCode === 'ACTIVE');
+  const annualCommitted = activeItems.reduce((a, i) => a + (i.annualCommitted ?? 0), 0);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.PRIMARY} />}>
-      {!loading && items.length > 0 && (
-        <View style={[s.summaryCard, { marginBottom: 16 }]}>
-          <Text style={s.summaryLabel}>Annual Committed</Text>
-          <Text style={s.summaryBigAmount}>₹{annualCommitted.toLocaleString('en-IN')}</Text>
-          <Text style={s.summaryBreakdown}>
-            {items.filter(i => i.statusCode === 'ACTIVE').length} active plans
-          </Text>
-        </View>
+    <View style={{ flex: 1 }}>
+      {/* Edit recurring plan modal */}
+      {editPlan && (
+        <EditRecurModal
+          plan={editPlan}
+          onClose={() => setEditPlan(null)}
+          onSaved={() => load(true)}
+        />
+      )}
+      {/* Start recurring plan modal */}
+      {showSetupModal && (
+        <SetupRecurringModal
+          onClose={() => setShowSetupModal(false)}
+          onSaved={() => load(true)}
+        />
       )}
 
-      {loading
-        ? <ActivityIndicator color={C.PRIMARY} style={{ marginTop: 40 }} size="large" />
-        : items.length === 0
-          ? <>
-              <EmptyState icon="🔄" text="No recurring donations" />
-              <Text style={s.recurringCta}>Set up a recurring donation to automatically support your favourite NGOs every month.</Text>
-            </>
-          : items.map(item => (
-              <View key={item.recurringDonId} style={s.recurCard}>
-                <View style={s.recurCardHeader}>
-                  <View style={[s.donAvatar, { backgroundColor: avatarColor(item.orgId ?? 0), marginRight: 12 }]}>
-                    <Text style={s.donAvatarText}>
-                      {(item.orgName ?? 'N').split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()}
-                    </Text>
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.PRIMARY} />}>
+
+        {/* ── Summary banner ───────────────────────────────────────────── */}
+        {!loading && items.length > 0 && (
+          <View style={s.recurSummary}>
+            <Text style={s.recurSummaryLabel}>Committed per year</Text>
+            <Text style={s.recurSummaryAmount}>₹{annualCommitted.toLocaleString('en-IN')}</Text>
+            <Text style={s.recurSummaryMeta}>
+              {activeItems.length} active of {items.length} plan{items.length !== 1 ? 's' : ''} · cancel or pause anytime
+            </Text>
+          </View>
+        )}
+
+        {loading
+          ? <ActivityIndicator color={C.PRIMARY} style={{ marginTop: 40 }} size="large" />
+          : items.length === 0
+          ? <EmptyState icon="🔄" text="No recurring donations yet" />
+          : items.map(item => {
+              const isPaused    = item.statusCode === 'PAUSED';
+              const isCancelled = item.statusCode === 'CANCELLED';
+              const nextDebit   = isPaused
+                ? 'None — paused'
+                : item.nextChargeDate
+                ? fmtDate(item.nextChargeDate)
+                : '—';
+              const initials = (item.orgName ?? 'N').split(' ').slice(0, 2)
+                .map((w: string) => w[0]).join('').toUpperCase();
+              const payMethod  = item.payMethodSummary ?? item.paymentMethod ?? '';
+              const setupNote  = item.startDate
+                ? `Set up ${fmtDate(item.startDate)}${(item.successCount ?? 0) === 0 ? '  ·  first debit pending' : ''}`
+                : '';
+
+              return (
+                <View key={item.recurringDonId} style={[
+                  s.recurCard,
+                  isCancelled && { opacity: 0.65 },
+                ]}>
+                  {/* Header row */}
+                  <View style={s.recurCardHeader}>
+                    <View style={[s.recurAvatar, { backgroundColor: avatarColor(item.orgId ?? 0) }]}>
+                      <Text style={s.donAvatarText}>{initials}</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={s.recurCardOrg} numberOfLines={1}>{item.orgName}</Text>
+                      <Text style={s.recurCardCampaign} numberOfLines={1}>
+                        {item.campaignName ?? 'General Donation'}
+                      </Text>
+                    </View>
+                    <StatusPill code={item.statusCode} />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.recurCardOrg}>{item.orgName}</Text>
-                    <Text style={s.recurCardCampaign}>General Donation</Text>
+
+                  {/* Amount + Next debit 2-col */}
+                  <View style={s.recurInfoRow}>
+                    <View style={s.recurInfoCol}>
+                      <Text style={s.recurCardLabel}>Amount</Text>
+                      <Text style={s.recurCardValue}>
+                        ₹{Number(item.amount).toLocaleString('en-IN')} / {item.frequencyLabel ?? item.frequencyCode ?? 'month'}
+                      </Text>
+                    </View>
+                    <View style={[s.recurInfoCol, { alignItems: 'flex-end' }]}>
+                      <Text style={s.recurCardLabel}>Next debit</Text>
+                      <Text style={[s.recurCardValue, isPaused && { color: C.TEXT2 }]}>{nextDebit}</Text>
+                    </View>
                   </View>
-                  <StatusPill code={item.statusCode} />
-                </View>
-                <View style={s.recurCardRow}>
-                  <View>
-                    <Text style={s.recurCardLabel}>Amount</Text>
-                    <Text style={s.recurCardValue}>₹{Number(item.amount).toLocaleString('en-IN')} / {item.frequencyLabel ?? item.frequencyCode}</Text>
-                  </View>
-                  {item.nextChargeDate && (
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={s.recurCardLabel}>Next charge</Text>
-                      <Text style={s.recurCardValue}>{fmtDate(item.nextChargeDate)}</Text>
+
+                  {/* Payment method */}
+                  {payMethod !== '' && (
+                    <Text style={s.recurPayMethod}>{payMethod}</Text>
+                  )}
+
+                  {/* Setup note */}
+                  {setupNote !== '' && (
+                    <Text style={s.recurSetupNote}>{setupNote}</Text>
+                  )}
+
+                  {/* Divider */}
+                  <View style={s.recurDivider} />
+
+                  {/* Actions */}
+                  {!isCancelled && (
+                    <View style={s.recurCardActions}>
+                      {isPaused
+                        ? <TouchableOpacity style={s.recurActionBtn}
+                            onPress={() => handleResume(item.recurringDonId)}>
+                            <Text style={s.recurActionBtnText}>Resume</Text>
+                          </TouchableOpacity>
+                        : <TouchableOpacity style={s.recurActionBtn}
+                            onPress={() => handlePause(item.recurringDonId)}>
+                            <Text style={s.recurActionBtnText}>Pause</Text>
+                          </TouchableOpacity>
+                      }
+                      <TouchableOpacity style={s.recurEditBtn}
+                        onPress={() => setEditPlan({
+                          recurringDonId: item.recurringDonId,
+                          orgName:        item.orgName ?? '',
+                          campaignName:   item.campaignName ?? '',
+                          amount:         Number(item.amount) || 0,
+                          frequencyCode:  item.frequencyCode ?? 'MONTHLY',
+                          payMethodCode:  item.payMethodCode ?? 'UPI_AUTOPAY',
+                          nextChargeDate: item.nextChargeDate,
+                        })}>
+                        <Text style={s.recurEditBtnText}>Edit plan</Text>
+                      </TouchableOpacity>
                     </View>
                   )}
+                  {isCancelled && (
+                    <Text style={s.cancelledTag}>This plan has been cancelled</Text>
+                  )}
                 </View>
-                <View style={s.recurCardRow}>
-                  <View>
-                    <Text style={s.recurCardLabel}>Successful cycles</Text>
-                    <Text style={s.recurCardValue}>{item.successCount ?? 0}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={s.recurCardLabel}>Started</Text>
-                    <Text style={s.recurCardValue}>{fmtDate(item.startDate)}</Text>
-                  </View>
-                </View>
-                <View style={s.recurCardActions}>
-                  {item.statusCode === 'ACTIVE'
-                    ? <TouchableOpacity style={s.recurPauseBtn} onPress={() => handlePause(item.recurringDonId)}>
-                        <Text style={s.recurPauseBtnText}>⏸ Pause</Text>
-                      </TouchableOpacity>
-                    : item.statusCode === 'PAUSED'
-                    ? <TouchableOpacity style={s.recurResumeBtn} onPress={() => handleResume(item.recurringDonId)}>
-                        <Text style={s.recurResumeBtnText}>▶ Resume</Text>
-                      </TouchableOpacity>
-                    : <Text style={s.cancelledTag}>Cancelled</Text>
-                  }
-                </View>
-              </View>
-            ))
-      }
-    </ScrollView>
+              );
+            })
+        }
+      </ScrollView>
+
+      {/* ── Floating CTA ─────────────────────────────────────────────────── */}
+      <View style={s.recurCtaBar}>
+        <TouchableOpacity style={s.recurCtaBtn}
+          onPress={() => setShowSetupModal(true)}>
+          <Text style={s.recurCtaBtnText}>+ Start a recurring donation</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -643,6 +1211,9 @@ function StatusPill({ code }: { code?: string }) {
   const m = STATUS_META[code ?? ''] ?? { bg: '#F3F4F6', text: '#374151', label: code ?? 'Unknown' };
   return (
     <View style={[s.statusPill, { backgroundColor: m.bg }]}>
+      {m.dot && (
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: m.dot, marginRight: 5 }} />
+      )}
       <Text style={[s.statusPillText, { color: m.text }]}>{m.label}</Text>
     </View>
   );
@@ -685,29 +1256,29 @@ const s = StyleSheet.create({
   container:  { flex: 1, backgroundColor: C.BG },
   header:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
                 paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backBtn:    { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  backIcon:   { fontSize: 22, color: C.TEXT },
+  backBtn:    { minWidth: 70, height: 40, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  backArrow:  { fontSize: 20, color: C.PRIMARY, fontWeight: '600' },
+  backLabel:  { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle:{ flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.TEXT },
 
-  tabsScroll: { maxHeight: 48, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  tabsRow:    { paddingHorizontal: 12, alignItems: 'center', gap: 4 },
-  tabBtn:     { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
-  tabBtnActive: { backgroundColor: C.PRIMARY + '18' },
-  tabBtnText: { fontSize: 14, color: C.TEXT2, fontWeight: '500' },
+  tabsRow:    { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  tabBtn:     { flex: 1, height: 44, alignItems: 'center', justifyContent: 'center',
+                borderBottomWidth: 2.5, borderBottomColor: 'transparent' },
+  tabBtnActive: { borderBottomColor: C.PRIMARY },
+  tabBtnText: { fontSize: 14, color: '#3B3850', fontWeight: '400' },
   tabBtnTextActive: { color: C.PRIMARY, fontWeight: '700' },
 
   // ── Summary card ───────────────────────────────────────────────────────────
   summaryCard: { backgroundColor: C.PRIMARY, marginHorizontal: 16, marginTop: 14,
-                 borderRadius: 16, padding: 18 },
-  summaryLabel: { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginBottom: 4 },
-  summaryBigAmount: { fontSize: 28, fontWeight: '800', color: '#fff', marginBottom: 4 },
-  summaryBreakdown: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginBottom: 14 },
-  summaryStatRow: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.15)',
-                    borderRadius: 10, overflow: 'hidden' },
-  summaryStat: { flex: 1, alignItems: 'center', paddingVertical: 10 },
-  summaryStatDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 8 },
-  summaryStatValue: { fontSize: 16, fontWeight: '700', color: '#fff', marginBottom: 2 },
-  summaryStatLabel: { fontSize: 10, color: 'rgba(255,255,255,0.75)' },
+                 borderRadius: 20, padding: 18, gap: 14 },
+  summaryLabel: { fontSize: 13, color: '#E2DCFF', fontWeight: '500' },
+  summaryBigAmount: { fontSize: 34, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
+  summaryBreakdown: { fontSize: 13, color: '#E2DCFF', marginTop: 2 },
+  summaryTileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  summaryTile: { flex: 1, minWidth: '45%', backgroundColor: '#5C44D3',
+                 borderRadius: 12, padding: 10 },
+  summaryStatValue: { fontSize: 17, fontWeight: '700', color: '#fff', marginBottom: 2 },
+  summaryStatLabel: { fontSize: 11, color: '#E2DCFF' },
 
   // ── Search ─────────────────────────────────────────────────────────────────
   searchWrap: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16,
@@ -718,32 +1289,50 @@ const s = StyleSheet.create({
 
   // ── Date range ─────────────────────────────────────────────────────────────
   dateRangeBtn: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16,
-                  marginTop: 8, backgroundColor: C.CARD, borderRadius: 10,
-                  borderWidth: 1, borderColor: C.BORDER, paddingHorizontal: 14, height: 40 },
+                  marginTop: 8, backgroundColor: '#FFFFFF', borderRadius: 12,
+                  borderWidth: 1, borderColor: C.BORDER, paddingHorizontal: 14, height: 44 },
   dateRangeIcon: { fontSize: 14, marginRight: 8 },
-  dateRangeBtnText: { flex: 1, fontSize: 13, color: C.TEXT },
-  dateRangeChevron: { fontSize: 12, color: C.TEXT2 },
+  dateRangeBtnText: { flex: 1, fontSize: 14, color: '#3B3850' },
+  dateRangeValue: { fontSize: 13, fontWeight: '600', color: C.PRIMARY, marginLeft: 4 },
+  dateRangeChevron: { fontSize: 12, color: C.TEXT2, marginLeft: 6 },
 
   // ── Date modal ─────────────────────────────────────────────────────────────
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  dateModal: { backgroundColor: C.CARD, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-               paddingTop: 20, paddingBottom: 36, paddingHorizontal: 20 },
-  dateModalTitle: { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 12 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  dateModal: { backgroundColor: C.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+               paddingTop: 12, paddingHorizontal: 20 },
+  dateModalHandle: { width: 40, height: 4, backgroundColor: C.BORDER, borderRadius: 2,
+                     alignSelf: 'center', marginBottom: 16 },
+  dateModalTitle: { fontSize: 16, fontWeight: '700', color: C.TEXT, marginBottom: 14 },
   dateModalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER },
   dateModalRowActive: { },
   dateModalLabel: { fontSize: 14, color: C.TEXT },
   dateModalLabelActive: { color: C.PRIMARY, fontWeight: '700' },
-  dateModalClear: { marginTop: 16, alignItems: 'center' },
+  dateModalDivider: { height: 1, backgroundColor: C.BORDER, marginVertical: 14 },
+  dateModalSectionLabel: { fontSize: 12, fontWeight: '700', color: C.TEXT2, letterSpacing: 0.8,
+                            textTransform: 'uppercase', marginBottom: 10 },
+  dateCustomRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 12 },
+  dateCustomField: { flex: 1 },
+  dateCustomFieldLabel: { fontSize: 11, color: C.TEXT2, fontWeight: '600', marginBottom: 5 },
+  dateCustomInput: { backgroundColor: C.BG, borderRadius: 10, borderWidth: 1,
+                     borderColor: C.BORDER, paddingHorizontal: 12, height: 42,
+                     fontSize: 14, color: C.TEXT },
+  dateCustomInputActive: { borderColor: C.PRIMARY },
+  dateCustomSep: { fontSize: 16, color: C.TEXT2, paddingBottom: 10 },
+  dateApplyBtn: { backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 12,
+                  alignItems: 'center', marginBottom: 8 },
+  dateApplyBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  dateModalClear: { paddingVertical: 14, alignItems: 'center' },
   dateModalClearText: { fontSize: 14, color: '#EF4444', fontWeight: '600' },
 
   // ── Status chips ───────────────────────────────────────────────────────────
-  chipsScroll: { maxHeight: 48, marginTop: 8 },
+  chipsScroll: { marginTop: 8, marginBottom: 2 },
   chipsRow:   { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
-  chip:       { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-                backgroundColor: C.CARD, borderWidth: 1, borderColor: C.BORDER },
+  chip:       { height: 36, paddingHorizontal: 14, borderRadius: 999,
+                backgroundColor: C.CARD, borderWidth: 1, borderColor: C.BORDER,
+                alignItems: 'center', justifyContent: 'center' },
   chipActive: { backgroundColor: C.PRIMARY + '18', borderColor: C.PRIMARY },
-  chipText:   { fontSize: 12, color: C.TEXT2 },
+  chipText:   { fontSize: 13, color: C.TEXT, fontWeight: '600' },
   chipTextActive: { color: C.PRIMARY, fontWeight: '700' },
 
   // ── Meta row ───────────────────────────────────────────────────────────────
@@ -770,33 +1359,94 @@ const s = StyleSheet.create({
   donMeta:    { fontSize: 11, color: C.TEXT2 },
   donAmount:  { fontSize: 15, fontWeight: '700', marginBottom: 4 },
   donChevron: { fontSize: 20, color: C.TEXT2, marginLeft: 4 },
-  hintRow:    { backgroundColor: '#FFF7ED', paddingHorizontal: 14, paddingVertical: 9,
-                borderTopWidth: 1, borderTopColor: '#FED7AA' },
-  hintText:   { fontSize: 11, color: '#92400E', lineHeight: 16 },
+  hintRow:    { backgroundColor: '#FDF1DE', paddingHorizontal: 14, paddingVertical: 9,
+                borderTopWidth: 1, borderTopColor: '#F3D9A8' },
+  hintText:   { fontSize: 11, color: '#A14B05', lineHeight: 16 },
 
   // ── Status pill ────────────────────────────────────────────────────────────
-  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexDirection: 'row', alignItems: 'center' },
   statusPillText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
 
-  // ── Recurring ──────────────────────────────────────────────────────────────
-  recurCard:  { backgroundColor: C.CARD, borderRadius: 14, padding: 16, marginBottom: 12,
+  // ── Recurring — summary banner ─────────────────────────────────────────────
+  recurSummary: { backgroundColor: C.CARD, borderRadius: 16, padding: 18, marginBottom: 16,
+                  borderWidth: 1, borderColor: C.BORDER },
+  recurSummaryLabel: { fontSize: 13, color: C.TEXT2, fontWeight: '500', marginBottom: 4 },
+  recurSummaryAmount: { fontSize: 32, fontWeight: '800', color: C.TEXT, letterSpacing: -0.5,
+                        marginBottom: 4 },
+  recurSummaryMeta: { fontSize: 13, color: C.TEXT2 },
+
+  // ── Recurring — plan cards ─────────────────────────────────────────────────
+  recurCard:  { backgroundColor: C.CARD, borderRadius: 16, padding: 16, marginBottom: 12,
                 borderWidth: 1, borderColor: C.BORDER },
-  recurCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  recurAvatar: { width: 40, height: 40, borderRadius: 10,
+                 alignItems: 'center', justifyContent: 'center' },
+  recurCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   recurCardOrg:  { fontSize: 15, fontWeight: '700', color: C.TEXT },
   recurCardCampaign: { fontSize: 12, color: C.TEXT2, marginTop: 2 },
-  recurCardRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  recurCardLabel: { fontSize: 11, color: C.TEXT2, marginBottom: 3 },
-  recurCardValue: { fontSize: 13, fontWeight: '600', color: C.TEXT },
+  recurInfoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  recurInfoCol: { flex: 1 },
+  recurCardLabel: { fontSize: 11, color: C.TEXT2, fontWeight: '500', marginBottom: 3 },
+  recurCardValue: { fontSize: 14, fontWeight: '700', color: C.TEXT },
+  recurPayMethod: { fontSize: 12, color: C.TEXT2, marginBottom: 3 },
+  recurSetupNote: { fontSize: 11, color: C.TEXT2 },
+  recurDivider:  { height: 1, backgroundColor: C.BORDER, marginVertical: 12 },
   recurCardActions: { flexDirection: 'row', gap: 10 },
-  recurPauseBtn: { flex: 1, backgroundColor: '#FFF7ED', borderRadius: 8, paddingVertical: 9,
-                   alignItems: 'center', borderWidth: 1, borderColor: '#FED7AA' },
-  recurPauseBtnText: { fontSize: 13, fontWeight: '700', color: '#C2410C' },
-  recurResumeBtn: { flex: 1, backgroundColor: '#F0FDF4', borderRadius: 8, paddingVertical: 9,
-                    alignItems: 'center', borderWidth: 1, borderColor: '#86EFAC' },
-  recurResumeBtnText: { fontSize: 13, fontWeight: '700', color: '#16A34A' },
-  cancelledTag: { fontSize: 12, color: C.TEXT2, fontStyle: 'italic', paddingVertical: 9 },
-  recurringCta: { fontSize: 13, color: C.TEXT2, textAlign: 'center', marginTop: 16,
-                  lineHeight: 20, paddingHorizontal: 8 },
+  recurActionBtn: { flex: 1, backgroundColor: C.CARD, borderRadius: 10, paddingVertical: 10,
+                    alignItems: 'center', borderWidth: 1, borderColor: C.BORDER },
+  recurActionBtnText: { fontSize: 13, fontWeight: '700', color: C.TEXT },
+  recurEditBtn:  { flex: 1, backgroundColor: C.PRIMARY, borderRadius: 10, paddingVertical: 10,
+                   alignItems: 'center' },
+  recurEditBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  cancelledTag: { fontSize: 12, color: C.TEXT2, fontStyle: 'italic', paddingTop: 4, textAlign: 'center' },
+
+  // ── Recurring — floating CTA ───────────────────────────────────────────────
+  recurCtaBar: { position: 'absolute', bottom: 0, left: 0, right: 0,
+                 backgroundColor: C.BG, borderTopWidth: 1, borderTopColor: C.BORDER,
+                 paddingHorizontal: 16, paddingVertical: 12 },
+  recurCtaBtn: { backgroundColor: C.CARD, borderRadius: 12, paddingVertical: 14,
+                 alignItems: 'center', borderWidth: 1.5, borderColor: C.PRIMARY },
+  recurCtaBtnText: { fontSize: 14, fontWeight: '700', color: C.PRIMARY },
+
+  // ── Edit Recurring Plan Modal ──────────────────────────────────────────────
+  editRecurSheet: { backgroundColor: C.CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+                    paddingTop: 12 },
+  editRecurHandle: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2,
+                     backgroundColor: '#D1D5DB', marginBottom: 16 },
+  editRecurHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20,
+                     paddingHorizontal: 20 },
+  editRecurTitle:  { fontSize: 18, fontWeight: '700', color: C.TEXT },
+  editRecurSub:    { fontSize: 13, color: C.TEXT2, marginTop: 2 },
+  editRecurClose:  { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6',
+                     alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
+  editRecurCloseText: { fontSize: 14, color: C.TEXT2, fontWeight: '600' },
+
+  editRecurSectionLabel: { fontSize: 13, fontWeight: '600', color: C.TEXT, marginBottom: 10 },
+  editRecurChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
+  editRecurChip: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10,
+                   borderWidth: 1.5, borderColor: C.BORDER, backgroundColor: C.CARD },
+  editRecurChipActive: { borderColor: C.PRIMARY, backgroundColor: C.PRIMARY + '12' },
+  editRecurChipText: { fontSize: 14, fontWeight: '600', color: C.TEXT },
+  editRecurChipTextActive: { color: C.PRIMARY },
+
+  editRecurAmtInput: { flexDirection: 'row', alignItems: 'center', borderWidth: 1,
+                       borderColor: C.BORDER, borderRadius: 10, paddingHorizontal: 12,
+                       height: 48, marginBottom: 18 },
+  editRecurRupee:  { fontSize: 16, fontWeight: '600', color: C.TEXT, marginRight: 6 },
+  editRecurAmtText: { flex: 1, fontSize: 16, fontWeight: '600', color: C.TEXT },
+
+  editRecurSummary: { backgroundColor: '#F5F3FF', borderRadius: 10, paddingHorizontal: 14,
+                      paddingVertical: 10, marginBottom: 18 },
+  editRecurSummaryText: { fontSize: 13, color: C.PRIMARY, fontWeight: '600' },
+
+  editRecurBtns: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  editRecurCancelBtn: { flex: 1, height: 48, borderRadius: 12, borderWidth: 1.5,
+                        borderColor: C.BORDER, alignItems: 'center', justifyContent: 'center' },
+  editRecurCancelBtnText: { fontSize: 15, fontWeight: '600', color: C.TEXT },
+  editRecurSaveBtn: { flex: 2, height: 48, borderRadius: 12, backgroundColor: C.PRIMARY,
+                      alignItems: 'center', justifyContent: 'center' },
+  editRecurSaveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  editRecurCancelPlan: { fontSize: 14, fontWeight: '600', color: '#B3261E', paddingVertical: 4 },
 
   // ── Receipts ───────────────────────────────────────────────────────────────
   receiptCard: { flexDirection: 'row', backgroundColor: C.CARD, borderRadius: 12,
@@ -828,6 +1478,31 @@ const s = StyleSheet.create({
   donateAgainBtn: { alignSelf: 'stretch', paddingVertical: 10, backgroundColor: C.PRIMARY + '14',
                     borderRadius: 8, alignItems: 'center' },
   donateAgainBtnText: { fontSize: 13, fontWeight: '700', color: C.PRIMARY },
+
+  // ── Setup Recurring Modal ──────────────────────────────────────────────────
+  setupSearchRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 10, borderWidth: 1.5, borderColor: C.BORDER,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: C.CARD, marginBottom: 4,
+  },
+  setupOrgCard: {
+    alignItems: 'center', width: 90, paddingVertical: 14, paddingHorizontal: 8,
+    borderRadius: 14, borderWidth: 1.5, borderColor: C.BORDER, backgroundColor: C.CARD,
+  },
+  setupOrgCardActive: {
+    borderColor: C.PRIMARY, backgroundColor: C.PRIMARY + '10',
+  },
+  setupOrgAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
+  setupOrgName: {
+    fontSize: 11, color: C.TEXT, textAlign: 'center', lineHeight: 14,
+  },
+  setupSelectedOrg: {
+    marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: C.PRIMARY + '10',
+  },
 
   // ── Empty state ────────────────────────────────────────────────────────────
   emptyWrap:  { alignItems: 'center', marginTop: 60, paddingHorizontal: 32 },

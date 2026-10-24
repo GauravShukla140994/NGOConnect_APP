@@ -98,8 +98,9 @@ export default function DonorNgoGivingSummaryScreen() {
     <SafeAreaView style={s.container}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => nav.goBack()} style={s.headerBtn}>
-          <Text style={s.headerBack}>←</Text>
+        <TouchableOpacity onPress={() => nav.goBack()} style={s.headerBtn} accessibilityLabel="Back">
+          <Text style={s.headerBackArrow}>←</Text>
+          <Text style={s.headerBackLabel}>Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Giving summary</Text>
         <TouchableOpacity onPress={handleShare} style={s.headerBtn}>
@@ -296,8 +297,9 @@ const s = StyleSheet.create({
   header:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8,
                  paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER,
                  backgroundColor: C.CARD },
-  headerBtn:   { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerBack:  { fontSize: 22, color: C.TEXT },
+  headerBtn:        { minWidth: 70, height: 40, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerBackArrow:  { fontSize: 20, color: C.PRIMARY, fontWeight: '600' },
+  headerBackLabel:  { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.TEXT },
   headerDownload: { fontSize: 20, color: C.PRIMARY },
 

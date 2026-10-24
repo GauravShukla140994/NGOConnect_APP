@@ -45,7 +45,7 @@ export const donationApi = {
   getRecurring: () =>
     apiClient.get<ApiResponse<RecurringDonation[]>>('/donation/recurring'),
 
-  setupRecurring: (data: {orgId: number; campaignId?: number; amount: number; frequencyLkpId: number; startDate: string}) =>
+  setupRecurring: (data: {orgId: number; campaignId?: number; amount: number; frequencyCode: string; startDate: string}) =>
     apiClient.post<ApiResponse<null>>('/donation/recurring', data),
 
   pauseRecurring: (recurringId: number) =>
@@ -53,6 +53,9 @@ export const donationApi = {
 
   resumeRecurring: (recurringId: number) =>
     apiClient.put<ApiResponse<null>>(`/donation/recurring/${recurringId}/resume`),
+
+  updateRecurring: (recurringId: number, data: { amount: number; frequencyCode: string }) =>
+    apiClient.put<ApiResponse<null>>(`/donation/recurring/${recurringId}`, data),
 
   cancelRecurring: (recurringId: number) =>
     apiClient.delete<ApiResponse<null>>(`/donation/recurring/${recurringId}`),

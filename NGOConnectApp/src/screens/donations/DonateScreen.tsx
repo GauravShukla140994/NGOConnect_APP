@@ -267,8 +267,9 @@ const DonateScreen = () => {
     return (
       <SafeAreaView style={s.container} edges={['top']}>
         <View style={s.topBar}>
-          <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn}>
-            <Text style={s.backArrow}>← Back</Text>
+          <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn} accessibilityLabel="Back">
+            <Text style={s.backArrow}>←</Text>
+            <Text style={s.backLabel}>Back</Text>
           </TouchableOpacity>
           <Text style={s.headerTitle}>Donate</Text>
           <View style={{ width: 60 }} />
@@ -288,8 +289,9 @@ const DonateScreen = () => {
     <SafeAreaView style={s.container} edges={['top']}>
       {/* Header */}
       <View style={s.topBar}>
-        <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn}>
-          <Text style={s.backArrow}>← Back</Text>
+        <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn} accessibilityLabel="Back">
+          <Text style={s.backArrow}>←</Text>
+          <Text style={s.backLabel}>Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Donate</Text>
         <View style={{ width: 60 }} />
@@ -519,8 +521,9 @@ const s = StyleSheet.create({
   topBar:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingHorizontal: 12, paddingVertical: 10,
                   borderBottomWidth: 1, borderBottomColor: C.BORDER, backgroundColor: C.CARD },
-  backBtn:      { paddingVertical: 4, paddingRight: 8, minWidth: 60 },
-  backArrow:    { fontSize: 15, color: C.PRIMARY, fontWeight: '600' },
+  backBtn:      { minWidth: 70, height: 40, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  backArrow:    { fontSize: 20, color: C.PRIMARY, fontWeight: '600' },
+  backLabel:    { fontSize: 16, color: C.PRIMARY, fontWeight: '600' },
   headerTitle:  { fontSize: 17, fontWeight: '700', color: C.TEXT },
 
   scroll:       { padding: 16 },
