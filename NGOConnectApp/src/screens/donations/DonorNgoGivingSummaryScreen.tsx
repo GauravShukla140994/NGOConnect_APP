@@ -99,9 +99,7 @@ export default function DonorNgoGivingSummaryScreen() {
           <Text style={s.headerBackLabel}>Back</Text>
         </TouchableOpacity>
         <Text style={s.headerTitle}>Giving summary</Text>
-        <TouchableOpacity onPress={handleShare} style={s.headerBtn}>
-          <Text style={s.headerDownload}>↓</Text>
-        </TouchableOpacity>
+        <View style={s.headerBtn} />
       </View>
 
       {loading
@@ -273,7 +271,9 @@ export default function DonorNgoGivingSummaryScreen() {
         <TouchableOpacity
           style={s.donateBtn}
           onPress={() => nav.navigate('Donate', { orgId, orgName })}>
-          <Text style={s.donateBtnText}>Donate to {orgName}</Text>
+          <Text style={s.donateBtnText} numberOfLines={1}>
+            Donate to {orgName.length > 22 ? orgName.slice(0, 22).trimEnd() + '…' : orgName}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -306,8 +306,8 @@ const s = StyleSheet.create({
   ngoAvatar:  { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   ngoAvatarText: { fontSize: 16, fontWeight: '800', color: '#fff' },
   ngoNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  ngoName:    { fontSize: 15, fontWeight: '700', color: C.TEXT },
-  ngoVerified: { fontSize: 14, color: C.PRIMARY, fontWeight: '700' },
+  ngoName:    { fontSize: 15, fontWeight: '700', color: C.TEXT, flex: 1 },
+  ngoVerified: { fontSize: 14, color: C.PRIMARY, fontWeight: '700', flexShrink: 0 },
   ngoMeta:    { fontSize: 12, color: C.TEXT2, marginTop: 3 },
   ngoDesc:    { fontSize: 13, color: C.TEXT2, lineHeight: 19, marginBottom: 12 },
   viewProfileBtn: { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 7,

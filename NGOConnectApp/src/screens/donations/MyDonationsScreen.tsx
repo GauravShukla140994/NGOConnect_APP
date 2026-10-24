@@ -73,9 +73,9 @@ function DonateNowModal({ visible, onClose }: { visible: boolean; onClose: () =>
     }).finally(() => setLoading(false));
   }, [visible]);
 
-  const openDonate = (orgId: number, orgName: string) => {
+  const openDonate = (orgId: number, orgName: string, is80GEligible?: boolean) => {
     onClose();
-    nav.navigate('Donate', { orgId, orgName });
+    nav.navigate('Donate', { orgId, orgName, is80GEligible });
   };
 
   const filteredRecent = search
@@ -139,7 +139,7 @@ function DonateNowModal({ visible, onClose }: { visible: boolean; onClose: () =>
                   const lastGave = formatLastGave(o);
                   return (
                     <TouchableOpacity key={o.orgId} style={dn.recentRow}
-                      onPress={() => openDonate(o.orgId, o.orgName)}>
+                      onPress={() => openDonate(o.orgId, o.orgName, o.is80GEligible === 1 || o.is80GEligible === true)}>
                       <OrgAvatar orgId={o.orgId} orgName={o.orgName ?? ''} logoUrl={o.logoUrl}
                         size={42} radius={21} />
                       <View style={{ flex: 1 }}>
@@ -166,7 +166,7 @@ function DonateNowModal({ visible, onClose }: { visible: boolean; onClose: () =>
                   const isRegistered = !(o.isNonRegistered === 1 || o.isNonRegistered === true);
                   return (
                     <TouchableOpacity key={o.orgId} style={dn.discoverRow}
-                      onPress={() => openDonate(o.orgId, o.orgName)}>
+                      onPress={() => openDonate(o.orgId, o.orgName, is80G)}>
                       <OrgAvatar orgId={o.orgId} orgName={o.orgName ?? ''} logoUrl={o.logoUrl}
                         size={42} radius={21} />
                       <View style={{ flex: 1 }}>
@@ -1175,8 +1175,13 @@ function RecurringTab() {
     refresh ? setRefreshing(true) : setLoading(true);
     try {
       const res = await donationApi.getRecurring();
+      console.log('[RecurringTab] API response isSuccess=', res.data?.isSuccess,
+        'count=', res.data?.data?.length, 'msg=', res.data?.message);
       if (res.data?.isSuccess === 1) setItems(res.data.data ?? []);
-    } catch (_) {}
+      else console.warn('[RecurringTab] API returned failure:', res.data?.message, res.data?.errorCode);
+    } catch (e: any) {
+      console.error('[RecurringTab] load error:', e?.response?.status, e?.response?.data ?? e?.message);
+    }
     finally { setLoading(false); setRefreshing(false); }
   };
 
