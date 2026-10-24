@@ -16,13 +16,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { donationApi } from '../../api/donation.api';
+import OrgAvatar from '../../components/common/OrgAvatar';
 
 const C = AppConfig.COLORS;
-
-const AVATAR_COLORS = ['#6C47FF', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-const avatarBg = (id: number) => AVATAR_COLORS[(id ?? 0) % AVATAR_COLORS.length];
-const initials = (name: string) =>
-  (name ?? 'N').split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
 
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   SUCCESS:   { bg: '#DCFCE7', text: '#166534', label: 'Successful' },
@@ -85,8 +81,8 @@ export default function DonorNgoGivingSummaryScreen() {
     { text: 'Your donation made a real difference to the community.', date: fmtDate(latestDate) },
   ];
 
-  const orgName = history[0]?.orgName ?? paramOrgName ?? 'This organisation';
-  const color   = avatarBg(orgId);
+  const orgName    = history[0]?.orgName ?? paramOrgName ?? 'This organisation';
+  const orgLogoUrl = history[0]?.orgLogoUrl ?? null;
 
   const handleShare = async () => {
     await Share.share({
@@ -116,9 +112,7 @@ export default function DonorNgoGivingSummaryScreen() {
             {/* ── NGO card ──────────────────────────────────────────────── */}
             <View style={s.ngoCard}>
               <View style={s.ngoCardTop}>
-                <View style={[s.ngoAvatar, { backgroundColor: color }]}>
-                  <Text style={s.ngoAvatarText}>{initials(orgName)}</Text>
-                </View>
+                <OrgAvatar orgId={orgId} orgName={orgName} logoUrl={orgLogoUrl} size={48} radius={14} />
                 <View style={{ flex: 1 }}>
                   <View style={s.ngoNameRow}>
                     <Text style={s.ngoName}>{orgName}</Text>

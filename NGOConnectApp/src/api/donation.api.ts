@@ -27,9 +27,16 @@ export const donationApi = {
     apiClient.post<ApiResponse<{transactionId: number; donationId: string; gatewayOrderId: string | null}>>(
       '/donation/initiate', data),
 
-  /** Confirm payment. Phase 1: pass statusCode="SUCCESS" to simulate. */
+  /** Confirm payment. Phase 1: pass statusCode="SUCCESS" to simulate.
+   *  On success, Data contains: recurringDonId?, nextChargeDate?, donTypeCode, orgName, donationAmount */
   confirmPayment: (data: {transactionId: number; statusCode: string; gatewayPaymentId?: string}) =>
-    apiClient.post<ApiResponse<null>>('/donation/confirm', data),
+    apiClient.post<ApiResponse<{
+      recurringDonId?:  number | null;
+      nextChargeDate?:  string | null;  // "yyyy-MM-dd"
+      donTypeCode:      string;
+      orgName:          string;
+      donationAmount:   number;
+    }>>('/donation/confirm', data),
 
   /** Get single donation detail (member view) */
   getDonationDetail: (donationRef: string) =>

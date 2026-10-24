@@ -28,6 +28,8 @@ interface RouteParams {
   orgName:       string;
   campaignName:  string;
   payMethod:     string;
+  donType?:      string;   // 'ONE_TIME' | 'MONTHLY'
+  campaignId?:   number | null;
 }
 
 const DonationPaymentScreen = () => {
@@ -37,7 +39,7 @@ const DonationPaymentScreen = () => {
 
   const transactionId = Number(_p.transactionId);
   const amount        = Number(_p.amount);
-  const { donationId, orgName, campaignName, payMethod } = _p;
+  const { donationId, orgName, campaignName, payMethod, donType } = _p;
 
   const [processing, setProcessing] = useState(false);
 
@@ -81,8 +83,16 @@ const DonationPaymentScreen = () => {
     try {
       const res = await donationApi.confirmPayment({ transactionId, statusCode });
       if (statusCode === 'SUCCESS' && res.data?.isSuccess === 1) {
+        const d = res.data.data;
         nav.replace('DonationSuccess', {
-          donationId, amount, orgName, campaignName, payMethod,
+          donationId,
+          amount,
+          orgName:         d?.orgName    ?? orgName,
+          campaignName,
+          payMethod,
+          donType:         donType ?? d?.donTypeCode ?? 'ONE_TIME',
+          recurringDonId:  d?.recurringDonId  ?? null,
+          nextChargeDate:  d?.nextChargeDate   ?? null,
         });
       } else if (statusCode === 'FAILED') {
         nav.goBack();

@@ -16,11 +16,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Alert, Image,
+  StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
+import OrgAvatar from '../../components/common/OrgAvatar';
 import { donationApi } from '../../api/donation.api';
 import { lookupApi   } from '../../api/lookup.api';
 import { getProfile  } from '../../api/org.api';
@@ -50,16 +51,6 @@ const STATIC_VISIBILITY: LkpItem[] = [
 const PM_ICONS: Record<string, string> = {
   UPI: '📲', CARD: '💳', NET_BANKING: '🏦',
 };
-
-const AVATAR_COLORS = ['#6B4EFF','#2ECC71','#FF8C42','#2563EB','#D97706','#16A34A','#7C3AED'];
-function avatarColor(name: string) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % AVATAR_COLORS.length;
-  return AVATAR_COLORS[Math.abs(h)];
-}
-function initials(name: string) {
-  return (name || 'NG').split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-}
 
 type DonType = 'ONE_TIME' | 'MONTHLY';
 type LkpItem = { lookupValueId: number; valueCode: string; valueName: string };
@@ -100,12 +91,15 @@ const DonateScreen = () => {
   } = (route.params ?? {}) as RouteParams;
 
   // ── Org & campaign state ─────────────────────────────────────────────────────
-  const [orgName,     setOrgName]     = useState<string>(paramOrgName ?? '');
-  const [orgLogoUrl,  setOrgLogoUrl]  = useState<string | null>(null);
-  const [lastGiftMsg, setLastGiftMsg] = useState<string | null>(null);
-  const [campaigns,   setCampaigns]   = useState<Campaign[]>([]);
-  const [selCampaign, setSelCampaign] = useState<Campaign | null>(null);
-  const [pageLoading, setPageLoading] = useState(true);
+  const [orgName,        setOrgName]        = useState<string>(paramOrgName ?? '');
+  const [orgLogoUrl,     setOrgLogoUrl]     = useState<string | null>(null);
+  const [lastGiftMsg,    setLastGiftMsg]    = useState<string | null>(null);
+  const [isVerified,     setIsVerified]     = useState<boolean>(false);
+  const [isNonReg,       setIsNonReg]       = useState<boolean>(false);
+  const [orgIs80G,       setOrgIs80G]       = useState<boolean | null>(null); // null = unknown until fetch
+  const [campaigns,      setCampaigns]      = useState<Campaign[]>([]);
+  const [selCampaign,    setSelCampaign]    = useState<Campaign | null>(null);
+  const [pageLoading,    setPageLoading]    = useState(true);
 
   // ── Donation state ───────────────────────────────────────────────────────────
   const [donType,       setDonType]       = useState<DonType>('ONE_TIME');
@@ -145,6 +139,11 @@ const DonateScreen = () => {
           const d = orgRes.value.data.data;
           if (!paramOrgName && d?.orgName) setOrgName(d.orgName);
           setOrgLogoUrl(d?.logoUrl ?? d?.orgLogoUrl ?? null);
+          setIsVerified((d?.verificationStatusCode ?? '').toUpperCase() === 'VERIFIED');
+          setIsNonReg(!!(d?.isNonRegistered));
+          if (d?.is80GEligible !== undefined && d?.is80GEligible !== null) {
+            setOrgIs80G(d.is80GEligible === 1 || d.is80GEligible === true);
+          }
           // "Last time you gave" — the org profile SP doesn't return this today;
           // we leave it null and will add it when the SP returns it.
         }
@@ -242,6 +241,8 @@ const DonateScreen = () => {
           orgName,
           campaignName: selCampaign?.campaignName ?? 'General Donation',
           payMethod:    selPayMethod.valueName,
+          donType:      donTypeCode,   // 'ONE_TIME' | 'MONTHLY' — needed by success screen
+          campaignId:   selCampaign?.campaignId ?? null,
         });
       } else {
         Alert.alert('Error', res.data?.message ?? 'Could not initiate donation.');
@@ -273,9 +274,6 @@ const DonateScreen = () => {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
-  const color = avatarColor(orgName);
-  const ini   = initials(orgName);
-
   return (
     <SafeAreaView style={s.container} edges={['top']}>
       {/* Header */}
@@ -297,18 +295,40 @@ const DonateScreen = () => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
 
-          {/* ── Org header card (prototype: logo + name + last gift) ── */}
+          {/* ── Org header card (prototype: logo + name + badges + last gift) ── */}
           <View style={s.orgCard}>
-            {orgLogoUrl
-              ? <Image source={{ uri: orgLogoUrl }} style={s.orgAvatar} resizeMode="cover" />
-              : (
-                <View style={[s.orgAvatar, { backgroundColor: color }]}>
-                  <Text style={s.orgAvatarText}>{ini}</Text>
-                </View>
-              )
-            }
+            <OrgAvatar orgId={orgId} orgName={orgName} logoUrl={orgLogoUrl} size={44} radius={14} />
             <View style={{ flex: 1 }}>
               <Text style={s.orgCardName} numberOfLines={1}>{orgName}</Text>
+
+              {/* Verified / Registered / 80G badges */}
+              <View style={s.orgBadgeRow}>
+                {isVerified && (
+                  <View style={s.badgeVerified}>
+                    <Text style={s.badgeVerifiedText}>✓ Verified</Text>
+                  </View>
+                )}
+                {isNonReg ? (
+                  <View style={s.badgeNonReg}>
+                    <Text style={s.badgeNonRegText}>Non-Registered</Text>
+                  </View>
+                ) : (
+                  <View style={s.badgeReg}>
+                    <Text style={s.badgeRegText}>✓ Registered</Text>
+                  </View>
+                )}
+                {orgIs80G === true && (
+                  <View style={s.badge80G}>
+                    <Text style={s.badge80GText}>✓ 80G</Text>
+                  </View>
+                )}
+                {orgIs80G === false && (
+                  <View style={s.badgeNo80G}>
+                    <Text style={s.badgeNo80GText}>No 80G</Text>
+                  </View>
+                )}
+              </View>
+
               {lastGiftMsg ? (
                 <Text style={s.orgCardSub} numberOfLines={1}>{lastGiftMsg}</Text>
               ) : (
@@ -521,7 +541,7 @@ const s = StyleSheet.create({
   section:      { marginBottom: 14 },
 
   // Org header card
-  orgCard:      { flexDirection: 'row', alignItems: 'center', gap: 12,
+  orgCard:      { flexDirection: 'row', alignItems: 'flex-start', gap: 12,
                   backgroundColor: C.CARD, borderRadius: 14, padding: 14,
                   marginBottom: 16,
                   shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
@@ -529,8 +549,26 @@ const s = StyleSheet.create({
   orgAvatar:    { width: 44, height: 44, borderRadius: 14, alignItems: 'center',
                   justifyContent: 'center', overflow: 'hidden' },
   orgAvatarText:{ fontSize: 15, fontWeight: '800', color: '#fff' },
-  orgCardName:  { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 3 },
-  orgCardSub:   { fontSize: 12, color: C.TEXT2 },
+  orgCardName:  { fontSize: 15, fontWeight: '700', color: C.TEXT, marginBottom: 4 },
+  orgCardSub:   { fontSize: 12, color: C.TEXT2, marginTop: 4 },
+
+  // Org badges
+  orgBadgeRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  badgeVerified:    { backgroundColor: '#EFF6FF', paddingHorizontal: 7, paddingVertical: 2,
+                      borderRadius: 10, borderWidth: 1, borderColor: '#BFDBFE' },
+  badgeVerifiedText:{ fontSize: 10, fontWeight: '700', color: '#1D4ED8' },
+  badgeReg:         { backgroundColor: '#ECFDF5', paddingHorizontal: 7, paddingVertical: 2,
+                      borderRadius: 10, borderWidth: 1, borderColor: '#6EE7B7' },
+  badgeRegText:     { fontSize: 10, fontWeight: '700', color: '#059669' },
+  badgeNonReg:      { backgroundColor: '#FFF7ED', paddingHorizontal: 7, paddingVertical: 2,
+                      borderRadius: 10, borderWidth: 1, borderColor: '#FED7AA' },
+  badgeNonRegText:  { fontSize: 10, fontWeight: '700', color: '#C2410C' },
+  badge80G:         { backgroundColor: '#DCFCE7', paddingHorizontal: 7, paddingVertical: 2,
+                      borderRadius: 10, borderWidth: 1, borderColor: '#86EFAC' },
+  badge80GText:     { fontSize: 10, fontWeight: '700', color: '#16A34A' },
+  badgeNo80G:       { backgroundColor: '#F3F4F6', paddingHorizontal: 7, paddingVertical: 2,
+                      borderRadius: 10, borderWidth: 1, borderColor: '#D1D5DB' },
+  badgeNo80GText:   { fontSize: 10, fontWeight: '600', color: '#6B7280' },
 
   // Campaign picker
   singleCampaign: { fontSize: 13, color: C.TEXT2, marginBottom: 14 },

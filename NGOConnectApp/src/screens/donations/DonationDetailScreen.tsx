@@ -12,14 +12,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { donationApi } from '../../api/donation.api';
+import OrgAvatar from '../../components/common/OrgAvatar';
 
 const C = AppConfig.COLORS;
-
-// Avatar palette
-const AVATAR_COLORS = ['#6C47FF', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-const avatarBg = (orgId: number) => AVATAR_COLORS[(orgId ?? 0) % AVATAR_COLORS.length];
-const initials = (name: string) =>
-  (name ?? 'N').split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
 
 // Status config
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
@@ -167,8 +162,8 @@ export default function DonationDetailScreen() {
 
         {/* ── Hero: avatar + org + amount + status ────────────────────────── */}
         <View style={s.heroCard}>
-          <View style={[s.heroAvatar, { backgroundColor: avatarBg(data.orgId ?? 0) }]}>
-            <Text style={s.heroAvatarText}>{initials(data.orgName ?? '')}</Text>
+          <View style={{ marginBottom: 12 }}>
+            <OrgAvatar orgId={data.orgId ?? 0} orgName={data.orgName ?? ''} logoUrl={data.orgLogoUrl} size={64} radius={32} />
           </View>
           <Text style={s.heroOrg}>{data.orgName ?? '—'}</Text>
           <Text style={s.heroCampaign}>{data.campaignName ?? 'General Donation'}</Text>
