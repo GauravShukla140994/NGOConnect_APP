@@ -468,19 +468,21 @@ const DonateScreen = () => {
 
           {/* ── Pay with ── */}
           <Text style={s.sectionLabel}>Pay with</Text>
-          {payMethods.map(pm => (
-            <TouchableOpacity
-              key={pm.lookupValueId}
-              style={[s.pmRow, selPayMethod?.lookupValueId === pm.lookupValueId && s.pmActive]}
-              onPress={() => setSelPayMethod(pm)}>
-              <View style={[s.radio, selPayMethod?.lookupValueId === pm.lookupValueId && s.radioActive]}>
-                {selPayMethod?.lookupValueId === pm.lookupValueId && <View style={s.radioDot} />}
-              </View>
-              <Text style={[s.pmLabel, selPayMethod?.lookupValueId === pm.lookupValueId && s.pmLabelActive]}>
-                {PM_ICONS[pm.valueCode] ?? '💳'} {pm.valueName}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          <View style={s.pmChipRow}>
+            {payMethods.map(pm => {
+              const active = selPayMethod?.lookupValueId === pm.lookupValueId;
+              return (
+                <TouchableOpacity
+                  key={pm.lookupValueId}
+                  style={[s.pmChip, active && s.pmChipActive]}
+                  onPress={() => setSelPayMethod(pm)}>
+                  <Text style={[s.pmChipText, active && s.pmChipTextActive]}>
+                    {pm.valueName.replace('Credit / Debit ', '')}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
           {/* Spacer so last item clears the sticky footer */}
           <View style={{ height: insets.bottom + 120 }} />
@@ -604,17 +606,13 @@ const s = StyleSheet.create({
   checkmark:    { fontSize: 12, color: '#fff', fontWeight: '700' },
   anonText:     { fontSize: 14, color: C.TEXT },
 
-  // Pay method
-  pmRow:        { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12,
-                  paddingHorizontal: 14, borderWidth: 1.5, borderColor: C.BORDER, borderRadius: 10,
-                  backgroundColor: C.CARD, marginBottom: 8 },
-  pmActive:     { borderColor: C.PRIMARY, backgroundColor: '#EFF6FF' },
-  radio:        { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: C.BORDER,
-                  alignItems: 'center', justifyContent: 'center' },
-  radioActive:  { borderColor: C.PRIMARY },
-  radioDot:     { width: 10, height: 10, borderRadius: 5, backgroundColor: C.PRIMARY },
-  pmLabel:      { fontSize: 15, color: C.TEXT },
-  pmLabelActive: { color: C.PRIMARY, fontWeight: '600' },
+  // Pay method — horizontal chips
+  pmChipRow:     { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  pmChip:        { flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: 'center',
+                   borderWidth: 1.5, borderColor: C.BORDER, backgroundColor: C.CARD },
+  pmChipActive:  { borderColor: C.PRIMARY, backgroundColor: '#EFF6FF' },
+  pmChipText:    { fontSize: 14, fontWeight: '600', color: C.TEXT2 },
+  pmChipTextActive: { color: C.PRIMARY },
 
   // Footer
   footer:       { paddingHorizontal: 16, paddingTop: 10,

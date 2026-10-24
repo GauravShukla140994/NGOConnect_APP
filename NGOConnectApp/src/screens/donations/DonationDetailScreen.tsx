@@ -1,12 +1,12 @@
 /**
  * DonationDetailScreen — s-my-donations (member view of a single donation)
  * Route params: { donationRef: string }
- * Shows: campaign header, amount + status, DON-YYYY-XXXXXX ref,
- *        Journey timeline, payment details + fee breakdown.
+ * Design ref: images 102, 103, 114
  */
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, Share, Clipboard, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -15,312 +15,476 @@ import { donationApi } from '../../api/donation.api';
 
 const C = AppConfig.COLORS;
 
+// Avatar palette
+const AVATAR_COLORS = ['#6C47FF', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+const avatarBg = (orgId: number) => AVATAR_COLORS[(orgId ?? 0) % AVATAR_COLORS.length];
+const initials = (name: string) =>
+  (name ?? 'N').split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
+
+// Status config
+const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
+  SUCCESS:   { bg: '#DCFCE7', text: '#166534', label: 'Successful'  },
+  INITIATED: { bg: '#FFF7ED', text: '#C2410C', label: 'Processing'  },
+  PENDING:   { bg: '#FFF7ED', text: '#C2410C', label: 'Processing'  },
+  FAILED:    { bg: '#FEE2E2', text: '#991B1B', label: 'Failed'      },
+  REFUNDED:  { bg: '#EFF6FF', text: '#1D4ED8', label: 'Refunded'    },
+  CANCELLED: { bg: '#F3F4F6', text: '#374151', label: 'Cancelled'   },
+};
+
 interface RouteParams { donationRef: string }
 
-const JOURNEY_STEPS = [
-  { code: 'INITIATED', label: 'Donation initiated',   icon: '⚡' },
-  { code: 'PENDING',   label: 'Payment processing',   icon: '⏳' },
-  { code: 'SUCCESS',   label: 'Received by NGO',       icon: '✅' },
-  { code: 'RECEIPT',   label: 'Receipt & 80G ready',   icon: '🧾' },
-];
-
-const STATUS_STEP: Record<string, number> = {
-  INITIATED: 0,
-  PENDING:   1,
-  SUCCESS:   3,
-  FAILED:    1,
-  REFUNDED:  1,
-  CANCELLED: 0,
-};
+// ── Journey step definitions ──────────────────────────────────────────────────
+// Each step has a "done at" status code and subtitle text
+const JOURNEY: Array<{
+  label: string;
+  sub: (d: any) => string;
+  doneWhen: string[];
+  activeWhen: string[];
+  failWhen?: string[];
+}> = [
+  {
+    label: 'Payment initiated',
+    sub: (d) => d?.createdAt ? `${fmtDateTime(d.createdAt)}${d.payMethod ? ' · ' + d.payMethod : ''}` : '',
+    doneWhen: ['SUCCESS', 'REFUNDED'],
+    activeWhen: ['INITIATED', 'PENDING', 'FAILED'],
+  },
+  {
+    label: 'Confirming with your bank',
+    sub: () => 'Usually under 24 hours',
+    doneWhen: ['SUCCESS', 'REFUNDED'],
+    activeWhen: ['PENDING'],
+    failWhen: ['FAILED'],
+  },
+  {
+    label: (d: any) => `Received by ${d?.orgName ?? 'NGO'}` as any,
+    sub: () => 'After confirmation',
+    doneWhen: ['SUCCESS', 'REFUNDED'],
+    activeWhen: [],
+  },
+  {
+    label: 'Receipt & 80G certificate',
+    sub: () => 'Issued automatically once confirmed',
+    doneWhen: [],
+    activeWhen: [],
+  },
+] as any[];
 
 export default function DonationDetailScreen() {
   const nav   = useNavigation<any>();
   const route = useRoute<any>();
   const { donationRef } = (route.params ?? {}) as RouteParams;
 
-  const [data, setData]     = useState<any>(null);
+  const [data, setData]       = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState('');
+  const [error, setError]     = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await donationApi.getDonationDetail(donationRef);
-        if (res.data?.isSuccess === 1) setData(res.data.data);
-        else setError(res.data?.message ?? 'Could not load donation');
-      } catch (e: any) {
-        setError(e?.response?.data?.message ?? 'Something went wrong');
-      } finally { setLoading(false); }
-    })();
-  }, [donationRef]);
+  const fetchDetail = async () => {
+    try {
+      const res = await donationApi.getDonationDetail(donationRef);
+      if (res.data?.isSuccess === 1) setData(res.data.data);
+      else setError(res.data?.message ?? 'Could not load donation');
+    } catch (e: any) {
+      setError(e?.response?.data?.message ?? 'Something went wrong');
+    } finally { setLoading(false); setRefreshing(false); }
+  };
 
-  if (loading) return (
-    <SafeAreaView style={s.container}>
-      <Header onBack={() => nav.goBack()} title="Donation Detail" />
-      <ActivityIndicator color={C.PRIMARY} size="large" style={{ marginTop: 60 }} />
-    </SafeAreaView>
-  );
+  useEffect(() => { fetchDetail(); }, [donationRef]);
 
-  if (error || !data) return (
-    <SafeAreaView style={s.container}>
-      <Header onBack={() => nav.goBack()} title="Donation Detail" />
-      <View style={s.errorWrap}>
-        <Text style={s.errorIcon}>⚠️</Text>
-        <Text style={s.errorText}>{error || 'Donation not found'}</Text>
-      </View>
-    </SafeAreaView>
-  );
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchDetail();
+    if (data) Alert.alert('Status updated', `Current status: ${data.payStatus ?? 'Unknown'}`);
+  };
 
-  const statusCode: string = data.payStatus ?? 'INITIATED';
-  const stepReached = STATUS_STEP[statusCode] ?? 0;
-  const isFailed    = statusCode === 'FAILED';
-  const isRefunded  = statusCode === 'REFUNDED';
+  const handleShare = async () => {
+    if (!data) return;
+    try {
+      await Share.share({
+        message: `I donated ₹${Number(data.donationAmount).toLocaleString('en-IN')} to ${data.orgName ?? 'an NGO'} via NGO Connect! 🎉`,
+      });
+    } catch (_) {}
+  };
 
-  const gatewayFee  = Number(data.donationAmount ?? 0) * 0.02;
-  const gstOnFee    = gatewayFee * 0.18;
-  const netToNgo    = Number(data.orgReceivesAmt ?? data.donationAmount ?? 0);
+  const copyToClipboard = (value: string, label: string) => {
+    Clipboard.setString(value);
+    Alert.alert('Copied', `${label} copied to clipboard`);
+  };
+
+  // ── Loading ──────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <SafeAreaView style={s.container}>
+        <NavHeader title="Donation details" onBack={() => nav.goBack()} onShare={undefined} />
+        <ActivityIndicator color={C.PRIMARY} size="large" style={{ marginTop: 60 }} />
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <SafeAreaView style={s.container}>
+        <NavHeader title="Donation details" onBack={() => nav.goBack()} onShare={undefined} />
+        <View style={s.errorWrap}>
+          <Text style={s.errorIcon}>⚠️</Text>
+          <Text style={s.errorText}>{error || 'Donation not found'}</Text>
+          <TouchableOpacity style={s.retryBtn} onPress={() => { setLoading(true); setError(''); fetchDetail(); }}>
+            <Text style={s.retryBtnText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const status = data.payStatus ?? 'INITIATED';
+  const meta   = STATUS_META[status] ?? { bg: '#F3F4F6', text: '#374151', label: status };
+  const isProcessing = status === 'INITIATED' || status === 'PENDING';
+  const isFailed     = status === 'FAILED';
+  const isRefunded   = status === 'REFUNDED';
+  const isSuccess    = status === 'SUCCESS';
+
+  // ── Journey step states ───────────────────────────────────────────────────────
+  const getStepState = (step: typeof JOURNEY[number]) => {
+    if (step.failWhen?.includes(status)) return 'failed';
+    if (step.doneWhen?.includes(status)) return 'done';
+    if (step.activeWhen?.includes(status)) return 'active';
+    return 'pending';
+  };
+
+  const stepColor = (state: string) => ({
+    done:    '#16A34A',
+    active:  '#C2410C',
+    failed:  '#DC2626',
+    pending: C.BORDER,
+  }[state] ?? C.BORDER);
 
   return (
     <SafeAreaView style={s.container}>
-      <Header onBack={() => nav.goBack()} title="Donation Detail" />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+      <NavHeader
+        title="Donation details"
+        onBack={() => nav.goBack()}
+        onShare={handleShare}
+      />
 
-        {/* Campaign header banner */}
-        <View style={s.campaignBanner}>
-          <View style={s.orgLogoCircle}>
-            <Text style={s.orgLogoText}>{(data.orgName ?? 'N')[0]}</Text>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* ── Hero: avatar + org + amount + status ────────────────────────── */}
+        <View style={s.heroCard}>
+          <View style={[s.heroAvatar, { backgroundColor: avatarBg(data.orgId ?? 0) }]}>
+            <Text style={s.heroAvatarText}>{initials(data.orgName ?? '')}</Text>
           </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={s.bannerOrgName}>{data.orgName}</Text>
-            <Text style={s.bannerCampaign} numberOfLines={2}>{data.campaignName}</Text>
+          <Text style={s.heroOrg}>{data.orgName ?? '—'}</Text>
+          <Text style={s.heroCampaign}>{data.campaignName ?? 'General Donation'}</Text>
+          <Text style={s.heroAmount}>₹{Number(data.donationAmount).toLocaleString('en-IN')}</Text>
+          <View style={[s.heroPill, { backgroundColor: meta.bg }]}>
+            <Text style={[s.heroPillText, { color: meta.text }]}>{meta.label}</Text>
           </View>
+          <Text style={s.heroDate}>{fmtDateTime(data.createdAt)}</Text>
         </View>
 
-        {/* Amount + status card */}
-        <View style={s.amountCard}>
-          <Text style={s.amountValue}>₹{Number(data.donationAmount).toLocaleString('en-IN')}</Text>
-          <StatusBadge code={statusCode} />
-          <Text style={s.donationId}>{data.donationId}</Text>
-          <Text style={s.donationDate}>{fmtDateTime(data.createdAt)}</Text>
-        </View>
+        {/* ── Warning banner (INITIATED / PENDING) ──────────────────────── */}
+        {isProcessing && (
+          <View style={s.warningBanner}>
+            <Text style={s.warningIcon}>⏱</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.warningTitle}>Waiting for your bank to confirm.</Text>
+              <Text style={s.warningBody}>
+                This usually takes under 24 hours. Don't pay again — we'll notify you the moment it clears.
+              </Text>
+            </View>
+          </View>
+        )}
 
-        {/* Journey timeline */}
-        <SectionTitle title="Donation Journey" />
-        <View style={s.timeline}>
-          {JOURNEY_STEPS.map((step, idx) => {
-            const reached = isFailed && idx === 1
-              ? 'failed'
-              : idx <= stepReached ? 'done' : 'pending';
+        {/* ── Refund banner ─────────────────────────────────────────────── */}
+        {isRefunded && (
+          <View style={[s.warningBanner, s.refundBanner]}>
+            <Text style={s.warningIcon}>🔄</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.warningTitle, { color: '#1D4ED8' }]}>Refund initiated.</Text>
+              <Text style={[s.warningBody, { color: '#1D4ED8' }]}>
+                Your refund of ₹{Number(data.donationAmount).toLocaleString('en-IN')} will be credited within 5–7 working days.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Failed banner ────────────────────────────────────────────── */}
+        {isFailed && (
+          <View style={[s.warningBanner, s.failBanner]}>
+            <Text style={s.warningIcon}>❌</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.warningTitle, { color: '#991B1B' }]}>Payment failed.</Text>
+              <Text style={[s.warningBody, { color: '#991B1B' }]}>
+                No amount was deducted from your account. You can try donating again.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Donation journey ─────────────────────────────────────────── */}
+        <Text style={s.sectionTitle}>Donation journey</Text>
+        <View style={s.journeyCard}>
+          {JOURNEY.map((step, idx) => {
+            const state = getStepState(step);
+            const color = stepColor(state);
+            const label = typeof step.label === 'function' ? step.label(data) : step.label;
+            const sub   = step.sub(data);
+            const isLast = idx === JOURNEY.length - 1;
             return (
-              <View key={step.code} style={s.timelineRow}>
-                <View style={s.timelineLeft}>
-                  <View style={[
-                    s.timelineDot,
-                    reached === 'done'   && s.timelineDotDone,
-                    reached === 'failed' && s.timelineDotFailed,
-                  ]}>
-                    <Text style={s.timelineDotIcon}>{reached === 'failed' ? '✕' : step.icon}</Text>
+              <View key={idx} style={s.stepRow}>
+                {/* Left: dot + connector */}
+                <View style={s.stepLeft}>
+                  <View style={[s.stepDot, { borderColor: color, backgroundColor: state === 'done' ? color : 'transparent' }]}>
+                    {state === 'done'    && <Text style={s.stepCheck}>✓</Text>}
+                    {state === 'active'  && <View style={[s.stepInnerDot, { backgroundColor: color }]} />}
+                    {state === 'failed'  && <Text style={[s.stepCheck, { color }]}>✕</Text>}
                   </View>
-                  {idx < JOURNEY_STEPS.length - 1 && (
-                    <View style={[s.timelineLine, idx < stepReached && s.timelineLineDone]} />
+                  {!isLast && (
+                    <View style={[s.stepLine, {
+                      backgroundColor: state === 'done' ? '#16A34A' : C.BORDER,
+                    }]} />
                   )}
                 </View>
-                <View style={s.timelineContent}>
-                  <Text style={[s.timelineLabel, reached !== 'pending' && s.timelineLabelActive]}>
-                    {step.label}
-                  </Text>
-                  {reached === 'done' && idx === 2 && data.createdAt && (
-                    <Text style={s.timelineDate}>{fmtDateTime(data.createdAt)}</Text>
-                  )}
+                {/* Right: label + sub */}
+                <View style={[s.stepContent, !isLast && { paddingBottom: 20 }]}>
+                  <Text style={[s.stepLabel,
+                    state !== 'pending' && s.stepLabelActive,
+                    state === 'failed'  && { color: '#DC2626' },
+                  ]}>{label}</Text>
+                  {!!sub && <Text style={s.stepSub}>{sub}</Text>}
                 </View>
               </View>
             );
           })}
         </View>
 
-        {/* Payment details */}
-        <SectionTitle title="Payment Details" />
+        {/* ── Payment details ────────────────────────────────────────────── */}
+        <Text style={s.sectionTitle}>Payment details</Text>
         <View style={s.detailCard}>
-          <DetailRow label="Payment method"  value={data.payMethod ?? '—'} />
-          {data.gatewayPaymentId && <DetailRow label="Payment ID" value={data.gatewayPaymentId} mono />}
-          {data.gatewayOrderId   && <DetailRow label="Order ID"   value={data.gatewayOrderId}   mono />}
-          <DetailRow label="Donation type"   value={data.donationType ?? 'One-time'} />
-          {data.donorPan && <DetailRow label="PAN" value={data.donorPan} mono />}
+          {data.donationId && (
+            <DetailRow
+              label="Donation ID"
+              value={data.donationId}
+              mono
+              onCopy={() => copyToClipboard(data.donationId, 'Donation ID')}
+            />
+          )}
+          {data.gatewayPaymentId && (
+            <DetailRow label="Transaction ref." value={data.gatewayPaymentId} mono />
+          )}
+          {data.payMethod && (
+            <DetailRow label="Payment method" value={data.payMethod.replace('_', ' ')} />
+          )}
+          {data.gatewayOrderId && (
+            <DetailRow label="Paid from" value={data.gatewayOrderId} mono />
+          )}
+          <DetailRow
+            label="Platform fee"
+            value="₹0"
+            sub="100% goes to the NGO"
+          />
+          <DetailRow
+            label="Amount to NGO"
+            value={`₹${Number(data.orgReceivesAmt ?? data.donationAmount).toLocaleString('en-IN')}`}
+            highlight
+            isLast
+          />
         </View>
 
-        {/* Amount breakdown */}
-        <SectionTitle title="Amount Breakdown" />
-        <View style={s.detailCard}>
-          <DetailRow label="Gross donation"  value={`₹${Number(data.donationAmount).toLocaleString('en-IN')}`} />
-          <DetailRow label="Platform fee"    value="₹0" sub="(Zero platform fee)" />
-          <DetailRow label="Gateway fee (2%)" value={`₹${gatewayFee.toFixed(2)}`} />
-          <DetailRow label="GST on fee (18%)" value={`₹${gstOnFee.toFixed(2)}`} />
-          <View style={s.netRow}>
-            <Text style={s.netLabel}>Net to NGO</Text>
-            <Text style={s.netValue}>₹{netToNgo.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-          </View>
-        </View>
-
-        {/* 80G receipt */}
-        {(data.receiptNumber || statusCode === 'SUCCESS') && (
+        {/* ── 80G receipt ───────────────────────────────────────────────── */}
+        {(isSuccess || data.receiptNumber) && (
           <>
-            <SectionTitle title="80G Tax Receipt" />
+            <Text style={s.sectionTitle}>80G Tax receipt</Text>
             <View style={s.detailCard}>
-              {data.receiptNumber
-                ? <>
-                    <DetailRow label="Receipt number" value={data.receiptNumber} mono />
-                    {data.fiscalYear && <DetailRow label="FY" value={data.fiscalYear} />}
-                    {data.receiptPdfUrl
-                      ? <TouchableOpacity style={s.downloadReceiptBtn}>
-                          <Text style={s.downloadReceiptBtnText}>📥 Download 80G Receipt</Text>
-                        </TouchableOpacity>
-                      : <Text style={s.receiptPendingText}>Receipt will be generated within 24 hours</Text>
-                    }
-                  </>
-                : <Text style={s.receiptPendingText}>Your 80G receipt will be available once processed</Text>
-              }
+              {data.receiptNumber ? (
+                <>
+                  <DetailRow label="Receipt number" value={data.receiptNumber} mono />
+                  {data.fiscalYear && <DetailRow label="Financial year" value={data.fiscalYear} />}
+                  {data.donorPan   && <DetailRow label="PAN" value={data.donorPan} mono />}
+                  <TouchableOpacity
+                    style={s.downloadBtn}
+                    onPress={() => Alert.alert('Coming soon', 'Receipt download will be available shortly.')}>
+                    <Text style={s.downloadBtnText}>📥 Download 80G Receipt</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={s.pendingNote}>
+                  Your 80G receipt will be generated within 24 hours of payment confirmation.
+                </Text>
+              )}
             </View>
           </>
         )}
 
-        {/* Refund note */}
-        {isRefunded && (
-          <>
-            <SectionTitle title="Refund" />
-            <View style={[s.detailCard, s.refundCard]}>
-              <Text style={s.refundText}>This donation was refunded.</Text>
-              {data.refundedAt && <Text style={s.refundDate}>Refunded on {fmtDate(data.refundedAt)}</Text>}
-            </View>
-          </>
-        )}
+        <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* ── Fixed footer ──────────────────────────────────────────────────── */}
+      <View style={s.footer}>
+        <TouchableOpacity
+          style={s.helpBtn}
+          onPress={() => Alert.alert('Get help', 'For payment issues, email support@ngoconnect.in')}>
+          <Text style={s.helpBtnText}>Get help</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.refreshBtn, refreshing && { opacity: 0.7 }]}
+          onPress={handleRefresh}
+          disabled={refreshing}>
+          {refreshing
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={s.refreshBtnText}>Refresh status</Text>
+          }
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-const Header = ({ onBack, title }: { onBack: () => void; title: string }) => (
-  <View style={s.header}>
-    <TouchableOpacity onPress={onBack} style={s.backBtn}>
-      <Text style={s.backIcon}>←</Text>
-    </TouchableOpacity>
-    <Text style={s.headerTitle}>{title}</Text>
-    <View style={{ width: 36 }} />
-  </View>
-);
-
-const SectionTitle = ({ title }: { title: string }) => (
-  <Text style={s.sectionTitle}>{title}</Text>
-);
-
-const DetailRow = ({ label, value, mono, sub }:
-  { label: string; value: string; mono?: boolean; sub?: string }) => (
-  <View style={s.detailRow}>
-    <Text style={s.detailLabel}>{label}</Text>
-    <View style={{ alignItems: 'flex-end' }}>
-      <Text style={[s.detailValue, mono && s.detailValueMono]}>{value}</Text>
-      {sub && <Text style={s.detailSub}>{sub}</Text>}
-    </View>
-  </View>
-);
-
-const STATUS_BADGE: Record<string, { bg: string; text: string; label: string }> = {
-  SUCCESS:   { bg: '#DCFCE7', text: '#166534', label: 'Completed'  },
-  INITIATED: { bg: '#FEF9C3', text: '#854D0E', label: 'Initiated'  },
-  PENDING:   { bg: '#FEF9C3', text: '#854D0E', label: 'Pending'    },
-  FAILED:    { bg: '#FEE2E2', text: '#991B1B', label: 'Failed'     },
-  REFUNDED:  { bg: '#EFF6FF', text: '#1D4ED8', label: 'Refunded'   },
-  CANCELLED: { bg: '#F3F4F6', text: '#374151', label: 'Cancelled'  },
-};
-const StatusBadge = ({ code }: { code: string }) => {
-  const c = STATUS_BADGE[code] ?? { bg: '#F3F4F6', text: '#374151', label: code };
+// ── Sub-components ────────────────────────────────────────────────────────────
+function NavHeader({
+  title, onBack, onShare,
+}: { title: string; onBack: () => void; onShare?: () => void }) {
   return (
-    <View style={[s.statusBadge, { backgroundColor: c.bg }]}>
-      <Text style={[s.statusBadgeText, { color: c.text }]}>{c.label}</Text>
+    <View style={s.header}>
+      <TouchableOpacity onPress={onBack} style={s.headerBtn}>
+        <Text style={s.headerBackIcon}>←</Text>
+      </TouchableOpacity>
+      <Text style={s.headerTitle}>{title}</Text>
+      <TouchableOpacity onPress={onShare} style={s.headerBtn} disabled={!onShare}>
+        {onShare ? <Text style={s.headerShareIcon}>↑</Text> : <View />}
+      </TouchableOpacity>
     </View>
   );
-};
+}
 
+function DetailRow({
+  label, value, mono, sub, onCopy, highlight, isLast,
+}: {
+  label: string; value: string; mono?: boolean; sub?: string;
+  onCopy?: () => void; highlight?: boolean; isLast?: boolean;
+}) {
+  return (
+    <View style={[s.detailRow, isLast && { borderBottomWidth: 0 }]}>
+      <Text style={s.detailLabel}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={[
+            s.detailValue,
+            mono && s.detailValueMono,
+            highlight && s.detailValueHighlight,
+          ]}>{value}</Text>
+          {sub && <Text style={s.detailSub}>{sub}</Text>}
+        </View>
+        {onCopy && (
+          <TouchableOpacity onPress={onCopy} style={s.copyBtn}>
+            <Text style={s.copyBtnIcon}>⧉</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
 function fmtDateTime(iso?: string) {
   if (!iso) return '';
-  return new Date(iso).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
-function fmtDate(iso?: string) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    + ', '
+    + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.BG },
-  header:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16,
-               paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.BORDER },
-  backBtn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  backIcon:  { fontSize: 22, color: C.TEXT },
-  headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.TEXT },
-  errorWrap: { alignItems: 'center', marginTop: 60 },
-  errorIcon: { fontSize: 40, marginBottom: 12 },
-  errorText: { fontSize: 15, color: C.TEXT2 },
 
-  campaignBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.PRIMARY + '12',
-                    borderRadius: 14, padding: 16, marginBottom: 14,
-                    borderWidth: 1, borderColor: C.PRIMARY + '30' },
-  orgLogoCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.PRIMARY + '28',
-                   alignItems: 'center', justifyContent: 'center' },
-  orgLogoText: { fontSize: 20, fontWeight: '700', color: C.PRIMARY },
-  bannerOrgName: { fontSize: 15, fontWeight: '700', color: C.TEXT },
-  bannerCampaign: { fontSize: 13, color: C.TEXT2, marginTop: 3 },
+  // Header
+  header:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8,
+                    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.BORDER,
+                    backgroundColor: C.CARD },
+  headerBtn:      { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerBackIcon: { fontSize: 22, color: C.TEXT },
+  headerShareIcon:{ fontSize: 18, color: C.PRIMARY },
+  headerTitle:    { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.TEXT },
 
-  amountCard: { backgroundColor: C.CARD, borderRadius: 14, padding: 20, marginBottom: 16,
-                alignItems: 'center', borderWidth: 1, borderColor: C.BORDER },
-  amountValue: { fontSize: 32, fontWeight: '800', color: C.TEXT, marginBottom: 10 },
-  statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, marginBottom: 12 },
-  statusBadgeText: { fontSize: 13, fontWeight: '700' },
-  donationId: { fontSize: 14, fontWeight: '700', color: C.PRIMARY, fontFamily: 'monospace' },
-  donationDate: { fontSize: 12, color: C.TEXT2, marginTop: 4 },
+  scroll: { paddingHorizontal: 16, paddingTop: 16 },
 
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: C.TEXT2, marginBottom: 8, marginTop: 4,
-                  textTransform: 'uppercase', letterSpacing: 0.8 },
+  // Error
+  errorWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  errorIcon: { fontSize: 44, marginBottom: 12 },
+  errorText: { fontSize: 15, color: C.TEXT2, textAlign: 'center', marginBottom: 20 },
+  retryBtn:  { backgroundColor: C.PRIMARY, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
+  retryBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
-  // Timeline
-  timeline:  { marginBottom: 20 },
-  timelineRow: { flexDirection: 'row' },
-  timelineLeft: { width: 40, alignItems: 'center' },
-  timelineDot: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.BORDER,
-                 alignItems: 'center', justifyContent: 'center', zIndex: 1 },
-  timelineDotDone:   { backgroundColor: '#16A34A' },
-  timelineDotFailed: { backgroundColor: '#EF4444' },
-  timelineDotIcon:   { fontSize: 15 },
-  timelineLine: { flex: 1, width: 2, backgroundColor: C.BORDER, marginVertical: 2 },
-  timelineLineDone: { backgroundColor: '#16A34A' },
-  timelineContent: { flex: 1, paddingLeft: 10, paddingBottom: 20, justifyContent: 'center' },
-  timelineLabel: { fontSize: 14, color: C.TEXT2 },
-  timelineLabelActive: { color: C.TEXT, fontWeight: '600' },
-  timelineDate: { fontSize: 11, color: C.TEXT2, marginTop: 2 },
+  // Hero card
+  heroCard:     { backgroundColor: C.CARD, borderRadius: 16, padding: 20, alignItems: 'center',
+                  marginBottom: 12, borderWidth: 1, borderColor: C.BORDER },
+  heroAvatar:   { width: 64, height: 64, borderRadius: 32, alignItems: 'center',
+                  justifyContent: 'center', marginBottom: 12 },
+  heroAvatarText: { fontSize: 22, fontWeight: '800', color: '#fff' },
+  heroOrg:      { fontSize: 17, fontWeight: '700', color: C.TEXT, marginBottom: 4, textAlign: 'center' },
+  heroCampaign: { fontSize: 13, color: C.TEXT2, marginBottom: 16, textAlign: 'center' },
+  heroAmount:   { fontSize: 34, fontWeight: '800', color: C.TEXT, marginBottom: 10 },
+  heroPill:     { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20, marginBottom: 10 },
+  heroPillText: { fontSize: 13, fontWeight: '700' },
+  heroDate:     { fontSize: 12, color: C.TEXT2 },
+
+  // Banners
+  warningBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+                   backgroundColor: '#FFF7ED', borderRadius: 12, padding: 14,
+                   marginBottom: 14, borderWidth: 1, borderColor: '#FED7AA' },
+  refundBanner: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
+  failBanner:   { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' },
+  warningIcon:  { fontSize: 20, marginTop: 1 },
+  warningTitle: { fontSize: 13, fontWeight: '700', color: '#C2410C', marginBottom: 3 },
+  warningBody:  { fontSize: 12, color: '#92400E', lineHeight: 17 },
+
+  // Section title
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: C.TEXT, marginBottom: 8, marginTop: 4 },
+
+  // Journey card
+  journeyCard:  { backgroundColor: C.CARD, borderRadius: 14, padding: 16, marginBottom: 16,
+                  borderWidth: 1, borderColor: C.BORDER },
+  stepRow:      { flexDirection: 'row' },
+  stepLeft:     { width: 28, alignItems: 'center' },
+  stepDot:      { width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+                  alignItems: 'center', justifyContent: 'center' },
+  stepCheck:    { fontSize: 11, color: '#fff', fontWeight: '700' },
+  stepInnerDot: { width: 8, height: 8, borderRadius: 4 },
+  stepLine:     { flex: 1, width: 2, marginTop: 3, marginBottom: 0 },
+  stepContent:  { flex: 1, paddingLeft: 10, paddingTop: 1 },
+  stepLabel:    { fontSize: 14, color: C.TEXT2, fontWeight: '400' },
+  stepLabelActive: { color: C.TEXT, fontWeight: '600' },
+  stepSub:      { fontSize: 12, color: C.TEXT2, marginTop: 3, lineHeight: 16 },
 
   // Detail card
-  detailCard: { backgroundColor: C.CARD, borderRadius: 14, paddingHorizontal: 16,
-                paddingVertical: 4, marginBottom: 16, borderWidth: 1, borderColor: C.BORDER },
-  detailRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: C.BORDER },
+  detailCard:  { backgroundColor: C.CARD, borderRadius: 14, paddingHorizontal: 16,
+                 marginBottom: 16, borderWidth: 1, borderColor: C.BORDER },
+  detailRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                 paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.BORDER },
   detailLabel: { fontSize: 13, color: C.TEXT2 },
-  detailValue: { fontSize: 13, color: C.TEXT, textAlign: 'right', maxWidth: '58%' },
-  detailValueMono: { fontFamily: 'monospace', fontSize: 12 },
-  detailSub:  { fontSize: 10, color: C.TEXT2, marginTop: 2 },
+  detailValue: { fontSize: 13, color: C.TEXT, textAlign: 'right', maxWidth: 200 },
+  detailValueMono: { fontFamily: 'monospace', fontSize: 12, letterSpacing: 0.5 },
+  detailValueHighlight: { fontSize: 15, fontWeight: '700', color: C.PRIMARY },
+  detailSub:   { fontSize: 11, color: C.TEXT2, marginTop: 2, textAlign: 'right' },
+  copyBtn:     { width: 28, height: 28, alignItems: 'center', justifyContent: 'center',
+                 backgroundColor: '#F0F2F8', borderRadius: 6 },
+  copyBtnIcon: { fontSize: 14, color: C.PRIMARY },
 
-  netRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12 },
-  netLabel: { fontSize: 14, fontWeight: '700', color: C.TEXT },
-  netValue: { fontSize: 16, fontWeight: '800', color: '#16A34A' },
+  // 80G
+  downloadBtn: { margin: 12, backgroundColor: '#EFF6FF', borderRadius: 10,
+                 paddingVertical: 11, alignItems: 'center',
+                 borderWidth: 1, borderColor: '#BFDBFE' },
+  downloadBtnText: { fontSize: 14, fontWeight: '700', color: '#1D4ED8' },
+  pendingNote: { fontSize: 13, color: C.TEXT2, textAlign: 'center', padding: 16, lineHeight: 20 },
 
-  downloadReceiptBtn: { margin: 12, backgroundColor: '#EFF6FF', borderRadius: 10,
-                        paddingVertical: 11, alignItems: 'center',
-                        borderWidth: 1, borderColor: '#BFDBFE' },
-  downloadReceiptBtnText: { fontSize: 14, fontWeight: '700', color: '#1D4ED8' },
-  receiptPendingText: { fontSize: 13, color: C.TEXT2, textAlign: 'center', padding: 14 },
-
-  refundCard: { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' },
-  refundText: { fontSize: 14, color: '#991B1B', paddingVertical: 10 },
-  refundDate: { fontSize: 12, color: '#B91C1C', paddingBottom: 10 },
+  // Footer
+  footer:      { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, gap: 10,
+                 backgroundColor: C.CARD, borderTopWidth: 1, borderTopColor: C.BORDER },
+  helpBtn:     { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
+                 borderWidth: 1.5, borderColor: C.BORDER },
+  helpBtnText: { fontSize: 15, fontWeight: '600', color: C.TEXT },
+  refreshBtn:  { flex: 1.6, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
+                 backgroundColor: C.PRIMARY },
+  refreshBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });

@@ -27,6 +27,7 @@ import DonationPaymentScreen   from '../screens/donations/DonationPaymentScreen'
 import DonationSuccessScreen   from '../screens/donations/DonationSuccessScreen';
 import MyDonationsScreen       from '../screens/donations/MyDonationsScreen';
 import DonationDetailScreen    from '../screens/donations/DonationDetailScreen';
+import DonorNgoGivingSummaryScreen from '../screens/donations/DonorNgoGivingSummaryScreen';
 import AdminDonorDetailScreen  from '../screens/admin/AdminDonorDetailScreen';
 import AdminDonationDetailScreen from '../screens/admin/AdminDonationDetailScreen';
 import SosTriggerScreen    from '../screens/sos/SosTriggerScreen';
@@ -177,7 +178,8 @@ const AppNavigator = () => (
     <Stack.Screen name="DonationPayment"     component={DonationPaymentScreen}     />
     <Stack.Screen name="DonationSuccess"     component={DonationSuccessScreen}     />
     <Stack.Screen name="MyDonations"         component={MyDonationsScreen}         />
-    <Stack.Screen name="DonationDetail"      component={DonationDetailScreen}      />
+    <Stack.Screen name="DonationDetail"         component={DonationDetailScreen}         />
+    <Stack.Screen name="DonorNgoGivingSummary" component={DonorNgoGivingSummaryScreen}  />
     {/* Donations — admin */}
     <Stack.Screen name="AdminDonorDetail"    component={AdminDonorDetailScreen}    />
     <Stack.Screen name="AdminDonationDetail" component={AdminDonationDetailScreen} />

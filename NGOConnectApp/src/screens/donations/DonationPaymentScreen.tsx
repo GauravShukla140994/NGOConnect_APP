@@ -1,10 +1,12 @@
 /**
  * DonationPaymentScreen
  *
- * Phase 1: Simulated payment — shows "Completing your payment…" animation
- * and a "Simulate Payment" button that calls POST /donation/confirm with SUCCESS.
+ * Phase 1: Shows "Completing your payment…" animation while Razorpay checkout
+ * processes in an external window. A small dev-only simulate link is shown at
+ * the bottom for testing without the real SDK.
  *
- * Phase 2: Replace with Razorpay React Native SDK checkout + real confirm call.
+ * Phase 2: Replace with Razorpay React Native SDK — the loading state here
+ * is what the user sees while the SDK WebView is opening.
  *
  * Route params: { transactionId, donationId, amount, orgName, campaignName, payMethod }
  */
@@ -32,167 +34,124 @@ const DonationPaymentScreen = () => {
   const nav   = useNavigation<any>();
   const route = useRoute<any>();
   const _p = (route.params ?? {}) as RouteParams;
-  const transactionId = Number(_p.transactionId);   // RN serialises params as strings
+
+  const transactionId = Number(_p.transactionId);
   const amount        = Number(_p.amount);
   const { donationId, orgName, campaignName, payMethod } = _p;
 
   const [processing, setProcessing] = useState(false);
-  const dotAnim = useRef(new Animated.Value(0)).current;
 
-  // Guard: if transactionId is missing/invalid (e.g. stale React Navigation state
-  // restored after a Metro reload), go back so the user can retry from DonateScreen.
+  // Guard: invalid session
   useEffect(() => {
-    console.log('[PaymentScreen] params:', JSON.stringify(route.params));
-    console.log('[PaymentScreen] transactionId:', transactionId, '| type:', typeof transactionId);
     if (!transactionId || isNaN(transactionId) || transactionId <= 0) {
       Alert.alert(
         'Session expired',
         'Your payment session is no longer valid. Please start the donation again.',
-        [{ text: 'OK', onPress: () => nav.goBack() }]
+        [{ text: 'OK', onPress: () => nav.goBack() }],
       );
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Animate the dots
+  // ── Animated pulsing dots (3 sequential dots) ─────────────────────────────
+  const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
-      Animated.sequence([
-        Animated.timing(dotAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.timing(dotAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
-      ])
+      Animated.timing(anim, { toValue: 3, duration: 1200, useNativeDriver: false }),
     ).start();
-  }, [dotAnim]);
+  }, []);
 
-  const dot1Opacity = dotAnim.interpolate({ inputRange: [0, 0.33, 1], outputRange: [0.3, 1, 0.3] });
-  const dot2Opacity = dotAnim.interpolate({ inputRange: [0, 0.5,  1], outputRange: [0.3, 1, 0.3] });
-  const dot3Opacity = dotAnim.interpolate({ inputRange: [0, 0.66, 1], outputRange: [0.3, 1, 0.3] });
+  const dot = (threshold: number) => ({
+    opacity: anim.interpolate({
+      inputRange: [threshold - 0.5, threshold, threshold + 0.5],
+      outputRange: [0.3, 1, 0.3],
+      extrapolate: 'clamp',
+    }),
+    transform: [{
+      scale: anim.interpolate({
+        inputRange: [threshold - 0.5, threshold, threshold + 0.5],
+        outputRange: [0.85, 1.2, 0.85],
+        extrapolate: 'clamp',
+      }),
+    }],
+  });
 
-  const handleSimulate = async () => {
+  // ── Simulate (dev only) ───────────────────────────────────────────────────
+  const handleSimulate = async (statusCode: 'SUCCESS' | 'FAILED') => {
     setProcessing(true);
     try {
-      const res = await donationApi.confirmPayment({
-        transactionId,
-        statusCode: 'SUCCESS',
-      });
-      if (res.data?.isSuccess === 1) {
+      const res = await donationApi.confirmPayment({ transactionId, statusCode });
+      if (statusCode === 'SUCCESS' && res.data?.isSuccess === 1) {
         nav.replace('DonationSuccess', {
-          donationId,
-          amount,
-          orgName,
-          campaignName,
-          payMethod,
+          donationId, amount, orgName, campaignName, payMethod,
         });
+      } else if (statusCode === 'FAILED') {
+        nav.goBack();
       } else {
-        Alert.alert('Payment failed', res.data?.message ?? 'Payment could not be confirmed.');
+        Alert.alert('Payment failed', res.data?.message ?? 'Could not confirm.');
       }
     } catch (e: any) {
-      const msg = e?.response?.data?.message
-               ?? e?.response?.data?.Message
-               ?? e?.message
-               ?? 'Something went wrong. Please try again.';
-      Alert.alert('Payment Error', msg);
+      Alert.alert('Error', e?.response?.data?.message ?? 'Something went wrong.');
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleFail = async () => {
-    try {
-      await donationApi.confirmPayment({ transactionId, statusCode: 'FAILED' });
-    } catch (_) {}
-    nav.goBack();
+  const showDevMenu = () => {
+    Alert.alert('Dev: Simulate payment', undefined, [
+      { text: '✅ Simulate Success', onPress: () => handleSimulate('SUCCESS') },
+      { text: '❌ Simulate Failure', onPress: () => handleSimulate('FAILED') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   return (
     <SafeAreaView style={s.container}>
       <View style={s.inner}>
-        {/* Animated icon */}
-        <View style={s.iconWrap}>
-          <Text style={s.icon}>💳</Text>
-        </View>
-
-        <Text style={s.title}>Completing your payment…</Text>
 
         {/* Animated dots */}
         <View style={s.dotsRow}>
-          {[dot1Opacity, dot2Opacity, dot3Opacity].map((op, i) => (
-            <Animated.View key={i} style={[s.dot, { opacity: op }]} />
+          {[0.5, 1.5, 2.5].map((t, i) => (
+            <Animated.View key={i} style={[s.dot, dot(t)]} />
           ))}
         </View>
 
-        {/* Payment summary */}
-        <View style={s.summaryCard}>
-          <SummaryRow label="To"        value={orgName}      />
-          <SummaryRow label="Campaign"  value={campaignName} />
-          <SummaryRow label="Amount"    value={`₹${amount.toLocaleString('en-IN')}`} bold />
-          <SummaryRow label="Pay via"   value={payMethod}    />
-          <SummaryRow label="Ref"       value={donationId}   />
-        </View>
+        {/* Title */}
+        <Text style={s.title}>Completing your payment…</Text>
 
-        {/* Phase 1 dev note */}
-        <View style={s.devNote}>
-          <Text style={s.devNoteText}>
-            🔧 Razorpay integration coming soon. Tap below to simulate a successful payment.
-          </Text>
-        </View>
+        {/* Subtitle */}
+        <Text style={s.subtitle}>
+          Finish paying ₹{amount.toLocaleString('en-IN')} in the secure checkout window.
+          Don't close the app or press back.
+        </Text>
 
-        <TouchableOpacity
-          style={[s.simulateBtn, processing && s.btnDisabled]}
-          onPress={handleSimulate}
-          disabled={processing}>
-          {processing
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={s.simulateBtnText}>✅ Simulate Successful Payment</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[s.cancelBtn, processing && s.btnDisabled]}
-          onPress={handleFail}
-          disabled={processing}>
-          <Text style={s.cancelBtnText}>❌ Cancel / Simulate Failure</Text>
-        </TouchableOpacity>
       </View>
+
+      {/* Dev-only simulate link (hidden at bottom) */}
+      {!processing ? (
+        <TouchableOpacity style={s.devLink} onPress={showDevMenu}>
+          <Text style={s.devLinkText}>🔧 dev</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={s.devLink}>
+          <ActivityIndicator size="small" color={C.TEXT2} />
+        </View>
+      )}
     </SafeAreaView>
   );
 };
 
-const SummaryRow = ({ label, value, bold }: { label: string; value: string; bold?: boolean }) => (
-  <View style={s.sumRow}>
-    <Text style={s.sumLabel}>{label}</Text>
-    <Text style={[s.sumValue, bold && s.sumBold]}>{value}</Text>
-  </View>
-);
-
 const s = StyleSheet.create({
-  container:   { flex: 1, backgroundColor: C.BG },
-  inner:       { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  iconWrap:    { width: 80, height: 80, borderRadius: 40, backgroundColor: '#EFF6FF',
-                 alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  icon:        { fontSize: 38 },
-  title:       { fontSize: 20, fontWeight: '700', color: C.TEXT, marginBottom: 16 },
-  dotsRow:     { flexDirection: 'row', gap: 8, marginBottom: 28 },
-  dot:         { width: 8, height: 8, borderRadius: 4, backgroundColor: C.PRIMARY },
+  container: { flex: 1, backgroundColor: C.BG },
+  inner:     { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
 
-  summaryCard: { width: '100%', backgroundColor: C.CARD, borderRadius: 14, padding: 16,
-                 borderWidth: 1, borderColor: C.BORDER, marginBottom: 20 },
-  sumRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
-  sumLabel:    { fontSize: 13, color: C.TEXT2 },
-  sumValue:    { fontSize: 13, color: C.TEXT, maxWidth: '60%', textAlign: 'right' },
-  sumBold:     { fontWeight: '700', fontSize: 16, color: C.PRIMARY },
+  dotsRow: { flexDirection: 'row', gap: 10, marginBottom: 32 },
+  dot:     { width: 12, height: 12, borderRadius: 6, backgroundColor: C.PRIMARY },
 
-  devNote:     { backgroundColor: '#FFF7ED', borderRadius: 10, padding: 12,
-                 borderWidth: 1, borderColor: '#FED7AA', marginBottom: 16, width: '100%' },
-  devNoteText: { fontSize: 12, color: '#C2410C', textAlign: 'center' },
+  title:    { fontSize: 20, fontWeight: '700', color: C.TEXT, textAlign: 'center', marginBottom: 12 },
+  subtitle: { fontSize: 14, color: C.TEXT2, textAlign: 'center', lineHeight: 22 },
 
-  simulateBtn: { width: '100%', backgroundColor: '#16A34A', borderRadius: 12,
-                 paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
-  simulateBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  cancelBtn:   { width: '100%', backgroundColor: C.CARD, borderRadius: 12,
-                 paddingVertical: 14, alignItems: 'center',
-                 borderWidth: 1, borderColor: C.BORDER },
-  cancelBtnText: { fontSize: 14, color: C.TEXT2 },
-  btnDisabled: { opacity: 0.5 },
+  devLink: { paddingBottom: 24, paddingTop: 8, alignItems: 'center' },
+  devLinkText: { fontSize: 11, color: C.TEXT2, opacity: 0.5 },
 });
 
 export default DonationPaymentScreen;
