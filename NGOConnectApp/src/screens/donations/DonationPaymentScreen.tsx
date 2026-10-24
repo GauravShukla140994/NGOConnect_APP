@@ -31,11 +31,28 @@ interface RouteParams {
 const DonationPaymentScreen = () => {
   const nav   = useNavigation<any>();
   const route = useRoute<any>();
-  const { transactionId, donationId, amount, orgName, campaignName, payMethod } =
-    (route.params ?? {}) as RouteParams;
+  const _p = (route.params ?? {}) as RouteParams;
+  const transactionId = Number(_p.transactionId);   // RN serialises params as strings
+  const amount        = Number(_p.amount);
+  const { donationId, orgName, campaignName, payMethod } = _p;
 
   const [processing, setProcessing] = useState(false);
   const dotAnim = useRef(new Animated.Value(0)).current;
+
+  // Guard: if transactionId is missing/invalid (e.g. stale React Navigation state
+  // restored after a Metro reload), go back so the user can retry from DonateScreen.
+  useEffect(() => {
+    console.log('[PaymentScreen] params:', JSON.stringify(route.params));
+    console.log('[PaymentScreen] transactionId:', transactionId, '| type:', typeof transactionId);
+    if (!transactionId || isNaN(transactionId) || transactionId <= 0) {
+      Alert.alert(
+        'Session expired',
+        'Your payment session is no longer valid. Please start the donation again.',
+        [{ text: 'OK', onPress: () => nav.goBack() }]
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Animate the dots
   useEffect(() => {
@@ -70,7 +87,11 @@ const DonationPaymentScreen = () => {
         Alert.alert('Payment failed', res.data?.message ?? 'Payment could not be confirmed.');
       }
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.message ?? 'Something went wrong. Please try again.');
+      const msg = e?.response?.data?.message
+               ?? e?.response?.data?.Message
+               ?? e?.message
+               ?? 'Something went wrong. Please try again.';
+      Alert.alert('Payment Error', msg);
     } finally {
       setProcessing(false);
     }

@@ -243,6 +243,7 @@ const DonateScreen = () => {
 
       if (res.data?.isSuccess === 1) {
         const { transactionId, donationId } = res.data.data!;
+        console.log('[DonateScreen] initiate OK — transactionId:', transactionId, '| donationId:', donationId);
         nav.navigate('DonationPayment', {
           transactionId,
           donationId,

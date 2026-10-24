@@ -23,8 +23,9 @@ interface RouteParams {
 const DonationSuccessScreen = () => {
   const nav   = useNavigation<any>();
   const route = useRoute<any>();
-  const { donationId, amount, orgName, campaignName, payMethod } =
-    (route.params ?? {}) as RouteParams;
+  const _p = (route.params ?? {}) as RouteParams;
+  const amount = Number(_p.amount);   // RN serialises params as strings
+  const { donationId, orgName, campaignName, payMethod } = _p;
 
   // Entrance animation
   const scaleAnim = useRef(new Animated.Value(0)).current;
