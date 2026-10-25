@@ -12,9 +12,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import DonateIcon from '../../components/common/DonateIcon';
-import OrgAvatar  from '../../components/common/OrgAvatar';
+import OrgAvatar    from '../../components/common/OrgAvatar';
+import DownloadIcon  from '../../components/common/DownloadIcon';
 import { donationApi } from '../../api/donation.api';
 import { orgApi }      from '../../api/org.api';
+import DateTimePicker  from '@react-native-community/datetimepicker';
 
 const C = AppConfig.COLORS;
 
@@ -1237,97 +1239,123 @@ function RecurringTab() {
           ? <ActivityIndicator color={C.PRIMARY} style={{ marginTop: 40 }} size="large" />
           : items.length === 0
           ? <EmptyState icon="🔄" text="No recurring donations yet" />
-          : items.map(item => {
-              const isPaused    = item.statusCode === 'PAUSED';
-              const isCancelled = item.statusCode === 'CANCELLED';
-              const nextDebit   = isPaused
-                ? 'None — paused'
-                : item.nextChargeDate
-                ? fmtDate(item.nextChargeDate)
-                : '—';
-              const payMethod  = item.payMethodSummary ?? item.paymentMethod ?? '';
-              const setupNote  = item.startDate
-                ? `Set up ${fmtDate(item.startDate)}${(item.successCount ?? 0) === 0 ? '  ·  first debit pending' : ''}`
-                : '';
+          : (() => {
+              const activeItems2   = items.filter(i => i.statusCode === 'ACTIVE');
+              const pausedItems    = items.filter(i => i.statusCode === 'PAUSED');
+              const cancelledItems = items.filter(i => i.statusCode === 'CANCELLED');
+
+              const renderCard = (item: any) => {
+                const isPaused    = item.statusCode === 'PAUSED';
+                const isCancelled = item.statusCode === 'CANCELLED';
+                const nextDebit   = isPaused
+                  ? 'None — paused'
+                  : item.nextChargeDate
+                  ? fmtDate(item.nextChargeDate)
+                  : '—';
+                const payMethod  = item.payMethodSummary ?? item.paymentMethod ?? '';
+                const setupNote  = item.startDate
+                  ? `Set up ${fmtDate(item.startDate)}${(item.successCount ?? 0) === 0 ? '  ·  first debit pending' : ''}`
+                  : '';
+
+                return (
+                  <View key={item.recurringDonId} style={[
+                    s.recurCard,
+                    isCancelled && { opacity: 0.55 },
+                  ]}>
+                    {/* Header row */}
+                    <View style={s.recurCardHeader}>
+                      <OrgAvatar orgId={item.orgId ?? 0} orgName={item.orgName ?? ''}
+                        logoUrl={item.orgLogoUrl} size={40} radius={10} />
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={s.recurCardOrg} numberOfLines={1}>{item.orgName}</Text>
+                        <Text style={s.recurCardCampaign} numberOfLines={1}>
+                          {item.campaignName ?? 'General Donation'}
+                        </Text>
+                      </View>
+                      <StatusPill code={item.statusCode} />
+                    </View>
+
+                    {/* Amount + Next debit 2-col */}
+                    <View style={s.recurInfoRow}>
+                      <View style={s.recurInfoCol}>
+                        <Text style={s.recurCardLabel}>Amount</Text>
+                        <Text style={s.recurCardValue}>
+                          ₹{Number(item.amount).toLocaleString('en-IN')} / {item.frequencyLabel ?? item.frequencyCode ?? 'month'}
+                        </Text>
+                      </View>
+                      <View style={[s.recurInfoCol, { alignItems: 'flex-end' }]}>
+                        <Text style={s.recurCardLabel}>Next debit</Text>
+                        <Text style={[s.recurCardValue, isPaused && { color: C.TEXT2 }]}>{nextDebit}</Text>
+                      </View>
+                    </View>
+
+                    {/* Payment method */}
+                    {payMethod !== '' && (
+                      <Text style={s.recurPayMethod}>{payMethod}</Text>
+                    )}
+
+                    {/* Setup note */}
+                    {setupNote !== '' && (
+                      <Text style={s.recurSetupNote}>{setupNote}</Text>
+                    )}
+
+                    {/* Divider */}
+                    <View style={s.recurDivider} />
+
+                    {/* Actions */}
+                    {!isCancelled && (
+                      <View style={s.recurCardActions}>
+                        {isPaused
+                          ? <TouchableOpacity style={s.recurActionBtn}
+                              onPress={() => handleResume(item.recurringDonId)}>
+                              <Text style={s.recurActionBtnText}>Resume</Text>
+                            </TouchableOpacity>
+                          : <TouchableOpacity style={s.recurActionBtn}
+                              onPress={() => handlePause(item.recurringDonId)}>
+                              <Text style={s.recurActionBtnText}>Pause</Text>
+                            </TouchableOpacity>
+                        }
+                        <TouchableOpacity style={s.recurEditBtn}
+                          onPress={() => setEditPlan({
+                            recurringDonId: item.recurringDonId,
+                            orgName:        item.orgName ?? '',
+                            campaignName:   item.campaignName ?? '',
+                            amount:         Number(item.amount) || 0,
+                            frequencyCode:  item.frequencyCode ?? 'MONTHLY',
+                            payMethodCode:  item.payMethodCode ?? 'UPI_AUTOPAY',
+                            nextChargeDate: item.nextChargeDate,
+                          })}>
+                          <Text style={s.recurEditBtnText}>Edit plan</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    {isCancelled && (
+                      <Text style={s.cancelledTag}>This plan has been cancelled</Text>
+                    )}
+                  </View>
+                );
+              };
 
               return (
-                <View key={item.recurringDonId} style={[
-                  s.recurCard,
-                  isCancelled && { opacity: 0.65 },
-                ]}>
-                  {/* Header row */}
-                  <View style={s.recurCardHeader}>
-                    <OrgAvatar orgId={item.orgId ?? 0} orgName={item.orgName ?? ''}
-                      logoUrl={item.orgLogoUrl} size={40} radius={10} />
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={s.recurCardOrg} numberOfLines={1}>{item.orgName}</Text>
-                      <Text style={s.recurCardCampaign} numberOfLines={1}>
-                        {item.campaignName ?? 'General Donation'}
-                      </Text>
-                    </View>
-                    <StatusPill code={item.statusCode} />
-                  </View>
+                <>
+                  {activeItems2.map(renderCard)}
 
-                  {/* Amount + Next debit 2-col */}
-                  <View style={s.recurInfoRow}>
-                    <View style={s.recurInfoCol}>
-                      <Text style={s.recurCardLabel}>Amount</Text>
-                      <Text style={s.recurCardValue}>
-                        ₹{Number(item.amount).toLocaleString('en-IN')} / {item.frequencyLabel ?? item.frequencyCode ?? 'month'}
-                      </Text>
-                    </View>
-                    <View style={[s.recurInfoCol, { alignItems: 'flex-end' }]}>
-                      <Text style={s.recurCardLabel}>Next debit</Text>
-                      <Text style={[s.recurCardValue, isPaused && { color: C.TEXT2 }]}>{nextDebit}</Text>
-                    </View>
-                  </View>
-
-                  {/* Payment method */}
-                  {payMethod !== '' && (
-                    <Text style={s.recurPayMethod}>{payMethod}</Text>
+                  {pausedItems.length > 0 && (
+                    <>
+                      <Text style={s.recurSectionLabel}>PAUSED</Text>
+                      {pausedItems.map(renderCard)}
+                    </>
                   )}
 
-                  {/* Setup note */}
-                  {setupNote !== '' && (
-                    <Text style={s.recurSetupNote}>{setupNote}</Text>
+                  {cancelledItems.length > 0 && (
+                    <>
+                      <Text style={s.recurSectionLabel}>CANCELLED</Text>
+                      {cancelledItems.map(renderCard)}
+                    </>
                   )}
-
-                  {/* Divider */}
-                  <View style={s.recurDivider} />
-
-                  {/* Actions */}
-                  {!isCancelled && (
-                    <View style={s.recurCardActions}>
-                      {isPaused
-                        ? <TouchableOpacity style={s.recurActionBtn}
-                            onPress={() => handleResume(item.recurringDonId)}>
-                            <Text style={s.recurActionBtnText}>Resume</Text>
-                          </TouchableOpacity>
-                        : <TouchableOpacity style={s.recurActionBtn}
-                            onPress={() => handlePause(item.recurringDonId)}>
-                            <Text style={s.recurActionBtnText}>Pause</Text>
-                          </TouchableOpacity>
-                      }
-                      <TouchableOpacity style={s.recurEditBtn}
-                        onPress={() => setEditPlan({
-                          recurringDonId: item.recurringDonId,
-                          orgName:        item.orgName ?? '',
-                          campaignName:   item.campaignName ?? '',
-                          amount:         Number(item.amount) || 0,
-                          frequencyCode:  item.frequencyCode ?? 'MONTHLY',
-                          payMethodCode:  item.payMethodCode ?? 'UPI_AUTOPAY',
-                          nextChargeDate: item.nextChargeDate,
-                        })}>
-                        <Text style={s.recurEditBtnText}>Edit plan</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                  {isCancelled && (
-                    <Text style={s.cancelledTag}>This plan has been cancelled</Text>
-                  )}
-                </View>
+                </>
               );
-            })
+            })()
         }
       </ScrollView>
 
@@ -1345,23 +1373,30 @@ function RecurringTab() {
 // ─────────────────────────────────────────────────────────────────────────────
 // RECEIPTS TAB
 // ─────────────────────────────────────────────────────────────────────────────
+const fmtShortDate = (d: Date) =>
+  `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })} ${d.getFullYear()}`;
+
 function ReceiptsTab() {
-  const [items, setItems]     = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [allItems, setAllItems]     = useState<any[]>([]);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [page, setPage]       = useState(1);
-  const [total, setTotal]     = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // filters (client-side)
+  const [search, setSearch]           = useState('');
+  const [selectedOrg, setSelectedOrg] = useState<number | null>(null);
+  const [fromDate, setFromDate]       = useState<Date | null>(null);
+  const [toDate, setToDate]           = useState<Date | null>(null);
+  const [pickerFor, setPickerFor]     = useState<'from' | 'to' | null>(null);
 
   const load = async (p = 1, refresh = false) => {
     if (p === 1) refresh ? setRefreshing(true) : setLoading(true);
     else setLoadingMore(true);
     try {
-      const res = await donationApi.getReceiptList({ pageNumber: p, pageSize: 15 });
+      const res = await donationApi.getReceiptList({ pageNumber: p, pageSize: 50 });
       if (res.data?.isSuccess === 1) {
         const d = res.data.data;
-        setTotal(d?.totalCount ?? 0);
-        setItems(p === 1 ? (d?.items ?? []) : prev => [...prev, ...(d?.items ?? [])]);
+        setAllItems(p === 1 ? (d?.items ?? []) : (prev: any[]) => [...prev, ...(d?.items ?? [])]);
       }
     } catch (_) {}
     finally { setLoading(false); setRefreshing(false); setLoadingMore(false); }
@@ -1369,45 +1404,169 @@ function ReceiptsTab() {
 
   useEffect(() => { load(); }, []);
 
+  // Unique orgs for chip row
+  const orgChips: { orgId: number; orgName: string }[] = [];
+  allItems.forEach(it => {
+    if (it.orgId && !orgChips.find(o => o.orgId === it.orgId))
+      orgChips.push({ orgId: it.orgId, orgName: it.orgName ?? '' });
+  });
+
+  const filtered = allItems.filter(it => {
+    if (selectedOrg !== null && it.orgId !== selectedOrg) return false;
+    if (fromDate || toDate) {
+      const d = it.issuedAt ? new Date(it.issuedAt) : null;
+      if (!d) return false;
+      if (fromDate) { const f = new Date(fromDate); f.setHours(0,0,0,0); if (d < f) return false; }
+      if (toDate)   { const t = new Date(toDate);   t.setHours(23,59,59,999); if (d > t) return false; }
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      if (!(it.receiptNumber ?? '').toLowerCase().includes(q) &&
+          !(it.orgName ?? '').toLowerCase().includes(q) &&
+          !String(it.donationAmount ?? '').includes(q)) return false;
+    }
+    return true;
+  });
+
+  const hasDateFilter = fromDate || toDate;
+
   return (
-    <FlatList
-      data={items}
-      keyExtractor={(item, i) => item.receiptId ?? String(i)}
-      onRefresh={() => load(1, true)}
-      refreshing={refreshing}
-      onEndReached={() => {
-        if (!loadingMore && items.length < total) {
-          const next = page + 1; setPage(next); load(next);
-        }
-      }}
-      onEndReachedThreshold={0.3}
-      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-      ListEmptyComponent={loading
-        ? <ActivityIndicator color={C.PRIMARY} style={{ marginTop: 40 }} size="large" />
-        : <EmptyState icon="🧾" text="No receipts yet — make a donation with your PAN number to get an 80G receipt" />
-      }
-      ListFooterComponent={loadingMore ? <ActivityIndicator color={C.PRIMARY} style={{ marginTop: 12 }} /> : null}
-      renderItem={({ item }) => (
-        <View style={s.receiptCard}>
-          <OrgAvatar orgId={item.orgId ?? 0} orgName={item.orgName ?? ''} logoUrl={item.orgLogoUrl}
-            size={42} radius={21} />
-          <View style={{ flex: 1 }}>
-            <Text style={s.receiptNo}>{item.receiptNumber}</Text>
-            <Text style={s.receiptOrg}>{item.orgName}</Text>
-            <Text style={s.receiptFY}>FY {item.fiscalYear}  ·  {fmtDate(item.issuedAt)}</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={s.receiptAmount}>₹{Number(item.donationAmount).toLocaleString('en-IN')}</Text>
-            {item.pdfUrl
-              ? <TouchableOpacity style={s.downloadBtn}>
-                  <Text style={s.downloadBtnText}>📥 Download</Text>
-                </TouchableOpacity>
-              : <Text style={s.pendingReceiptText}>Generating…</Text>
+    <View style={{ flex: 1 }}>
+      {/* Native date picker (shown when pickerFor is set) */}
+      {pickerFor !== null && (
+        <DateTimePicker
+          value={pickerFor === 'from' ? (fromDate ?? new Date()) : (toDate ?? new Date())}
+          mode="date"
+          display="default"
+          maximumDate={new Date()}
+          onChange={(_, date) => {
+            if (date) {
+              if (pickerFor === 'from') setFromDate(date);
+              else setToDate(date);
             }
-          </View>
+            setPickerFor(null);
+          }}
+        />
+      )}
+
+      {/* ── Search ─────────────────────────────────────────────────────── */}
+      <View style={s.rctSearchRow}>
+        <Text style={s.rctSearchIcon}>🔍</Text>
+        <TextInput
+          style={s.rctSearchInput}
+          placeholder="Search receipt no., Org or amount"
+          placeholderTextColor={C.TEXT2}
+          value={search}
+          onChangeText={setSearch}
+        />
+        {search !== '' && (
+          <TouchableOpacity onPress={() => setSearch('')} style={{ paddingRight: 12 }}>
+            <Text style={{ color: C.TEXT2, fontSize: 16 }}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── Date range row ─────────────────────────────────────────────── */}
+      <View style={s.rctDateRow}>
+        <Text style={s.rctDateIcon}>📅</Text>
+        <TouchableOpacity style={s.rctDateField} onPress={() => setPickerFor('from')}>
+          <Text style={[s.rctDateFieldLabel, fromDate && { color: C.TEXT }]}>
+            {fromDate ? fmtShortDate(fromDate) : 'From date'}
+          </Text>
+        </TouchableOpacity>
+        <Text style={s.rctDateSep}>–</Text>
+        <TouchableOpacity style={s.rctDateField} onPress={() => setPickerFor('to')}>
+          <Text style={[s.rctDateFieldLabel, toDate && { color: C.TEXT }]}>
+            {toDate ? fmtShortDate(toDate) : 'To date'}
+          </Text>
+        </TouchableOpacity>
+        {hasDateFilter && (
+          <TouchableOpacity onPress={() => { setFromDate(null); setToDate(null); }}
+            style={{ paddingLeft: 8 }}>
+            <Text style={{ fontSize: 13, color: C.PRIMARY, fontWeight: '600' }}>Clear</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── NGO Chips ──────────────────────────────────────────────────── */}
+      {orgChips.length > 0 && (
+        <View style={{ height: 44 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.rctChipRow}>
+            <TouchableOpacity
+              style={[s.rctChip, selectedOrg === null && s.rctChipActive]}
+              onPress={() => setSelectedOrg(null)}>
+              <Text style={[s.rctChipText, selectedOrg === null && s.rctChipTextActive]}>All Orgs</Text>
+            </TouchableOpacity>
+            {orgChips.map(o => (
+              <TouchableOpacity key={o.orgId}
+                style={[s.rctChip, selectedOrg === o.orgId && s.rctChipActive]}
+                onPress={() => setSelectedOrg(selectedOrg === o.orgId ? null : o.orgId)}>
+                <Text style={[s.rctChipText, selectedOrg === o.orgId && s.rctChipTextActive]}
+                  numberOfLines={1}>
+                  {o.orgName}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
       )}
-    />
+
+      {/* ── List ───────────────────────────────────────────────────────── */}
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(1, true)} tintColor={C.PRIMARY} />}>
+
+        {loading ? (
+          <ActivityIndicator color={C.PRIMARY} style={{ marginTop: 40 }} size="large" />
+        ) : filtered.length === 0 ? (
+          <EmptyState icon="🧾" text={allItems.length === 0
+            ? "No receipts yet — make a donation with your PAN number to get an 80G receipt"
+            : "No receipts match your filters"} />
+        ) : (
+          <>
+            {/* Section label */}
+            <Text style={s.rctSectionLabel}>
+              INDIVIDUAL RECEIPTS · {filtered.length}
+            </Text>
+
+            {/* Cards container */}
+            <View style={s.rctCardGroup}>
+              {filtered.map((item, idx) => (
+                <View key={item.receiptId ?? idx}>
+                  {idx > 0 && <View style={s.rctDivider} />}
+                  <View style={s.rctCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.rctReceiptNo}>{item.receiptNumber}</Text>
+                      <Text style={s.rctReceiptMeta} numberOfLines={1}>
+                        {item.orgName}  ·  ₹{Number(item.donationAmount).toLocaleString('en-IN')}  ·  {fmtDate(item.issuedAt)}
+                      </Text>
+                    </View>
+                    {item.pdfUrl
+                      ? <TouchableOpacity style={s.rctDownloadBtn} activeOpacity={0.75}>
+                          <DownloadIcon size={38} />
+                        </TouchableOpacity>
+                      : <View style={s.rctPendingBadge}>
+                          <Text style={s.rctPendingText}>…</Text>
+                        </View>
+                    }
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* Footer note */}
+        {!loading && (
+          <Text style={s.rctFooterNote}>
+            Receipts for processed donations appear once the payment is confirmed. Failed payments don't generate a receipt.
+          </Text>
+        )}
+
+        {loadingMore && <ActivityIndicator color={C.PRIMARY} style={{ marginTop: 12 }} />}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -1727,6 +1886,8 @@ const s = StyleSheet.create({
                    alignItems: 'center' },
   recurEditBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   cancelledTag: { fontSize: 12, color: C.TEXT2, fontStyle: 'italic', paddingTop: 4, textAlign: 'center' },
+  recurSectionLabel: { fontSize: 11, fontWeight: '700', color: C.TEXT2, letterSpacing: 0.8,
+    marginTop: 20, marginBottom: 8 },
 
   // ── Recurring — floating CTA ───────────────────────────────────────────────
   recurCtaBar: { position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -1778,17 +1939,41 @@ const s = StyleSheet.create({
   editRecurCancelPlan: { fontSize: 14, fontWeight: '600', color: '#B3261E', paddingVertical: 4 },
 
   // ── Receipts ───────────────────────────────────────────────────────────────
-  receiptCard: { flexDirection: 'row', backgroundColor: C.CARD, borderRadius: 12,
-                 padding: 14, marginBottom: 10, borderWidth: 1, borderColor: C.BORDER,
-                 alignItems: 'center' },
-  receiptNo:  { fontSize: 13, fontWeight: '700', color: C.TEXT, fontFamily: 'monospace' },
-  receiptOrg: { fontSize: 12, color: C.TEXT2, marginTop: 2 },
-  receiptFY:  { fontSize: 11, color: C.TEXT2, marginTop: 4 },
-  receiptAmount: { fontSize: 15, fontWeight: '700', color: C.PRIMARY, marginBottom: 8 },
-  downloadBtn: { backgroundColor: '#EFF6FF', borderRadius: 7, paddingHorizontal: 10,
-                 paddingVertical: 5, borderWidth: 1, borderColor: '#BFDBFE' },
-  downloadBtnText: { fontSize: 12, color: '#1D4ED8', fontWeight: '600' },
-  pendingReceiptText: { fontSize: 11, color: C.TEXT2, fontStyle: 'italic' },
+  rctSearchRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: C.CARD,
+                    borderRadius: 12, marginHorizontal: 16, marginTop: 14, marginBottom: 10,
+                    paddingLeft: 14, borderWidth: 1, borderColor: C.BORDER },
+  rctSearchIcon:  { fontSize: 15, marginRight: 8 },
+  rctSearchInput: { flex: 1, height: 44, fontSize: 14, color: C.TEXT },
+  rctDateRow:       { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16,
+                      marginBottom: 10, paddingVertical: 8, borderBottomWidth: 1, borderColor: C.BORDER },
+  rctDateIcon:      { fontSize: 14, marginRight: 8 },
+  rctDateField:     { flex: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+                      backgroundColor: C.CARD, borderWidth: 1, borderColor: C.BORDER, marginHorizontal: 4 },
+  rctDateFieldLabel:{ fontSize: 13, color: C.TEXT2 },
+  rctDateSep:       { fontSize: 14, color: C.TEXT2, marginHorizontal: 2 },
+  rctChipRow:     { paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center' },
+  rctChip:        { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+                    backgroundColor: C.CARD, borderWidth: 1, borderColor: C.BORDER,
+                    marginRight: 8 },
+  rctChipActive:  { backgroundColor: C.PRIMARY, borderColor: C.PRIMARY },
+  rctChipText:    { fontSize: 13, fontWeight: '600', color: C.TEXT },
+  rctChipTextActive: { color: '#FFF' },
+  rctSectionLabel:{ fontSize: 11, fontWeight: '700', color: C.TEXT, letterSpacing: 0.5,
+                    marginBottom: 10, marginTop: 4 },
+  rctCardGroup:   { backgroundColor: C.CARD, borderRadius: 14, borderWidth: 1,
+                    borderColor: C.BORDER, overflow: 'hidden', marginBottom: 16 },
+  rctCard:        { flexDirection: 'row', alignItems: 'center',
+                    paddingHorizontal: 16, paddingVertical: 14 },
+  rctDivider:     { height: 1, backgroundColor: C.BORDER, marginHorizontal: 16 },
+  rctReceiptNo:   { fontSize: 13, fontWeight: '700', color: C.TEXT, letterSpacing: 0.3 },
+  rctReceiptMeta: { fontSize: 12, color: C.TEXT2, marginTop: 3 },
+  rctDownloadBtn: { marginLeft: 12 },
+  rctPendingBadge:{ width: 36, height: 36, borderRadius: 8, borderWidth: 1,
+                    borderColor: C.BORDER, alignItems: 'center', justifyContent: 'center',
+                    marginLeft: 12 },
+  rctPendingText: { fontSize: 12, color: C.TEXT2 },
+  rctFooterNote:  { fontSize: 12, color: C.TEXT2, lineHeight: 18, marginTop: 8,
+                    fontStyle: 'italic' },
 
   // ── NGOs ───────────────────────────────────────────────────────────────────
   ngoCard:    { backgroundColor: C.CARD, borderRadius: 14, padding: 16, marginBottom: 12,

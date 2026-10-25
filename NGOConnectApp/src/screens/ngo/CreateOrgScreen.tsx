@@ -25,6 +25,8 @@ import DocumentPicker, { types as DocTypes } from 'react-native-document-picker'
 import { uploadFile } from '../../api/upload.api';
 import { Image } from 'react-native';
 import { orgApi } from '../../api/org.api';
+import { unclaimedApi } from '../../api/unclaimed.api';
+import type { UnclaimedMatch } from '../../types/api.types';
 import { lookupApi } from '../../api/lookup.api';
 import { COUNTRIES, DEFAULT_COUNTRY } from '../../constants/countries';
 import type { LookupValue } from '../../types/api.types';
@@ -325,6 +327,9 @@ export default function CreateOrgScreen() {
   // Resubmit mode — set when navigating from RejectedOrgCard
   const isResubmit    = route.params?.mode === 'resubmit';
   const resubmitOrgId = route.params?.orgId as number | undefined;
+  // Claim mode — set from Edit Profile → "Claim Your Organisation". The form is pre-filled from the imported listing and,
+  // after registration, a claim is created for admin review. Nothing is assigned automatically.
+  const claimListing  = route.params?.claimListing as UnclaimedMatch | undefined;
 
   const [step,               setStep]               = useState(1);
   const [form,               setForm]               = useState<FormData>(INITIAL);
@@ -335,6 +340,21 @@ export default function CreateOrgScreen() {
   const [uploading,          setUploading]          = useState(false);
   const [loadingProfile,     setLoadingProfile]     = useState(isResubmit);
   const [prefillCategoryCode,setPrefillCategoryCode]= useState<string | null>(null);
+
+  // Pre-fill from the imported listing (claim mode) — the user can edit every field before submitting.
+  useEffect(() => {
+    if (!claimListing || isResubmit) return;
+    setForm(f => ({
+      ...f,
+      orgName:       f.orgName       || claimListing.organisationName || '',
+      state:         f.state         || claimListing.state            || '',
+      city:          f.city          || claimListing.district         || '',
+      addressLine1:  f.addressLine1  || claimListing.address          || '',
+      contactPerson: f.contactPerson || claimListing.contactName      || '',
+      contactEmail:  f.contactEmail  || claimListing.contactEmail     || '',
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Date picker state (registration date)
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -665,9 +685,22 @@ export default function CreateOrgScreen() {
           }
         }
 
+        // Claim mode: tie the new organisation to the imported listing (request only — the team reviews it).
+        let claimNote = '';
+        if (claimListing && newOrgId) {
+          try {
+            const cr = await unclaimedApi.claim({ listingToken: claimListing.listingToken, orgId: newOrgId });
+            claimNote = cr.data?.isSuccess === 1
+              ? ' Your claim on the existing listing has been sent for review.'
+              : ` We could not send the claim automatically (${cr.data?.message ?? 'please try again later'}).`;
+          } catch {
+            claimNote = ' We could not send the claim automatically — contact support to link it.';
+          }
+        }
+
         Alert.alert(
           '🎉 Organisation Created!',
-          'Your NGO has been registered and is under review. You\'ll be notified once approved.',
+          `Your NGO has been registered and is under review. You'll be notified once approved.${claimNote}`,
           [{
             text: 'View Profile',
             onPress: () => nav.replace('NgoProfile', { orgId: newOrgId }),
@@ -825,6 +858,14 @@ export default function CreateOrgScreen() {
           {/* ── STEP 1: Basic Information ── */}
           {step === 1 && (
             <>
+              {claimListing && !isResubmit && (
+                <View style={{ backgroundColor: C.PRIMARY_LIGHT, borderRadius: 12, padding: 12, marginBottom: 14 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: C.TEXT }}>Claiming “{claimListing.organisationName}”</Text>
+                  <Text style={{ fontSize: 12, color: C.TEXT2, marginTop: 4 }}>
+                    Details are pre-filled from the existing listing. Review and complete them — after you submit, our team verifies the claim.
+                  </Text>
+                </View>
+              )}
               <Field
                 label="Organisation Name" required value={form.orgName}
                 onChange={v => set('orgName', v)} placeholder="e.g., Green Earth Foundation"

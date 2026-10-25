@@ -781,3 +781,19 @@ export interface Notification {
   deepLink?:    string;   // ngoconnect:// or https:// URL to navigate on tap
   actionLabel?: string;   // CTA button label (e.g. "Donate Now", "Learn More")
 }
+
+// ── Unclaimed organisations (imported listings the signed-in user may own) ──────────────────────
+export interface UnclaimedMatch {
+  listingToken: string;          // opaque reference — never a numeric id
+  organisationName: string;
+  slug: string;
+  address?: string | null;
+  state?: string | null;
+  district?: string | null;
+  country?: string | null;
+  contactName?: string | null;   // pre-fill for Create Organisation
+  designation?: string | null;
+  contactEmail?: string | null;
+  claimStatusCode: string;       // UNCLAIMED | CLAIM_PENDING
+  hasPendingClaim: boolean;
+}

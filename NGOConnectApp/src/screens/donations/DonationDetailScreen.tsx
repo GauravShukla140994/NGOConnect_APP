@@ -6,13 +6,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Clipboard, Alert,
+  ActivityIndicator, Clipboard, Alert, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AppConfig from '../../config/AppConfig';
 import { donationApi } from '../../api/donation.api';
-import OrgAvatar from '../../components/common/OrgAvatar';
+import OrgAvatar    from '../../components/common/OrgAvatar';
+import Svg, { Path, Rect } from 'react-native-svg';
 
 const C = AppConfig.COLORS;
 
@@ -311,23 +312,51 @@ export default function DonationDetailScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* ── Fixed footer ──────────────────────────────────────────────────── */}
-      <View style={s.footer}>
-        <TouchableOpacity
-          style={s.helpBtn}
-          onPress={handleGetHelp}>
-          <Text style={s.helpBtnText}>Get help</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.refreshBtn, refreshing && { opacity: 0.7 }]}
-          onPress={handleRefresh}
-          disabled={refreshing}>
-          {refreshing
-            ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={s.refreshBtnText}>Refresh status</Text>
-          }
-        </TouchableOpacity>
-      </View>
+      {/* ── Fixed footer — varies by status ───────────────────────────────── */}
+      {isProcessing && (
+        <View style={s.footer}>
+          <TouchableOpacity style={s.helpBtn} onPress={handleGetHelp}>
+            <Text style={s.helpBtnText}>Get help</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.refreshBtn, refreshing && { opacity: 0.7 }]}
+            onPress={handleRefresh}
+            disabled={refreshing}>
+            {refreshing
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.refreshBtnText}>Refresh status</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      )}
+      {isSuccess && (
+        <View style={s.footer}>
+          <TouchableOpacity
+            style={s.helpBtn}
+            onPress={() => {
+              if (data?.receiptPdfUrl) {
+                Linking.openURL(data.receiptPdfUrl).catch(() =>
+                  Alert.alert('Error', 'Could not open receipt. Try again later.'));
+              } else {
+                Alert.alert('Not available', 'Receipt is being generated. Check back in a few minutes.');
+              }
+            }}>
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+              <Path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke={C.PRIMARY} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"/>
+              <Rect x="4" y="18" width="16" height="2.5" rx="1.25" fill={C.PRIMARY}/>
+            </Svg>
+            <Text style={[s.helpBtnText, { marginLeft: 6 }]}>Receipt</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.refreshBtn}
+            onPress={() => nav.navigate('Donate', {
+              orgId:   data?.orgId,
+              orgName: data?.orgName,
+            })}>
+            <Text style={s.refreshBtnText}>Donate again</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -471,6 +500,7 @@ const s = StyleSheet.create({
   footer:      { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, gap: 10,
                  backgroundColor: C.CARD, borderTopWidth: 1, borderTopColor: C.BORDER },
   helpBtn:     { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center',
+                 flexDirection: 'row', justifyContent: 'center',
                  borderWidth: 1.5, borderColor: C.BORDER },
   helpBtnText: { fontSize: 15, fontWeight: '600', color: C.TEXT },
   refreshBtn:  { flex: 1.6, paddingVertical: 13, borderRadius: 12, alignItems: 'center',

@@ -28,6 +28,7 @@ import {
   userApi,
 } from '../../api/user.api';
 import ContactUpdateModal from '../../components/profile/ContactUpdateModal';
+import ClaimOrgBanner from '../../components/profile/ClaimOrgBanner';
 import DocumentUploadSection from '../../components/common/DocumentUploadSection';
 import { lookupApi } from '../../api/lookup.api';
 import { uploadFile } from '../../api/upload.api';
@@ -696,6 +697,8 @@ export default function EditProfileScreen() {
         {step === 0 && (
           <View>
             <Text style={styles.stepTitle}>Basic Information</Text>
+
+            <ClaimOrgBanner />
 
             {/* Photo picker */}
             <View style={styles.photoSection}>
